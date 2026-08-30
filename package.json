@@ -1,0 +1,43 @@
+{
+  "name": "hamenagen",
+  "productName": "המנגן",
+  "version": "0.1.0",
+  "description": "נגן מוזיקה קהילתי חכם — Smart Community Music Player (offline-first, Hebrew NLP)",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "postinstall": "node scripts/copy-vendor.js",
+    "vendor": "node scripts/copy-vendor.js",
+    "dist": "electron-builder --win portable",
+    "prepare:win-python": "powershell -ExecutionPolicy Bypass -File scripts/prepare-win-python.ps1",
+    "build:win": "npm run prepare:win-python && npm run dist",
+    "test:core": "cd backend && python -m pytest -q"
+  },
+  "author": "hamenagen",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "hls.js": "^1.5.17"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "org.community.hamenagen",
+    "productName": "המנגן",
+    "directories": { "output": "dist" },
+    "files": ["electron/**/*", "assets/**/*"],
+    "extraResources": [
+      { "from": "backend", "to": "backend", "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc", "!tests/**", "!data/**"] },
+      { "from": "build/win-python", "to": "python", "filter": ["**/*"] }
+    ],
+    "win": {
+      "target": ["portable"],
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "hamenagen-portable-${version}.exe"
+    }
+  }
+}

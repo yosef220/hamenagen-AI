@@ -1,0 +1,120 @@
+name: Build Windows Portable EXE
+
+# Builds two downloadable Windows deliverables in the cloud (no local setup):
+#   1) portable  — a single .exe (online-first; fetches the AI model on first
+#      run when online). Small, quick to build.
+#   2) offline-full — a ZIP folder containing the whole app + embedded Python +
+#      the AI libraries + the AI model already inside, for FULLY-OFFLINE
+#      install: unzip on a machine with no internet and run hamenagen.exe.
+#
+# Trigger from the Actions tab ("Run workflow") or by pushing to the branch.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - claude/smart-community-music-player-1jcyxh
+    paths:
+      - 'electron/**'
+      - 'backend/**'
+      - 'assets/**'
+      - 'package.json'
+      - 'scripts/**'
+      - '.github/workflows/build-windows.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install npm dependencies
+        run: npm install
+      - name: Prepare embedded Python (+ backend deps)
+        run: npm run prepare:win-python
+      - name: Build portable EXE
+        run: npm run dist
+      - name: List build output
+        shell: pwsh
+        run: Get-ChildItem dist
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hamenagen-portable-windows
+          path: dist/*.exe
+          if-no-files-found: error
+      - name: Publish EXE to pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: portable-latest
+          name: המנגן — גרסה ניידת (בנייה אחרונה)
+          body: |
+            שתי אפשרויות הורדה:
+            • hamenagen-portable-*.exe — גרסה ניידת (online-first). מורידה את מודל ה-AI בהפעלה הראשונה כשיש רשת.
+            • hamenagen-offline-full-windows.zip — חבילה מלאה לאופליין: מכילה את האפליקציה + מודל ה-AI + כל התלויות. פרקו את ה-ZIP והריצו hamenagen.exe — עובד ללא אינטרנט.
+          prerelease: true
+          files: dist/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  offline-full:
+    # Heavier: bundles CPU torch + sentence-transformers + the model itself.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Prepare embedded Python (base deps)
+        run: npm run prepare:win-python
+
+      - name: Add AI libraries to the embedded Python (CPU torch)
+        shell: pwsh
+        run: |
+          $py = "build/win-python/python.exe"
+          & $py -m pip install --no-warn-script-location torch --index-url https://download.pytorch.org/whl/cpu
+          & $py -m pip install --no-warn-script-location sentence-transformers
+
+      - name: Build unpacked app folder
+        run: npx --no-install electron-builder --win dir
+
+      - name: Download the AI model into the app (offline-ready)
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+        run: |
+          $py = "build/win-python/python.exe"
+          & $py backend/scripts/prepare_model.py --out dist/win-unpacked/resources/data/models
+
+      - name: Zip the full offline bundle
+        shell: pwsh
+        run: |
+          $ver = (Get-Content package.json | ConvertFrom-Json).version
+          $zip = "dist/hamenagen-offline-full-windows-$ver.zip"
+          Compress-Archive -Path dist/win-unpacked/* -DestinationPath $zip -Force
+          Get-ChildItem dist/*.zip
+
+      - name: Upload offline bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hamenagen-offline-full-windows
+          path: dist/*.zip
+          if-no-files-found: error
+
+      - name: Publish offline bundle to pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: portable-latest
+          prerelease: true
+          files: dist/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
