@@ -18,6 +18,14 @@ import argparse
 import sys
 from pathlib import Path
 
+# The Windows embedded Python defaults to a cp1252 console encoding, which
+# cannot encode Hebrew — force UTF-8 so status prints don't crash the build.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 

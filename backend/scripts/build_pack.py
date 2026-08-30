@@ -19,6 +19,12 @@ import argparse
 import sys
 from pathlib import Path
 
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # Hebrew-safe on Windows cp1252
+    except Exception:
+        pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from hamenagen.offline_pack import build_pack  # noqa: E402
 
