@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' file:; img-src 'self' data:;"
+    />
+    <title>המנגן — נגן מוזיקה קהילתי חכם</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Time-based suggestion banner (spec §7) -->
+      <section id="suggestion" class="banner hidden" aria-live="polite">
+        <div class="banner-text">
+          <span class="banner-heb" id="suggestion-date"></span>
+          <span id="suggestion-label"></span>
+        </div>
+        <button id="suggestion-play" class="btn btn-accent">השמע עכשיו</button>
+        <button id="suggestion-dismiss" class="btn btn-ghost" title="התעלם">✕</button>
+      </section>
+
+      <!-- The instruction field — the heart of the UI (spec §8, §15) -->
+      <header class="hero">
+        <h1 class="logo">הַמְנַגֵּן</h1>
+        <form id="ask-form">
+          <input
+            id="ask-input"
+            type="text"
+            autocomplete="off"
+            placeholder="מה תרצה לשמוע? למשל: תשמיע לי שירים של שבת"
+            aria-label="בקשה בשפה טבעית"
+          />
+          <button type="submit" class="btn btn-accent" id="ask-submit">השמע</button>
+        </form>
+        <nav class="quick-nav">
+          <button class="chip" data-ask="תשמיע את השירים האחרונים שהורדתי">אחרונים שהורדתי</button>
+          <button class="chip" data-ask="תשמיע את השירים האחרונים שיצאו">אחרונים שיצאו</button>
+          <button class="chip" data-ask="תשמיע משהו אקראי">אקראי</button>
+          <button class="chip" id="nav-rescan">סרוק מאגר</button>
+          <button class="chip" id="nav-settings">הגדרות</button>
+        </nav>
+      </header>
+
+      <main>
+        <div id="status" class="status" aria-live="polite"></div>
+        <ol id="results" class="results"></ol>
+      </main>
+
+      <!-- Bottom player bar (spec §12) -->
+      <footer id="player-bar" class="player-bar hidden">
+        <div class="now-playing">
+          <div class="np-title" id="np-title">—</div>
+          <div class="np-artist" id="np-artist"></div>
+        </div>
+        <div class="controls">
+          <button class="pbtn" id="btn-prev" title="קודם">⏮</button>
+          <button class="pbtn" id="btn-play" title="נגן/השהה">▶</button>
+          <button class="pbtn" id="btn-next" title="הבא">⏭</button>
+        </div>
+        <div class="seek">
+          <span id="time-cur">0:00</span>
+          <input type="range" id="seek" min="0" max="100" value="0" />
+          <span id="time-dur">0:00</span>
+        </div>
+        <div class="vol">
+          <span>🔊</span>
+          <input type="range" id="volume" min="0" max="100" value="90" />
+        </div>
+        <audio id="audio"></audio>
+      </footer>
+
+      <!-- Settings dialog (spec §16) -->
+      <dialog id="settings-dialog">
+        <form method="dialog" class="settings-form" id="settings-form">
+          <h2>הגדרות</h2>
+          <label class="row"><input type="checkbox" id="set-builtin" /> ניגון דרך הנגן המובנה</label>
+          <label class="row"><input type="checkbox" id="set-video" /> תמיכה בווידאו (MP4 וסרטונים)</label>
+          <label class="row"><input type="checkbox" id="set-autoupdate" /> עדכונים אוטומטיים כשמחובר לרשת</label>
+          <label class="row"><input type="checkbox" id="set-autoplay" /> הדלקה אוטומטית לאחר הורדה</label>
+          <label class="row"><input type="checkbox" id="set-embeddings" /> סיווג נושאי חכם (מודל מקומי)</label>
+          <div class="row">
+            <span>תיקיות לסריקה (שורה לכל תיקייה; ריק = כל המחשב):</span>
+            <textarea id="set-roots" rows="3" dir="ltr"></textarea>
+          </div>
+          <menu class="dialog-actions">
+            <button value="cancel" class="btn btn-ghost">ביטול</button>
+            <button value="save" id="settings-save" class="btn btn-accent">שמירה</button>
+          </menu>
+        </form>
+      </dialog>
+
+      <!-- Online-fetch prompt (spec §11) -->
+      <dialog id="online-dialog">
+        <div class="online-form">
+          <h2 id="online-title">לא מצאתי את השיר</h2>
+          <p id="online-text"></p>
+          <div id="online-results" class="online-results"></div>
+          <menu class="dialog-actions">
+            <button id="online-cancel" class="btn btn-ghost">סגירה</button>
+            <button id="online-browser" class="btn btn-ghost">פתח ביוטיוב</button>
+          </menu>
+        </div>
+      </dialog>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>

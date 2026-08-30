@@ -1,0 +1,19 @@
+# Core runtime dependencies for the Python backend.
+#
+# The offline-first CORE runs on the Python standard library alone (SQLite,
+# difflib, etc.). Everything below is OPTIONAL and only enables richer
+# behaviour; if a package is missing the corresponding feature degrades
+# gracefully instead of crashing (see the try/except guards in the modules).
+
+# Richer audio tag reading in the scanner (title/artist/album/duration/date).
+mutagen>=1.47
+
+# Faster, C-backed fuzzy matching. Pure-python fallback exists in fuzzy.py.
+rapidfuzz>=3.6
+
+# Online source plugin (YouTube). Must be kept up to date (spec §11, §14).
+yt-dlp>=2024.1.0
+
+# Optional local topic-embedding model (spec §8.2 layer 3). Heavy (~100-400MB
+# model download); the classifier works without it via the curated lexicon.
+# sentence-transformers>=2.6

@@ -1,0 +1,35 @@
+{
+  "name": "hamenagen",
+  "productName": "המנגן",
+  "version": "0.1.0",
+  "description": "נגן מוזיקה קהילתי חכם — Smart Community Music Player (offline-first, Hebrew NLP)",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable",
+    "test:core": "cd backend && python -m pytest -q"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "private": true,
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "org.community.hamenagen",
+    "productName": "המנגן",
+    "directories": { "output": "dist" },
+    "files": ["electron/**/*", "assets/**/*"],
+    "extraResources": [
+      { "from": "backend", "to": "backend", "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"] }
+    ],
+    "win": {
+      "target": ["portable"],
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "hamenagen-portable-${version}.exe"
+    }
+  }
+}
