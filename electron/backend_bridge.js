@@ -23,7 +23,13 @@ class BackendBridge {
     this.rl = null;
     this._nextId = 1;
     this._pending = new Map();
-    this._readyResolvers = [];
+    this._eventHandlers = new Set();
+  }
+
+  /** Register a handler for out-of-band backend events (e.g. progress). */
+  onEvent(handler) {
+    this._eventHandlers.add(handler);
+    return () => this._eventHandlers.delete(handler);
   }
 
   start() {
@@ -56,6 +62,13 @@ class BackendBridge {
       msg = JSON.parse(line);
     } catch {
       return; // ignore non-JSON noise
+    }
+    // Out-of-band notifications carry an "event" field and no response id.
+    if (msg.event) {
+      for (const h of this._eventHandlers) {
+        try { h(msg); } catch { /* handler errors must not kill the reader */ }
+      }
+      return;
     }
     const entry = this._pending.get(msg.id);
     if (!entry) return;

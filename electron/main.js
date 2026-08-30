@@ -34,6 +34,13 @@ function createWindow() {
   mainWindow.removeMenu();
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.on('closed', () => (mainWindow = null));
+
+  // Forward out-of-band backend events (download progress, …) to the renderer.
+  bridge.onEvent((msg) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('backend:event', msg);
+    }
+  });
 }
 
 // --- IPC: forward to the Python backend ------------------------------------

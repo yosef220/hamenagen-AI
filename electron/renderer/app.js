@@ -188,17 +188,39 @@ function renderOnline() {
 }
 
 async function download(result) {
-  setStatus('מוריד: ' + (result.title || '') + ' — השיר יידלק אוטומטית בסיום.');
+  const downloadId = result.id || String(Date.now());
   el('online-dialog').close();
-  const res = await api.onlineDownload(result);
+  setStatus(`מוריד: ${result.title || ''}…`);
+
+  // Live progress: the backend streams { event:'download_progress', ... }.
+  const off = api.onBackendEvent((msg) => {
+    if (msg.event !== 'download_progress' || msg.download_id !== downloadId) return;
+    if (msg.status === 'downloading') {
+      const pct = msg.percent != null ? `${msg.percent}%` : '';
+      setStatus(`מוריד: ${result.title || ''} ${pct}`);
+    } else if (msg.status === 'postprocessing') {
+      setStatus(`ממיר אודיו: ${result.title || ''}…`);
+    }
+  });
+
+  let res;
+  try {
+    res = await api.onlineDownload(result, downloadId);
+  } finally {
+    off();
+  }
   if (!res.ok || !res.result.ok) {
-    setStatus('ההורדה נכשלה: ' + (res.error || res.result.message));
+    setStatus('ההורדה נכשלה: ' + (res.error || (res.result && res.result.message) || ''));
     return;
   }
-  setStatus('ההורדה הושלמה.');
+
   const settings = (await api.getSettings()).result || {};
-  if (settings.autoplay_after_download && res.result.path) {
-    queue = [{ path: res.result.path, title: result.title, artist: result.uploader, is_video: false }];
+  const track = res.result.track || {
+    path: res.result.path, title: result.title, artist: result.uploader, is_video: false,
+  };
+  setStatus('ההורדה הושלמה — נוסף למאגר.');
+  if (settings.autoplay_after_download && track.path) {
+    queue = [track, ...queue];
     playAt(0);
   }
 }

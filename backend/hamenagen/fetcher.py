@@ -15,7 +15,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
+
+# A progress callback receives dicts like:
+#   {"status": "downloading", "percent": 42.0, "downloaded": 1234, "total": 4567,
+#    "speed": 120000, "eta": 8}
+#   {"status": "postprocessing"}  |  {"status": "finished"}
+ProgressHook = Callable[[dict], None]
 
 
 @dataclass
@@ -43,7 +49,9 @@ class SourcePlugin(Protocol):
 
     def available(self) -> bool: ...
     def search(self, query: str, *, limit: int = 5) -> FetchOutcome: ...
-    def download(self, result: SearchResult, dest_dir: str | Path) -> FetchOutcome: ...
+    def download(
+        self, result: SearchResult, dest_dir: str | Path, *, on_progress: ProgressHook | None = None
+    ) -> FetchOutcome: ...
     def search_url(self, query: str) -> str: ...
 
 
@@ -104,7 +112,46 @@ class YouTubeSource:
         except Exception as exc:  # pragma: no cover
             return FetchOutcome(False, f"החיפוש נכשל: {exc}")
 
-    def download(self, result: SearchResult, dest_dir: str | Path) -> FetchOutcome:
+    @staticmethod
+    def _translate_error(exc: Exception) -> str:
+        """Map a raw yt-dlp error to a clear Hebrew message (spec §11 notes)."""
+        msg = str(exc).lower()
+        if "unavailable" in msg or "private" in msg or "removed" in msg:
+            return "הסרטון אינו זמין (הוסר או פרטי)."
+        if "geo" in msg or "not available in your country" in msg or "blocked" in msg:
+            return "הסרטון חסום גאוגרפית."
+        if "sign in" in msg or "age" in msg:
+            return "הסרטון מוגבל (נדרשת התחברות / הגבלת גיל)."
+        if "ffmpeg" in msg:
+            return "נדרש ffmpeg כדי להמיר את האודיו — ודא שהוא מותקן."
+        return f"ההורדה נכשלה: {exc}"
+
+    def _make_hook(self, on_progress: ProgressHook | None):
+        if on_progress is None:
+            return None
+
+        def hook(d: dict) -> None:  # pragma: no cover - invoked by yt-dlp
+            status = d.get("status")
+            if status == "downloading":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                done = d.get("downloaded_bytes") or 0
+                percent = round(done / total * 100, 1) if total else None
+                on_progress({
+                    "status": "downloading",
+                    "percent": percent,
+                    "downloaded": done,
+                    "total": total,
+                    "speed": d.get("speed"),
+                    "eta": d.get("eta"),
+                })
+            elif status == "finished":
+                on_progress({"status": "postprocessing"})
+
+        return hook
+
+    def download(
+        self, result: SearchResult, dest_dir: str | Path, *, on_progress: ProgressHook | None = None
+    ) -> FetchOutcome:
         try:
             yt_dlp = self._load()
         except Exception:
@@ -121,22 +168,31 @@ class YouTubeSource:
                 {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
             ],
         }
+        hook = self._make_hook(on_progress)
+        if hook is not None:
+            opts["progress_hooks"] = [hook]
         try:  # pragma: no cover - network
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(result.url, download=True)
                 path = ydl.prepare_filename(info)
                 mp3 = str(Path(path).with_suffix(".mp3"))
                 final = mp3 if Path(mp3).exists() else path
+                # Enrich the result with metadata for indexing (spec §10).
+                if info:
+                    result = SearchResult(
+                        source=self.name,
+                        id=info.get("id", result.id),
+                        title=info.get("title", result.title),
+                        url=result.url,
+                        uploader=info.get("uploader") or info.get("channel") or result.uploader,
+                        duration=info.get("duration", result.duration),
+                        upload_date=info.get("upload_date", result.upload_date),
+                    )
+            if on_progress is not None:
+                on_progress({"status": "finished"})
             return FetchOutcome(True, "ההורדה הושלמה.", path=final, result=result)
         except Exception as exc:  # pragma: no cover
-            msg = str(exc).lower()
-            if "unavailable" in msg or "private" in msg:
-                friendly = "הסרטון אינו זמין (הוסר או פרטי)."
-            elif "geo" in msg or "country" in msg:
-                friendly = "הסרטון חסום גאוגרפית."
-            else:
-                friendly = f"ההורדה נכשלה: {exc}"
-            return FetchOutcome(False, friendly)
+            return FetchOutcome(False, self._translate_error(exc))
 
 
 class OnlineFetcher:
@@ -154,5 +210,7 @@ class OnlineFetcher:
     def search_url(self, query: str) -> str:
         return self.source.search_url(query)
 
-    def download(self, result: SearchResult, dest_dir: str | Path) -> FetchOutcome:
-        return self.source.download(result, dest_dir)
+    def download(
+        self, result: SearchResult, dest_dir: str | Path, *, on_progress: ProgressHook | None = None
+    ) -> FetchOutcome:
+        return self.source.download(result, dest_dir, on_progress=on_progress)

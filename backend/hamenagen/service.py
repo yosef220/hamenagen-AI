@@ -11,14 +11,17 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+from datetime import datetime
+
 from . import intent as intent_mod
 from .classifier import EmbeddingBackend, HybridClassifier
+from .fetcher import OnlineFetcher, ProgressHook, SearchResult
 from .fuzzy import MatchCandidate, search as fuzzy_search
 from .hebrew_calendar import detect_occasion, from_gregorian
 from .index_db import MusicIndex
 from .intent import Action, Intent
 from .models import Track
-from .scanner import scan_roots
+from .scanner import scan_file, scan_roots
 from .settings import Settings, default_data_dir
 
 
@@ -30,6 +33,8 @@ class PlayerService:
         self.index = MusicIndex(self.data_dir / "library.db")
         backend = EmbeddingBackend() if self.settings.use_embeddings else None
         self.classifier = HybridClassifier(backend)
+        self.fetcher = OnlineFetcher()
+        self.downloads_dir = self.data_dir / "downloads"
 
     # -- library management ------------------------------------------------
     def _roots(self) -> list[str]:
@@ -46,19 +51,59 @@ class PlayerService:
             seen.add(track.id)
             existing = self.index.get(track.id)
             if existing is None:
-                cls = self.classifier.classify(
-                    title=track.title,
-                    artist=track.artist,
-                    album=track.album,
-                    filename=track.filename,
-                    use_embeddings=self.settings.use_embeddings,
-                )
-                track.topic = cls.topic
-                track.topic_source = cls.source
+                self._classify_track(track)
                 self.index.upsert(track)
                 added += 1
         removed = self.index.delete_missing(seen)
         return {"scanned_roots": use_roots, "added": added, "removed": removed, "total": self.index.count()}
+
+    def _classify_track(self, track: Track) -> Track:
+        cls = self.classifier.classify(
+            title=track.title,
+            artist=track.artist,
+            album=track.album,
+            filename=track.filename,
+            use_embeddings=self.settings.use_embeddings,
+        )
+        track.topic = cls.topic
+        track.topic_source = cls.source
+        return track
+
+    # -- online completion (spec §11) -------------------------------------
+    def online_available(self) -> bool:
+        return self.fetcher.available()
+
+    def download_and_add(self, result: SearchResult, on_progress: ProgressHook | None = None) -> dict:
+        """Download a chosen result, add it to the library, and return its Track.
+
+        Implements the tail of the spec §11 flow: the file lands in the local
+        library, gets indexed + classified, and the caller (UI) auto-plays it
+        unless the user opted out.
+        """
+        outcome = self.fetcher.download(result, self.downloads_dir, on_progress=on_progress)
+        if not outcome.ok or not outcome.path:
+            return {"ok": False, "message": outcome.message, "track": None}
+
+        track = scan_file(outcome.path, include_video=self.settings.include_video)
+        if track is None:
+            return {"ok": True, "message": outcome.message, "track": None, "path": outcome.path}
+
+        # Prefer metadata from the source over filename parsing (spec §10).
+        src = outcome.result or result
+        if src.title:
+            track.title = src.title
+        if src.uploader:
+            track.artist = track.artist or src.uploader
+        track.source = "youtube"
+        # Use the source's upload date as the "release date" (spec §10 note).
+        if src.upload_date and len(src.upload_date) == 8:
+            track.release_date = (
+                f"{src.upload_date[:4]}-{src.upload_date[4:6]}-{src.upload_date[6:]}"
+            )
+        track.download_date = datetime.now().isoformat()
+        self._classify_track(track)
+        self.index.upsert(track)
+        return {"ok": True, "message": outcome.message, "track": track.to_dict(), "path": outcome.path}
 
     def _candidates(self) -> list[MatchCandidate]:
         return [

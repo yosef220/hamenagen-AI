@@ -18,14 +18,20 @@ import sys
 import traceback
 from typing import Any
 
-from .fetcher import OnlineFetcher, SearchResult
+from .fetcher import SearchResult
 from .service import PlayerService
 
 
 class RpcServer:
     def __init__(self) -> None:
         self.service = PlayerService()
-        self.fetcher = OnlineFetcher()
+        self.fetcher = self.service.fetcher
+        self._out = sys.stdout  # set for real in serve(); used by progress hook
+
+    def _emit(self, event: str, payload: dict) -> None:
+        """Push an out-of-band notification (no id) to the client, e.g. progress."""
+        self._out.write(json.dumps({"event": event, **payload}, ensure_ascii=False) + "\n")
+        self._out.flush()
 
     # Each handler takes a params dict and returns a JSON-serialisable value.
     def _dispatch(self, method: str, params: dict[str, Any]) -> Any:
@@ -85,12 +91,22 @@ class RpcServer:
             duration=r.get("duration"),
             upload_date=r.get("upload_date"),
         )
-        dest = self.service.data_dir / "downloads"
-        outcome = self.fetcher.download(result, dest)
-        return {"ok": outcome.ok, "message": outcome.message, "path": outcome.path}
+        download_id = params.get("download_id", result.id)
+
+        def on_progress(info: dict) -> None:
+            self._emit("download_progress", {"download_id": download_id, **info})
+
+        outcome = self.service.download_and_add(result, on_progress=on_progress)
+        return {
+            "ok": outcome["ok"],
+            "message": outcome["message"],
+            "path": outcome.get("path"),
+            "track": outcome.get("track"),
+        }
 
     # -- loop --------------------------------------------------------------
     def serve(self, stdin=sys.stdin, stdout=sys.stdout) -> None:
+        self._out = stdout
         for line in stdin:
             line = line.strip()
             if not line:

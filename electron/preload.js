@@ -20,6 +20,13 @@ contextBridge.exposeInMainWorld('hamenagen', {
   getSettings: () => invoke('backend:get_settings'),
   updateSettings: (settings) => invoke('backend:update_settings', { settings }),
   onlineSearch: (query, limit) => invoke('backend:online_search', { query, limit }),
-  onlineDownload: (result) => invoke('backend:online_download', { result }),
+  onlineDownload: (result, downloadId) =>
+    invoke('backend:online_download', { result, download_id: downloadId }),
   openExternal: (url) => invoke('shell:openExternal', url),
+  // Subscribe to backend events (e.g. { event: 'download_progress', ... }).
+  onBackendEvent: (handler) => {
+    const listener = (_evt, msg) => handler(msg);
+    ipcRenderer.on('backend:event', listener);
+    return () => ipcRenderer.removeListener('backend:event', listener);
+  },
 });
