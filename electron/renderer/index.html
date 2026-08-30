@@ -81,6 +81,10 @@
           <label class="row"><input type="checkbox" id="set-autoupdate" /> עדכונים אוטומטיים כשמחובר לרשת</label>
           <label class="row"><input type="checkbox" id="set-autoplay" /> הדלקה אוטומטית לאחר הורדה</label>
           <label class="row"><input type="checkbox" id="set-embeddings" /> סיווג נושאי חכם (מודל מקומי)</label>
+          <div class="row" id="classifier-status" style="font-size: 13px; color: var(--muted)"></div>
+          <div class="row">
+            <button type="button" id="btn-reclassify" class="btn btn-ghost small">סווג מחדש את כל המאגר</button>
+          </div>
           <div class="row">
             <span>תיקיות לסריקה (שורה לכל תיקייה; ריק = כל המחשב):</span>
             <textarea id="set-roots" rows="3" dir="ltr"></textarea>

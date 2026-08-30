@@ -49,6 +49,8 @@ const FORWARD = [
   'handle_request',
   'rescan',
   'opening_suggestion',
+  'classifier_status',
+  'reclassify',
   'get_settings',
   'update_settings',
   'online_search',

@@ -21,7 +21,7 @@ from .hebrew_calendar import detect_occasion, from_gregorian
 from .index_db import MusicIndex
 from .intent import Action, Intent
 from .models import Track
-from .scanner import scan_file, scan_roots
+from .scanner import read_sidecar_lyrics, scan_file, scan_roots
 from .settings import Settings, default_data_dir
 
 
@@ -31,10 +31,20 @@ class PlayerService:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.settings = Settings.load(self.data_dir / "settings.json")
         self.index = MusicIndex(self.data_dir / "library.db")
-        backend = EmbeddingBackend() if self.settings.use_embeddings else None
+        self.models_dir = self.data_dir / "models"
+        backend = self._build_backend()
         self.classifier = HybridClassifier(backend)
         self.fetcher = OnlineFetcher()
         self.downloads_dir = self.data_dir / "downloads"
+
+    def _build_backend(self) -> EmbeddingBackend | None:
+        if not self.settings.use_embeddings:
+            return None
+        return EmbeddingBackend(
+            self.settings.embedding_model,
+            threshold=self.settings.embedding_threshold,
+            cache_dir=str(self.models_dir),
+        )
 
     # -- library management ------------------------------------------------
     def _roots(self) -> list[str]:
@@ -58,16 +68,44 @@ class PlayerService:
         return {"scanned_roots": use_roots, "added": added, "removed": removed, "total": self.index.count()}
 
     def _classify_track(self, track: Track) -> Track:
+        lyrics = ""
+        if self.settings.classify_by_lyrics and track.path:
+            lyrics = read_sidecar_lyrics(track.path)
         cls = self.classifier.classify(
             title=track.title,
             artist=track.artist,
             album=track.album,
             filename=track.filename,
+            lyrics=lyrics,
             use_embeddings=self.settings.use_embeddings,
         )
         track.topic = cls.topic
         track.topic_source = cls.source
         return track
+
+    # -- AI classifier management (spec §8.2) -----------------------------
+    def classifier_status(self) -> dict:
+        """Report the state of the local embedding layer, for the UI/settings."""
+        backend = self.classifier.embedding
+        if backend is None:
+            return {"enabled": False, "available": False, "model": None}
+        st = backend.status()
+        st["enabled"] = True
+        return st
+
+    def reclassify_all(self) -> dict:
+        """Re-run classification over every indexed track (e.g. after enabling
+        embeddings or updating the lexicon). Returns how many changed."""
+        # Rebuild the backend in case settings changed since construction.
+        self.classifier.embedding = self._build_backend()
+        changed = 0
+        for track in self.index.all_tracks():
+            before = track.topic
+            self._classify_track(track)
+            if track.topic != before:
+                self.index.set_topic(track.id, track.topic, track.topic_source)
+                changed += 1
+        return {"total": self.index.count(), "changed": changed, **self.classifier_status()}
 
     # -- online completion (spec §11) -------------------------------------
     def online_available(self) -> bool:

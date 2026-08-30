@@ -49,6 +49,12 @@ class Settings:
     scan_roots: list[str] = field(default_factory=list)
     # Enable the optional local embedding classifier layer.
     use_embeddings: bool = True
+    # Which local embedding model to use (spec §8.2 layer 3, §19.3).
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # Cosine-similarity threshold above which an embedding topic is accepted.
+    embedding_threshold: float = 0.45
+    # Also feed song lyrics (from a sibling .lrc/.txt file) to the classifier.
+    classify_by_lyrics: bool = True
     # Managed radio-station list URL (spec §13).
     radio_list_url: str = ""
 

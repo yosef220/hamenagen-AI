@@ -57,8 +57,16 @@ class EmbeddingBackend:
         "אמונה": "שיר על אמונה וביטחון בהשם ותפילה",
     }
 
-    def __init__(self, model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"):
+    def __init__(
+        self,
+        model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        *,
+        threshold: float = 0.45,
+        cache_dir: str | None = None,
+    ):
         self.model_name = model_name
+        self.threshold = threshold
+        self.cache_dir = cache_dir
         self._model = None
         self._proto_vecs: dict[str, "object"] = {}
         self.available = False
@@ -71,7 +79,7 @@ class EmbeddingBackend:
             from sentence_transformers import SentenceTransformer, util  # type: ignore
 
             self._util = util
-            self._model = SentenceTransformer(self.model_name)
+            self._model = SentenceTransformer(self.model_name, cache_folder=self.cache_dir)
             keys = list(self.PROTOTYPES)
             vecs = self._model.encode(
                 [self.PROTOTYPES[k] for k in keys], convert_to_tensor=True
@@ -84,7 +92,17 @@ class EmbeddingBackend:
             self.available = False
             return False
 
-    def classify(self, text: str, *, threshold: float = 0.45) -> Classification | None:
+    def status(self) -> dict:
+        """Report whether the embedding layer is usable, without forcing a load."""
+        return {
+            "model": self.model_name,
+            "loaded": self._model is not None,
+            "available": self.available,
+            "error": self.load_error,
+        }
+
+    def classify(self, text: str, *, threshold: float | None = None) -> Classification | None:
+        threshold = self.threshold if threshold is None else threshold
         if not self.available and not self.load():
             return None
         if not text.strip():  # pragma: no cover

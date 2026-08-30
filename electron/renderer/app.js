@@ -243,7 +243,32 @@ async function openSettings() {
   el('set-embeddings').checked = !!s.use_embeddings;
   el('set-roots').value = (s.scan_roots || []).join('\n');
   el('settings-dialog').showModal();
+  refreshClassifierStatus();
 }
+
+async function refreshClassifierStatus() {
+  const res = await api.classifierStatus();
+  const box = el('classifier-status');
+  if (!res.ok) { box.textContent = ''; return; }
+  const st = res.result || {};
+  if (!st.enabled) {
+    box.textContent = 'סיווג חכם מכובה — פעיל המילון בלבד.';
+  } else if (st.available) {
+    box.textContent = `מודל הסיווג פעיל: ${st.model}`;
+  } else {
+    box.textContent = `המודל אינו טעון עדיין (${st.model}). ירד בפעם הראשונה שבה יידרש, או דרך חבילת האופליין.`;
+  }
+}
+
+el('btn-reclassify').addEventListener('click', async () => {
+  el('classifier-status').textContent = 'מסווג מחדש…';
+  const res = await api.reclassify();
+  if (res.ok) {
+    el('classifier-status').textContent = `הסתיים: ${res.result.changed} שירים שונו מתוך ${res.result.total}.`;
+  } else {
+    el('classifier-status').textContent = 'שגיאה בסיווג מחדש: ' + res.error;
+  }
+});
 
 el('settings-form').addEventListener('submit', async (e) => {
   if (e.submitter && e.submitter.value === 'save') {

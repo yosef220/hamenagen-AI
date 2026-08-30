@@ -74,6 +74,28 @@ def _read_tags(path: Path) -> dict:
     return info
 
 
+def read_sidecar_lyrics(path: str | Path, *, max_chars: int = 4000) -> str:
+    """Return lyrics from a sibling .lrc/.txt file next to the track, if any.
+
+    Used by the topic classifier when ``classify_by_lyrics`` is on (spec §8.2,
+    §19.3). Timestamps in .lrc files are stripped. Returns "" when none found.
+    """
+    p = Path(path)
+    for ext in (".lrc", ".txt"):
+        cand = p.with_suffix(ext)
+        if cand.exists() and cand.is_file():
+            try:
+                text = cand.read_text(encoding="utf-8", errors="ignore")[:max_chars]
+            except OSError:
+                return ""
+            if ext == ".lrc":  # drop [mm:ss.xx] timestamps
+                import re
+
+                text = re.sub(r"\[\d+:\d+(?:\.\d+)?\]", " ", text)
+            return text.strip()
+    return ""
+
+
 def scan_file(path: str | Path, *, include_video: bool = False) -> Track | None:
     p = Path(path)
     ext = p.suffix.lower()

@@ -35,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     p_intent.add_argument("text")
 
     sub.add_parser("suggest", help="הצעת פתיחה לפי התאריך העברי")
+    sub.add_parser("classifier", help="הצג את מצב מודל הסיווג המקומי")
+    sub.add_parser("reclassify", help="סווג מחדש את כל השירים במאגר")
 
     args = parser.parse_args(argv)
     service = PlayerService()
@@ -47,6 +49,10 @@ def main(argv: list[str] | None = None) -> int:
             _print(parse_intent(args.text).to_dict())
         elif args.cmd == "suggest":
             _print(service.opening_suggestion() or {"suggestion": None})
+        elif args.cmd == "classifier":
+            _print(service.classifier_status())
+        elif args.cmd == "reclassify":
+            _print(service.reclassify_all())
     finally:
         service.close()
     return 0

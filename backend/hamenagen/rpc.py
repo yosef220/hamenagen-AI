@@ -53,6 +53,12 @@ class RpcServer:
     def rpc_opening_suggestion(self, params):
         return self.service.opening_suggestion()
 
+    def rpc_classifier_status(self, params):
+        return self.service.classifier_status()
+
+    def rpc_reclassify(self, params):
+        return self.service.reclassify_all()
+
     def rpc_get_settings(self, params):
         from dataclasses import asdict
 
