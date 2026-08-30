@@ -72,10 +72,28 @@ class EmbeddingBackend:
         self.available = False
         self.load_error: str | None = None
 
+    def _cache_has_model(self) -> bool:
+        if not self.cache_dir:
+            return False
+        try:
+            from pathlib import Path as _P
+
+            return any(_P(self.cache_dir).glob("models--*"))
+        except Exception:
+            return False
+
     def load(self) -> bool:
         if self._model is not None:
             return True
         try:  # pragma: no cover - depends on optional heavy dependency
+            import os
+
+            # If the model is already cached (e.g. shipped in the offline
+            # bundle), force offline mode so it never tries to reach the network.
+            if self._cache_has_model():
+                os.environ.setdefault("HF_HUB_OFFLINE", "1")
+                os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
             from sentence_transformers import SentenceTransformer, util  # type: ignore
 
             self._util = util
