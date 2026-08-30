@@ -13,26 +13,47 @@ Electron (הממשק) + Python (הליבה). שני מסלולים אפשריי�
 2. **PyInstaller** — לארוז את `hamenagen.rpc` ל-`hamenagen-backend.exe`
    נפרד, ולהפעיל אותו במקום `python -m hamenagen.rpc`.
 
-מומלץ מסלול (1) לפשטות תחזוקה של התלויות (במיוחד `yt-dlp` שמתעדכן תכופות, §14).
+מומלץ מסלול (1) לפשטות תחזוקה של התלויות (במיוחד `yt-dlp` שמתעדכן תכופות, §14),
+והוא זה שמומש בקוד.
 
-## שלבי בנייה (מסלול Electron portable)
-```bash
+## שלבי בנייה (מסלול Electron portable + Python מוטמע)
+על מכונת **Windows**:
+```powershell
 npm install
-pip install -r requirements.txt          # לתוך ה-Python המוטמע שייארז
-npm run dist                             # electron-builder --win portable
-# פלט: dist/hamenagen-portable-0.1.0.exe
+npm run build:win     # = prepare:win-python  +  dist
+# פלט: dist\hamenagen-portable-0.1.0.exe
 ```
 
-`package.json` כבר כולל:
-* `build.win.target = ["portable"]`
-* `build.extraResources` שמעתיק את `backend/` לתוך ה-EXE.
-* `build.win.icon = assets/icon.ico`.
+`npm run build:win` עושה שני דברים:
+1. `scripts/prepare-win-python.ps1` — מוריד CPython "embeddable" ל-
+   `build/win-python`, מפעיל `import site`, מבצע bootstrap ל-pip, ומתקין את
+   `requirements.txt` לתוכו.
+2. `electron-builder --win portable` — אורז הכול ל-EXE נייד יחיד.
+
+`package.json` כבר מוגדר:
+* `build.win.target = ["portable"]`, `build.win.icon = assets/icon.ico`.
+* `build.extraResources` מעתיק את `backend/` (בלי tests/data) ואת
+  `build/win-python` → `resources/python`.
+
+בזמן ריצה `electron/backend_bridge.js` מזהה אוטומטית את ה-Python המוטמע תחת
+`resources/python` (ונופל ל-`python` שב-PATH בפיתוח).
+
+> הערה: הרצת `npm run dist` **לבד** מצריכה ש-`build/win-python` כבר קיים. לפיתוח
+> מהיר בלי אריזה השתמש ב-`npm start` (משתמש ב-Python המערכתי).
+
+### הטמעת מודל ה-AI בחבילה (רשות)
+כדי לצרף גם את מודל הסיווג לאריזה (עבודה אופליין מלאה כבר מההתקנה):
+```powershell
+build\win-python\python.exe backend\scripts\prepare_model.py --out backend\data\models
+```
+ואז לכלול את `backend/data/models` ב-extraResources, או לספק אותו דרך
+[חבילת האופליין](OFFLINE_PACK.md).
 
 ## אייקון
-מקור: `assets/icon.svg` (מומר ל-`icon.png`). ליצירת `icon.ico` ל-Windows:
+מקור: `assets/icon.svg` → `assets/icon.png` → `assets/icon.ico` (כולם כבר
+במאגר). ליצירה מחדש:
 ```bash
-# דוגמה (דורש ImageMagick):
-magick assets/icon.png -define icon:auto-resize=256,128,64,48,32,16 assets/icon.ico
+python -c "from PIL import Image; Image.open('assets/icon.png').save('assets/icon.ico', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])"
 ```
 
 ## קיצור דרך בשולחן העבודה

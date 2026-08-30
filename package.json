@@ -7,6 +7,8 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win portable",
+    "prepare:win-python": "powershell -ExecutionPolicy Bypass -File scripts/prepare-win-python.ps1",
+    "build:win": "npm run prepare:win-python && npm run dist",
     "test:core": "cd backend && python -m pytest -q"
   },
   "author": "",
@@ -22,7 +24,8 @@
     "directories": { "output": "dist" },
     "files": ["electron/**/*", "assets/**/*"],
     "extraResources": [
-      { "from": "backend", "to": "backend", "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"] }
+      { "from": "backend", "to": "backend", "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc", "!tests/**", "!data/**"] },
+      { "from": "build/win-python", "to": "python", "filter": ["**/*"] }
     ],
     "win": {
       "target": ["portable"],

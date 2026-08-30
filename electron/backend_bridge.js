@@ -12,13 +12,45 @@
  */
 
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
+/**
+ * Resolve which Python interpreter to run and where the backend lives.
+ *
+ * In a packaged build, electron-builder copies `backend/` into
+ * `process.resourcesPath/backend` (see package.json build.extraResources), and
+ * an embedded CPython may be bundled at `resources/python/python(.exe)`. In dev
+ * we just use the repo's `backend/` and the system `python`.
+ */
+function resolveBackend(options) {
+  const packagedResources = process.resourcesPath || '';
+  const packagedBackend = path.join(packagedResources, 'backend');
+  const isPackaged = fs.existsSync(packagedBackend);
+  const backendDir = options.backendDir || (isPackaged ? packagedBackend : path.join(__dirname, '..', 'backend'));
+
+  if (options.pythonPath || process.env.HAMENAGEN_PYTHON) {
+    return { pythonPath: options.pythonPath || process.env.HAMENAGEN_PYTHON, backendDir };
+  }
+  if (isPackaged) {
+    const exe = process.platform === 'win32' ? 'python.exe' : 'python';
+    for (const candidate of [
+      path.join(packagedResources, 'python', exe),
+      path.join(packagedResources, 'python', 'bin', exe),
+    ]) {
+      if (fs.existsSync(candidate)) return { pythonPath: candidate, backendDir };
+    }
+  }
+  // Fall back to system Python on PATH.
+  return { pythonPath: process.platform === 'win32' ? 'python.exe' : 'python3', backendDir };
+}
+
 class BackendBridge {
   constructor(options = {}) {
-    this.pythonPath = options.pythonPath || process.env.HAMENAGEN_PYTHON || 'python';
-    this.backendDir = options.backendDir || path.join(__dirname, '..', 'backend');
+    const resolved = resolveBackend(options);
+    this.pythonPath = resolved.pythonPath;
+    this.backendDir = resolved.backendDir;
     this.proc = null;
     this.rl = null;
     this._nextId = 1;
