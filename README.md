@@ -20,10 +20,13 @@
 | סיווג נושאי היברידי (מילון + Embeddings אופציונלי) | ✅ | `backend/hamenagen/classifier.py`, `topics.py` |
 | לוח עברי + הצעות לפי מועד (אופליין מלא) | ✅ | `backend/hamenagen/hebrew_calendar.py` |
 | מודל נתונים לשיר (§10) | ✅ | `backend/hamenagen/models.py` |
-| השלמה מקוונת (יוטיוב, yt-dlp) — מקור מתחלף | ✅ מבנה | `backend/hamenagen/fetcher.py` |
+| השלמה מקוונת מלאה (יוטיוב, yt-dlp) — חיפוש→בחירה→הורדה→הוספה→הדלקה | ✅ | `backend/hamenagen/fetcher.py`, `service.py` |
+| התקדמות הורדה בזמן אמת (אירועי RPC) | ✅ | `rpc.py`, `electron/backend_bridge.js` |
+| מודל סיווג AI מקומי מחובר (Embeddings) + סיווג לפי מילות שיר | ✅ | `classifier.py`, `scripts/prepare_model.py` |
 | ממשק Electron RTL בעברית + נגן | ✅ | `electron/` |
 | גשר JSON-RPC בין Electron ל-Python | ✅ | `electron/backend_bridge.js`, `backend/hamenagen/rpc.py` |
-| בדיקות יחידה לליבה | ✅ 28 בדיקות | `backend/tests/` |
+| אריזה ל-EXE נייד ל-Windows + Python מוטמע | ✅ | `scripts/prepare-win-python.ps1`, `package.json` |
+| בדיקות יחידה לליבה | ✅ 33 בדיקות | `backend/tests/` |
 | עדכונים, רדיו, חבילת אופליין | 🚧 מתוכנן | ראה [ROADMAP](docs/ARCHITECTURE.md#roadmap) |
 
 ---
@@ -38,6 +41,8 @@ python -m hamenagen.cli scan ~/Music              # בונה אינדקס
 python -m hamenagen.cli ask "תשמיע לי שירים של שבת"
 python -m hamenagen.cli ask "תשמיע אמת של שמוליק סוכות"
 python -m hamenagen.cli suggest                   # הצעה לפי התאריך העברי
+python -m hamenagen.cli classifier                # מצב מודל הסיווג המקומי
+python -m hamenagen.cli reclassify                # סיווג מחדש של כל המאגר
 ```
 
 ### היישום המלא (Electron)
