@@ -27,8 +27,9 @@
 | גשר JSON-RPC בין Electron ל-Python | ✅ | `electron/backend_bridge.js`, `backend/hamenagen/rpc.py` |
 | אריזה ל-EXE נייד ל-Windows + Python מוטמע | ✅ | `scripts/prepare-win-python.ps1`, `package.json` |
 | **רדיו חי — לשונית ערוצי קול חי מיוזיק (HLS)** | ✅ | `backend/hamenagen/radio.py`, `electron/renderer/app.js` |
-| בדיקות יחידה לליבה | ✅ 36 בדיקות | `backend/tests/` |
-| עדכונים, חבילת אופליין | 🚧 מתוכנן | ראה [ROADMAP](docs/ARCHITECTURE.md#roadmap) |
+| **עדכונים (§14) — manifest מרכזי, עדכון yt-dlp/מילון** | ✅ | `backend/hamenagen/updater.py` |
+| **חבילת אופליין (§6.2) — בנייה/אימות/התקנה של `*.pack`** | ✅ | `backend/hamenagen/offline_pack.py` |
+| בדיקות יחידה לליבה | ✅ 41 בדיקות | `backend/tests/` |
 
 ---
 
@@ -65,6 +66,41 @@ cd backend && python -m pytest -q      # 28 passed
 ```
 
 ---
+
+## התקנה ובדיקה מפורטת
+
+### דרישות מקדימות
+- **Node.js 18+** ו-**Python 3.10+**.
+- (אופציונלי) **ffmpeg** — נדרש להמרת אודיו בהורדות מיוטיוב.
+
+### מצב פיתוח (להרצה ובדיקה מהירה)
+```bash
+npm install                       # Electron + hls.js (~300–500MB ל-node_modules)
+pip install -r requirements.txt   # mutagen, rapidfuzz, yt-dlp (~30–60MB)
+npm start                         # מריץ את היישום
+```
+
+### בדיקות
+```bash
+cd backend && python -m pytest -q     # 41 עוברות
+```
+
+### עדכונים וחבילת אופליין
+```bash
+python -m hamenagen.cli update-check                 # דורש שרת עדכונים מוגדר
+python -m hamenagen.cli update-apply ytdlp           # עדכון עצמי של yt-dlp
+python -m hamenagen.cli pack-install assets.pack     # התקנה אופליין
+```
+
+### גדלים משוערים
+| רכיב | גודל |
+|------|------|
+| `node_modules` (פיתוח בלבד) | ~300–500MB |
+| תלויות Python | ~30–60MB |
+| מודל ה-AI (אופציונלי) | ~120–420MB |
+| EXE נייד סופי (Windows, עם Python מוטמע) | ~150–250MB |
+
+לאריזת ה-EXE הנייד ראה [docs/PACKAGING.md](docs/PACKAGING.md).
 
 ## עיצוב לפי עקרונות האפיון
 

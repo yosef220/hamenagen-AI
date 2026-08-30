@@ -38,6 +38,14 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("radio", help="רשימת ערוצי הרדיו החי")
     sub.add_parser("classifier", help="הצג את מצב מודל הסיווג המקומי")
     sub.add_parser("reclassify", help="סווג מחדש את כל השירים במאגר")
+    sub.add_parser("update-check", help="בדוק אם יש עדכונים (דורש רשת)")
+    p_apply = sub.add_parser("update-apply", help="החל עדכון של רכיב")
+    p_apply.add_argument("component", choices=["ytdlp", "lexicon"])
+    p_apply.add_argument("--url", default=None)
+    p_apply.add_argument("--version", default="")
+    sub.add_parser("pack-status", help="מצב חבילת האופליין")
+    p_pack = sub.add_parser("pack-install", help="התקן חבילת אופליין")
+    p_pack.add_argument("file", nargs="?", help="נתיב לקובץ .pack (ריק = סריקה אוטומטית)")
 
     args = parser.parse_args(argv)
     service = PlayerService()
@@ -56,6 +64,14 @@ def main(argv: list[str] | None = None) -> int:
             _print(service.classifier_status())
         elif args.cmd == "reclassify":
             _print(service.reclassify_all())
+        elif args.cmd == "update-check":
+            _print(service.check_updates())
+        elif args.cmd == "update-apply":
+            _print(service.apply_update(args.component, url=args.url, version=args.version))
+        elif args.cmd == "pack-status":
+            _print(service.offline_pack_status())
+        elif args.cmd == "pack-install":
+            _print(service.install_offline_pack(args.file))
     finally:
         service.close()
     return 0

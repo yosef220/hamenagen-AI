@@ -20,6 +20,11 @@ contextBridge.exposeInMainWorld('hamenagen', {
   radioList: (refresh) => invoke('backend:radio_list', { refresh }),
   classifierStatus: () => invoke('backend:classifier_status'),
   reclassify: () => invoke('backend:reclassify'),
+  checkUpdates: () => invoke('backend:check_updates'),
+  applyUpdate: (component, url, version) =>
+    invoke('backend:apply_update', { component, url, version }),
+  offlinePackStatus: () => invoke('backend:offline_pack_status'),
+  installOfflinePack: (path) => invoke('backend:install_offline_pack', { path }),
   getSettings: () => invoke('backend:get_settings'),
   updateSettings: (settings) => invoke('backend:update_settings', { settings }),
   onlineSearch: (query, limit) => invoke('backend:online_search', { query, limit }),

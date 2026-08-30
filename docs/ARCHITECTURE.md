@@ -41,7 +41,8 @@
 | Hebrew Calendar | `backend/hamenagen/hebrew_calendar.py` | אלגוריתם Rata Die, ללא רשת |
 | Online Fetcher | `backend/hamenagen/fetcher.py` | `SourcePlugin` מתחלף; יוטיוב/yt-dlp; הורדה מלאה עם התקדמות |
 | Radio (§13) | `backend/hamenagen/radio.py` | ערוצי קול חי מיוזיק; משיכת `ServerModel.live` + cache + seed; ניגון HLS |
-| Updater | 🚧 | ראה roadmap |
+| Updater (§14) | `backend/hamenagen/updater.py` | manifest מרכזי; עדכון yt-dlp/מילון אוטומטי, אפליקציה/מודל ידני |
+| Offline Pack (§6.2) | `backend/hamenagen/offline_pack.py` | קריאה/אימות (SHA-256)/התקנה + בנייה של `*.pack` |
 | Settings | `backend/hamenagen/settings.py` | JSON נייד, ברירות מחדל לפי §16 |
 
 ## החלטות מפתח
@@ -74,8 +75,10 @@
 * ✅ **אריזה:** EXE נייד ל-Windows + Python מוטמע (ראה [PACKAGING.md](PACKAGING.md)).
 * ✅ **רדיו חי (§13):** לשונית ערוצי "קול חי מיוזיק" — משיכת רשימת הערוצים מ-
   `ServerModel.live`, cache מקומי + seed לאופליין, וניגון HLS (hls.js) בממשק.
-* 🚧 **שלב ד׳ (נותר):** Updater (§14), חבילת אופליין (§6.2, ראה
-  [OFFLINE_PACK.md](OFFLINE_PACK.md)), ובחירה סופית של מודל Embeddings עברי.
+* ✅ **עדכונים (§14):** בדיקת manifest מרכזי, עדכון yt-dlp/מילון אוטומטי.
+* ✅ **חבילת אופליין (§6.2):** בנייה/אימות/התקנה של `*.pack`, זיהוי אוטומטי
+  בהפעלה. ראה [OFFLINE_PACK.md](OFFLINE_PACK.md).
+* 🚧 **נותר לבחירה:** מודל Embeddings עברי סופי + שרת עדכונים של הארגון.
 
 ## נקודות פתוחות מהאפיון (§19) שנוגעות לקוד
 

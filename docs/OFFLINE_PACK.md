@@ -1,8 +1,20 @@
-# חבילת אופליין — פורמט מוצע (אפיון §6.2, §19.7)
+# חבילת אופליין — פורמט (אפיון §6.2, §19.7)
 
-מסמך זה מגדיר טיוטה לפורמט קובץ החבילה (`assets.pack`) שמאפשר התקנה ראשונה
-של המודולים והתלויות **ללא אינטרנט**. זו נקודת אפיון פתוחה — הפורמט כאן הוא
-הצעה למימוש בשלב ד׳.
+מסמך זה מגדיר את פורמט קובץ החבילה (`assets.pack`) שמאפשר התקנה ראשונה של
+המודולים והתלויות **ללא אינטרנט**. הפורמט **מומש** ב-`backend/hamenagen/offline_pack.py`
+(קריאה, אימות SHA-256, התקנה ובנייה), עם בדיקות ב-`backend/tests/test_updates.py`.
+
+**שימוש מהיר:**
+```bash
+# בניית חבילה (על מכונה עם המודולים):
+python backend/scripts/build_pack.py assets.pack \
+    model:embed-he-mini=./data/models/model.bin \
+    lexicon:topics-lexicon=./topics.json
+
+# התקנה (הנח את assets.pack בתיקיית התוכנה — יזוהה אוטומטית בהפעלה, או:)
+python -m hamenagen.cli pack-install assets.pack
+python -m hamenagen.cli pack-status
+```
 
 ## דרישות
 * קובץ **בודד** שהמשתמש מניח בתיקיית התוכנה.

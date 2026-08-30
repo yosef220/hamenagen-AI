@@ -57,6 +57,8 @@ class Settings:
     classify_by_lyrics: bool = True
     # Managed radio source (spec §13). Default: Kol Chai Music live channels.
     radio_list_url: str = "https://kcm.fm/Live/"
+    # Update manifest URL (spec §14). Org-provided; empty disables update checks.
+    update_manifest_url: str = ""
 
     @classmethod
     def load(cls, path: str | Path) -> "Settings":

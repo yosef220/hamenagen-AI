@@ -56,6 +56,22 @@ class RpcServer:
     def rpc_radio_list(self, params):
         return self.service.radio_list(refresh=params.get("refresh", True))
 
+    def rpc_check_updates(self, params):
+        return self.service.check_updates()
+
+    def rpc_apply_update(self, params):
+        return self.service.apply_update(
+            params.get("component", ""),
+            url=params.get("url"),
+            version=params.get("version", ""),
+        )
+
+    def rpc_offline_pack_status(self, params):
+        return self.service.offline_pack_status()
+
+    def rpc_install_offline_pack(self, params):
+        return self.service.install_offline_pack(params.get("path"))
+
     def rpc_classifier_status(self, params):
         return self.service.classifier_status()
 

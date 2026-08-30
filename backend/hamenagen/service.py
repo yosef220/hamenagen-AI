@@ -21,9 +21,11 @@ from .hebrew_calendar import detect_occasion, from_gregorian
 from .index_db import MusicIndex
 from .intent import Action, Intent
 from .models import Track
+from .offline_pack import PackError, find_packs, install_pack
 from .radio import RadioProvider
 from .scanner import read_sidecar_lyrics, scan_file, scan_roots
 from .settings import Settings, default_data_dir
+from .updater import Updater
 
 
 class PlayerService:
@@ -41,6 +43,12 @@ class PlayerService:
             self.settings.radio_list_url,
             cache_path=self.data_dir / "radio_cache.json",
         )
+        self.updater = Updater(self.settings.update_manifest_url, self.data_dir)
+        # First-run offline install: pick up any *.pack sitting next to the app.
+        try:
+            self._auto_install_packs()
+        except Exception:
+            pass
 
     def _build_backend(self) -> EmbeddingBackend | None:
         if not self.settings.use_embeddings:
@@ -197,6 +205,61 @@ class PlayerService:
     # -- radio (spec §13) --------------------------------------------------
     def radio_list(self, *, refresh: bool = True) -> dict:
         return self.radio.list(refresh=refresh)
+
+    # -- updates (spec §14) ------------------------------------------------
+    def check_updates(self) -> dict:
+        if not self.settings.auto_update and not self.settings.update_manifest_url:
+            return {"online": False, "reason": "auto-update disabled", "updates": []}
+        return self.updater.check()
+
+    def apply_update(self, component: str, *, url: str | None = None, version: str = "") -> dict:
+        return self.updater.apply(component, url=url, version=version)
+
+    # -- offline pack (spec §6.2) -----------------------------------------
+    def _app_root(self) -> Path:
+        return Path(__file__).resolve().parents[2]
+
+    def _installed_pack_names(self) -> set[str]:
+        marker = self.data_dir / "installed_packs.json"
+        if not marker.exists():
+            return set()
+        try:
+            return {r.get("pack") for r in json.loads(marker.read_text(encoding="utf-8"))}
+        except Exception:
+            return set()
+
+    def offline_pack_status(self) -> dict:
+        # Look for packs next to the app and in the data dir.
+        found = find_packs(self._app_root()) + find_packs(self.data_dir)
+        names = sorted({p.name for p in found})
+        installed = self._installed_pack_names()
+        return {
+            "available": names,
+            "installed": sorted(n for n in installed if n),
+            "pending": [n for n in names if n not in installed],
+        }
+
+    def _auto_install_packs(self) -> list[dict]:
+        installed = self._installed_pack_names()
+        results = []
+        for pack in find_packs(self._app_root()) + find_packs(self.data_dir):
+            if pack.name in installed:
+                continue
+            try:
+                results.append(install_pack(pack, self.data_dir))
+                installed.add(pack.name)
+            except PackError:
+                continue
+        return results
+
+    def install_offline_pack(self, path: str | None = None) -> dict:
+        if path:
+            try:
+                return install_pack(path, self.data_dir)
+            except PackError as exc:
+                return {"ok": False, "message": str(exc)}
+        results = self._auto_install_packs()
+        return {"ok": True, "installed_packs": results, "count": len(results)}
 
     # -- time-based suggestion (spec §7) ----------------------------------
     def opening_suggestion(self, on: date | None = None) -> dict | None:

@@ -297,6 +297,41 @@ el('settings-form').addEventListener('submit', async (e) => {
   }
 });
 
+// -- updates + offline pack (spec §14, §6.2) -------------------------------
+el('btn-check-updates').addEventListener('click', async () => {
+  const box = el('updates-status');
+  box.textContent = 'בודק עדכונים…';
+  const res = await api.checkUpdates();
+  if (!res.ok) { box.textContent = 'שגיאה: ' + res.error; return; }
+  const data = res.result;
+  if (!data.online) {
+    box.textContent = 'לא ניתן לבדוק עדכונים כעת (אין רשת או לא הוגדר שרת עדכונים).';
+    return;
+  }
+  if (!data.updates.length) { box.textContent = 'הכול מעודכן ✓'; return; }
+  const names = data.updates.map((u) => `${u.component} → ${u.latest}`).join(', ');
+  box.textContent = `עדכונים זמינים: ${names}`;
+  // Apply the auto-updatable ones (e.g. yt-dlp, lexicon).
+  for (const u of data.updates.filter((x) => x.action === 'auto')) {
+    box.textContent = `מעדכן ${u.component}…`;
+    const ap = await api.applyUpdate(u.component, u.url, u.latest);
+    box.textContent = ap.ok && ap.result.ok
+      ? `${u.component} עודכן ✓`
+      : `עדכון ${u.component} נכשל: ${(ap.result && ap.result.message) || ap.error}`;
+  }
+});
+
+el('btn-install-pack').addEventListener('click', async () => {
+  const box = el('updates-status');
+  box.textContent = 'מחפש חבילת אופליין…';
+  const res = await api.installOfflinePack(null);
+  if (!res.ok) { box.textContent = 'שגיאה: ' + res.error; return; }
+  const r = res.result;
+  box.textContent = r.count
+    ? `הותקנו ${r.count} חבילות אופליין ✓`
+    : 'לא נמצאה חבילת אופליין חדשה בתיקיית התוכנה.';
+});
+
 el('nav-settings').addEventListener('click', openSettings);
 el('nav-rescan').addEventListener('click', async () => {
   setStatus('סורק את המאגר…');
