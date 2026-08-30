@@ -1,0 +1,67 @@
+name: Build Windows Portable EXE
+
+# Builds the portable Windows .exe in the cloud (no local dev setup needed).
+# You can trigger it manually from the Actions tab ("Run workflow"), and it
+# also runs on pushes to the feature branch. The finished .exe is uploaded
+# both as a downloadable build artifact and attached to a pre-release.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - claude/smart-community-music-player-1jcyxh
+    paths:
+      - 'electron/**'
+      - 'backend/**'
+      - 'assets/**'
+      - 'package.json'
+      - 'scripts/**'
+      - '.github/workflows/build-windows.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Prepare embedded Python (+ backend deps)
+        run: npm run prepare:win-python
+
+      - name: Build portable EXE
+        run: npm run dist
+
+      - name: List build output
+        shell: pwsh
+        run: Get-ChildItem dist
+
+      - name: Upload EXE as build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hamenagen-portable-windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+      - name: Publish pre-release with the EXE
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: portable-latest
+          name: המנגן — גרסה ניידת (בנייה אחרונה)
+          body: |
+            קובץ הפעלה נייד ל-Windows של "המנגן" — נגן מוזיקה קהילתי חכם.
+            הורידו את קובץ ה-.exe מהרשימה למטה והריצו אותו (אין צורך בהתקנה).
+          prerelease: true
+          files: dist/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -13,7 +13,7 @@
     "build:win": "npm run prepare:win-python && npm run dist",
     "test:core": "cd backend && python -m pytest -q"
   },
-  "author": "",
+  "author": "hamenagen",
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
