@@ -21,6 +21,7 @@ from .hebrew_calendar import detect_occasion, from_gregorian
 from .index_db import MusicIndex
 from .intent import Action, Intent
 from .models import Track
+from .radio import RadioProvider
 from .scanner import read_sidecar_lyrics, scan_file, scan_roots
 from .settings import Settings, default_data_dir
 
@@ -36,6 +37,10 @@ class PlayerService:
         self.classifier = HybridClassifier(backend)
         self.fetcher = OnlineFetcher()
         self.downloads_dir = self.data_dir / "downloads"
+        self.radio = RadioProvider(
+            self.settings.radio_list_url,
+            cache_path=self.data_dir / "radio_cache.json",
+        )
 
     def _build_backend(self) -> EmbeddingBackend | None:
         if not self.settings.use_embeddings:
@@ -188,6 +193,10 @@ class PlayerService:
         if tracks:
             return tracks, f"תוצאות חיפוש עבור: {query}"
         return [], "לא נמצא שיר מתאים במאגר המקומי."
+
+    # -- radio (spec §13) --------------------------------------------------
+    def radio_list(self, *, refresh: bool = True) -> dict:
+        return self.radio.list(refresh=refresh)
 
     # -- time-based suggestion (spec §7) ----------------------------------
     def opening_suggestion(self, on: date | None = None) -> dict | None:

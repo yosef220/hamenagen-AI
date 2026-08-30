@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('hamenagen', {
   ask: (text) => invoke('backend:handle_request', { text }),
   rescan: (roots) => invoke('backend:rescan', { roots }),
   openingSuggestion: () => invoke('backend:opening_suggestion'),
+  radioList: (refresh) => invoke('backend:radio_list', { refresh }),
   classifierStatus: () => invoke('backend:classifier_status'),
   reclassify: () => invoke('backend:reclassify'),
   getSettings: () => invoke('backend:get_settings'),

@@ -26,8 +26,9 @@
 | ממשק Electron RTL בעברית + נגן | ✅ | `electron/` |
 | גשר JSON-RPC בין Electron ל-Python | ✅ | `electron/backend_bridge.js`, `backend/hamenagen/rpc.py` |
 | אריזה ל-EXE נייד ל-Windows + Python מוטמע | ✅ | `scripts/prepare-win-python.ps1`, `package.json` |
-| בדיקות יחידה לליבה | ✅ 33 בדיקות | `backend/tests/` |
-| עדכונים, רדיו, חבילת אופליין | 🚧 מתוכנן | ראה [ROADMAP](docs/ARCHITECTURE.md#roadmap) |
+| **רדיו חי — לשונית ערוצי קול חי מיוזיק (HLS)** | ✅ | `backend/hamenagen/radio.py`, `electron/renderer/app.js` |
+| בדיקות יחידה לליבה | ✅ 36 בדיקות | `backend/tests/` |
+| עדכונים, חבילת אופליין | 🚧 מתוכנן | ראה [ROADMAP](docs/ARCHITECTURE.md#roadmap) |
 
 ---
 

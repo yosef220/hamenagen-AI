@@ -49,6 +49,7 @@ const FORWARD = [
   'handle_request',
   'rescan',
   'opening_suggestion',
+  'radio_list',
   'classifier_status',
   'reclassify',
   'get_settings',

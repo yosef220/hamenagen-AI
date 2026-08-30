@@ -16,6 +16,8 @@ const audio = el('audio');
 // Current playback queue.
 let queue = [];
 let current = -1;
+// Active hls.js instance for radio streams (null when not streaming).
+let hls = null;
 
 // -- helpers ---------------------------------------------------------------
 function setStatus(text) {
@@ -65,8 +67,17 @@ function highlightPlaying() {
 }
 
 // -- playback --------------------------------------------------------------
+function stopHls() {
+  if (hls) {
+    try { hls.destroy(); } catch { /* ignore */ }
+    hls = null;
+  }
+}
+
 function playAt(index) {
   if (index < 0 || index >= queue.length) return;
+  stopHls();
+  clearStationHighlight();
   current = index;
   const track = queue[index];
   if (track.is_video) {
@@ -105,6 +116,7 @@ audio.volume = 0.9;
 // -- the request flow (§8) -------------------------------------------------
 async function ask(text) {
   if (!text.trim()) return;
+  showRadio(false);
   setStatus('מחפש…');
   const res = await api.ask(text);
   if (!res.ok) { setStatus('שגיאה: ' + res.error); return; }
@@ -306,6 +318,83 @@ async function loadSuggestion() {
 el('suggestion-dismiss').addEventListener('click', () =>
   el('suggestion').classList.add('hidden')
 );
+
+// -- radio (spec §13) ------------------------------------------------------
+function showRadio(show) {
+  el('radio-panel').classList.toggle('hidden', !show);
+  el('results').classList.toggle('hidden', show);
+}
+
+function clearStationHighlight() {
+  document.querySelectorAll('.station.playing').forEach((s) => s.classList.remove('playing'));
+}
+
+async function loadRadio() {
+  showRadio(true);
+  el('radio-status').textContent = 'טוען ערוצים…';
+  el('radio-grid').innerHTML = '';
+  const res = await api.radioList(true);
+  if (!res.ok) { el('radio-status').textContent = 'שגיאה: ' + res.error; return; }
+  const data = res.result;
+  el('radio-status').textContent = data.online
+    ? `מחובר — ${data.count} ערוצים`
+    : `מצב לא-מקוון — מציג רשימה שמורה (${data.count})`;
+  renderStations(data.stations);
+}
+
+function renderStations(stations) {
+  const grid = el('radio-grid');
+  grid.innerHTML = '';
+  stations.forEach((st) => {
+    const card = document.createElement('button');
+    card.className = 'station';
+    card.type = 'button';
+    const img = st.image_url
+      ? `<img src="${st.image_url}" alt="" loading="lazy" onerror="this.style.visibility='hidden'" />`
+      : '<div class="st-icon">📻</div>';
+    card.innerHTML = `
+      ${img}
+      <div class="st-meta">
+        <div class="st-title"></div>
+        <div class="st-sub"></div>
+      </div>
+      <span class="st-play">▶</span>`;
+    card.querySelector('.st-title').textContent = st.title;
+    card.querySelector('.st-sub').textContent = st.now_playing || st.description || '';
+    card.addEventListener('click', () => {
+      clearStationHighlight();
+      card.classList.add('playing');
+      playStream(st);
+    });
+    grid.appendChild(card);
+  });
+}
+
+function playStream(station) {
+  stopHls();
+  current = -1;
+  const url = station.url;
+  const isHls = /\.m3u8(\?|$)/i.test(url);
+  if (isHls && window.Hls && window.Hls.isSupported()) {
+    hls = new window.Hls();
+    hls.loadSource(url);
+    hls.attachMedia(audio);
+    hls.on(window.Hls.Events.MANIFEST_PARSED, () => audio.play().catch(() => {}));
+    hls.on(window.Hls.Events.ERROR, (_e, data) => {
+      if (data && data.fatal) setStatus('שגיאת שידור: ' + station.title);
+    });
+  } else {
+    // Non-HLS stream, or native HLS support (rare on desktop Chromium).
+    audio.src = url;
+    audio.play().catch((e) => setStatus('לא ניתן לנגן את הערוץ: ' + e.message));
+  }
+  el('np-title').textContent = station.title;
+  el('np-artist').textContent = station.now_playing || 'רדיו חי';
+  el('player-bar').classList.remove('hidden');
+  el('btn-play').textContent = '⏸';
+}
+
+el('nav-radio').addEventListener('click', loadRadio);
 
 // -- boot ------------------------------------------------------------------
 window.addEventListener('DOMContentLoaded', () => {

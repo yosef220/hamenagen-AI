@@ -40,6 +40,7 @@
 | Fuzzy Matcher | `backend/hamenagen/fuzzy.py` | token-set + ordered ratio, רב-שדות |
 | Hebrew Calendar | `backend/hamenagen/hebrew_calendar.py` | אלגוריתם Rata Die, ללא רשת |
 | Online Fetcher | `backend/hamenagen/fetcher.py` | `SourcePlugin` מתחלף; יוטיוב/yt-dlp; הורדה מלאה עם התקדמות |
+| Radio (§13) | `backend/hamenagen/radio.py` | ערוצי קול חי מיוזיק; משיכת `ServerModel.live` + cache + seed; ניגון HLS |
 | Updater | 🚧 | ראה roadmap |
 | Settings | `backend/hamenagen/settings.py` | JSON נייד, ברירות מחדל לפי §16 |
 
@@ -71,8 +72,10 @@
 * ✅ **שלב ג׳:** מימוש מלא של הורדות yt-dlp כולל התקדמות בזמן אמת, הוספה
   לאינדקס והדלקה אוטומטית (§11); טיפול בשגיאות מקור (חסום/הוסר/גיל/ffmpeg).
 * ✅ **אריזה:** EXE נייד ל-Windows + Python מוטמע (ראה [PACKAGING.md](PACKAGING.md)).
-* 🚧 **שלב ד׳ (נותר):** Updater (§14), רדיו מנוהל (§13), חבילת אופליין (§6.2,
-  ראה [OFFLINE_PACK.md](OFFLINE_PACK.md)), ובחירה סופית של מודל Embeddings עברי.
+* ✅ **רדיו חי (§13):** לשונית ערוצי "קול חי מיוזיק" — משיכת רשימת הערוצים מ-
+  `ServerModel.live`, cache מקומי + seed לאופליין, וניגון HLS (hls.js) בממשק.
+* 🚧 **שלב ד׳ (נותר):** Updater (§14), חבילת אופליין (§6.2, ראה
+  [OFFLINE_PACK.md](OFFLINE_PACK.md)), ובחירה סופית של מודל Embeddings עברי.
 
 ## נקודות פתוחות מהאפיון (§19) שנוגעות לקוד
 

@@ -3,9 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Scripts stay locked to the app itself; media/images/segment fetches
+         are allowed over https so live radio streams (HLS) and station
+         artwork from the managed source can load. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' file:; img-src 'self' data:;"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' file: blob: https:; connect-src 'self' https:;"
     />
     <title>המנגן — נגן מוזיקה קהילתי חכם</title>
     <link rel="stylesheet" href="styles.css" />
@@ -39,6 +42,7 @@
           <button class="chip" data-ask="תשמיע את השירים האחרונים שהורדתי">אחרונים שהורדתי</button>
           <button class="chip" data-ask="תשמיע את השירים האחרונים שיצאו">אחרונים שיצאו</button>
           <button class="chip" data-ask="תשמיע משהו אקראי">אקראי</button>
+          <button class="chip" id="nav-radio">📻 רדיו — קול חי</button>
           <button class="chip" id="nav-rescan">סרוק מאגר</button>
           <button class="chip" id="nav-settings">הגדרות</button>
         </nav>
@@ -47,6 +51,13 @@
       <main>
         <div id="status" class="status" aria-live="polite"></div>
         <ol id="results" class="results"></ol>
+        <section id="radio-panel" class="radio-panel hidden">
+          <div class="radio-head">
+            <h2>ערוצי רדיו חי — קול חי מיוזיק</h2>
+            <span id="radio-status" class="radio-status"></span>
+          </div>
+          <div id="radio-grid" class="radio-grid"></div>
+        </section>
       </main>
 
       <!-- Bottom player bar (spec §12) -->
@@ -109,6 +120,9 @@
         </div>
       </dialog>
     </div>
+    <!-- HLS playback for .m3u8 radio streams. Vendored on `npm install`
+         (scripts/copy-vendor.js); the app degrades gracefully if absent. -->
+    <script src="vendor/hls.min.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

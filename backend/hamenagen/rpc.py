@@ -53,6 +53,9 @@ class RpcServer:
     def rpc_opening_suggestion(self, params):
         return self.service.opening_suggestion()
 
+    def rpc_radio_list(self, params):
+        return self.service.radio_list(refresh=params.get("refresh", True))
+
     def rpc_classifier_status(self, params):
         return self.service.classifier_status()
 

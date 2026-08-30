@@ -55,8 +55,8 @@ class Settings:
     embedding_threshold: float = 0.45
     # Also feed song lyrics (from a sibling .lrc/.txt file) to the classifier.
     classify_by_lyrics: bool = True
-    # Managed radio-station list URL (spec §13).
-    radio_list_url: str = ""
+    # Managed radio source (spec §13). Default: Kol Chai Music live channels.
+    radio_list_url: str = "https://kcm.fm/Live/"
 
     @classmethod
     def load(cls, path: str | Path) -> "Settings":

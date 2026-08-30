@@ -112,6 +112,26 @@ main { flex: 1; overflow-y: auto; padding: 8px 24px 20px; }
   color: #c9bcff;
 }
 
+/* Radio panel */
+.radio-panel { max-width: 980px; margin: 0 auto; }
+.radio-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 4px 4px 14px; }
+.radio-head h2 { margin: 0; font-size: 20px; }
+.radio-status { font-size: 13px; color: var(--muted); }
+.radio-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.station {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: var(--bg-card); border: 1px solid #2c2d47;
+  border-radius: var(--radius); cursor: pointer; text-align: right;
+}
+.station:hover { border-color: var(--accent); }
+.station.playing { border-color: var(--accent-2); background: #262a44; }
+.station img { width: 46px; height: 46px; border-radius: 10px; object-fit: cover; background: #2c2d47; flex: none; }
+.station .st-icon { width: 46px; height: 46px; border-radius: 10px; background: #2c2d47; display: flex; align-items: center; justify-content: center; font-size: 22px; flex: none; }
+.station .st-meta { min-width: 0; flex: 1; }
+.station .st-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.station .st-sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.station .st-play { font-size: 18px; color: var(--accent); flex: none; }
+
 /* Player bar */
 .player-bar {
   display: grid;
