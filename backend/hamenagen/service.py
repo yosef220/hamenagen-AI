@@ -65,20 +65,31 @@ class PlayerService:
             return self.settings.scan_roots
         return [str(Path.home())]  # sensible default; the UI can widen this
 
-    def rescan(self, roots: list[str] | None = None) -> dict:
-        """Scan the configured roots, refresh the index and classify songs."""
+    def rescan(self, roots: list[str] | None = None, index: MusicIndex | None = None) -> dict:
+        """Scan the configured roots, refresh the index and classify songs.
+
+        Pass ``index`` to write through a caller-owned connection. When called
+        from a background thread, leave it ``None`` — SQLite connections are
+        bound to one thread, so we open a fresh connection to the same DB file
+        (WAL mode lets the UI keep reading meanwhile).
+        """
         use_roots = roots or self._roots()
-        seen: set[str] = set()
-        added = 0
-        for track in scan_roots(use_roots, include_video=self.settings.include_video):
-            seen.add(track.id)
-            existing = self.index.get(track.id)
-            if existing is None:
-                self._classify_track(track)
-                self.index.upsert(track)
-                added += 1
-        removed = self.index.delete_missing(seen)
-        return {"scanned_roots": use_roots, "added": added, "removed": removed, "total": self.index.count()}
+        own = index is None
+        idx = index or MusicIndex(self.data_dir / "library.db")
+        try:
+            seen: set[str] = set()
+            added = 0
+            for track in scan_roots(use_roots, include_video=self.settings.include_video):
+                seen.add(track.id)
+                if idx.get(track.id) is None:
+                    self._classify_track(track)
+                    idx.upsert(track)
+                    added += 1
+            removed = idx.delete_missing(seen)
+            return {"scanned_roots": use_roots, "added": added, "removed": removed, "total": idx.count()}
+        finally:
+            if own:
+                idx.close()
 
     def _classify_track(self, track: Track) -> Track:
         lyrics = ""

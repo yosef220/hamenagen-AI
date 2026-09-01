@@ -48,6 +48,7 @@ const FORWARD = [
   'ping',
   'handle_request',
   'rescan',
+  'rescan_async',
   'opening_suggestion',
   'radio_list',
   'classifier_status',

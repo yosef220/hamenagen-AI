@@ -24,14 +24,22 @@ from .service import PlayerService
 
 class RpcServer:
     def __init__(self) -> None:
+        import threading
+
         self.service = PlayerService()
         self.fetcher = self.service.fetcher
         self._out = sys.stdout  # set for real in serve(); used by progress hook
+        self._write_lock = threading.Lock()  # serialize stdout across threads
+
+    def _write(self, obj: dict) -> None:
+        line = json.dumps(obj, ensure_ascii=False) + "\n"
+        with self._write_lock:
+            self._out.write(line)
+            self._out.flush()
 
     def _emit(self, event: str, payload: dict) -> None:
         """Push an out-of-band notification (no id) to the client, e.g. progress."""
-        self._out.write(json.dumps({"event": event, **payload}, ensure_ascii=False) + "\n")
-        self._out.flush()
+        self._write({"event": event, **payload})
 
     # Each handler takes a params dict and returns a JSON-serialisable value.
     def _dispatch(self, method: str, params: dict[str, Any]) -> Any:
@@ -49,6 +57,31 @@ class RpcServer:
 
     def rpc_rescan(self, params):
         return self.service.rescan(params.get("roots"))
+
+    def rpc_rescan_async(self, params):
+        """Start a library scan on a background thread so the UI never freezes.
+
+        Emits {"event":"scan_done", ...} when finished. Ignores overlapping
+        requests while a scan is already running.
+        """
+        import threading
+
+        if getattr(self, "_scanning", False):
+            return {"started": False, "reason": "already scanning"}
+        self._scanning = True
+        roots = params.get("roots")
+
+        def worker():
+            try:
+                result = self.service.rescan(roots)  # own connection (new thread)
+                self._emit("scan_done", result)
+            except Exception as exc:  # noqa: BLE001
+                self._emit("scan_done", {"error": str(exc)})
+            finally:
+                self._scanning = False
+
+        threading.Thread(target=worker, daemon=True).start()
+        return {"started": True}
 
     def rpc_opening_suggestion(self, params):
         return self.service.opening_suggestion()
@@ -151,8 +184,7 @@ class RpcServer:
                     "error": str(exc),
                     "trace": traceback.format_exc(),
                 }
-            stdout.write(json.dumps(out, ensure_ascii=False) + "\n")
-            stdout.flush()
+            self._write(out)
 
 
 def main() -> None:

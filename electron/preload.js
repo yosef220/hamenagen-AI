@@ -9,13 +9,20 @@
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
+const { pathToFileURL } = require('url');
 
 const invoke = (channel, params) => ipcRenderer.invoke(channel, params);
 
 contextBridge.exposeInMainWorld('hamenagen', {
   ping: () => invoke('backend:ping'),
+  // Build a correct file:// URL for a local path (handles Windows drive
+  // letters, backslashes and Hebrew/spaced filenames) for the <audio> element.
+  fileUrl: (p) => {
+    try { return pathToFileURL(p).href; } catch { return ''; }
+  },
   ask: (text) => invoke('backend:handle_request', { text }),
   rescan: (roots) => invoke('backend:rescan', { roots }),
+  rescanAsync: (roots) => invoke('backend:rescan_async', { roots }),
   openingSuggestion: () => invoke('backend:opening_suggestion'),
   radioList: (refresh) => invoke('backend:radio_list', { refresh }),
   classifierStatus: () => invoke('backend:classifier_status'),

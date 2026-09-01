@@ -48,6 +48,15 @@ class MusicIndex:
         self.db_path = str(db_path)
         self._conn = sqlite3.connect(self.db_path)
         self._conn.row_factory = sqlite3.Row
+        # WAL lets a background scan (separate connection) write while the UI
+        # reads, so scanning never freezes playback/search. A busy timeout
+        # avoids "database is locked" under that concurrency.
+        if self.db_path != ":memory:":
+            try:
+                self._conn.execute("PRAGMA journal_mode=WAL")
+                self._conn.execute("PRAGMA busy_timeout=5000")
+            except sqlite3.Error:
+                pass
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
 

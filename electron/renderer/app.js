@@ -32,9 +32,16 @@ function fmtTime(sec) {
 }
 
 function fileUrl(path) {
-  // Encode a local path into a file:// URL usable by <audio>.
-  const normalized = path.replace(/\\/g, '/');
-  return 'file://' + normalized.split('/').map(encodeURIComponent).join('/');
+  // Prefer the main-process url.pathToFileURL (correct for Windows drive
+  // letters, backslashes and Hebrew/spaced names); fall back to a manual build.
+  if (api && typeof api.fileUrl === 'function') {
+    const u = api.fileUrl(path);
+    if (u) return u;
+  }
+  let s = path.replace(/\\/g, '/');
+  let encoded = s.split('/').map(encodeURIComponent).join('/');
+  encoded = encoded.replace(/^([A-Za-z])%3A\//, '$1:/'); // restore "C:/"
+  return s.startsWith('/') ? 'file://' + encoded : 'file:///' + encoded;
 }
 
 // -- rendering results -----------------------------------------------------
@@ -124,6 +131,7 @@ async function ask(text) {
   queue = data.tracks;
   current = -1;
   renderResults(queue);
+  updateListActions();
   setStatus(data.note + (data.count ? ` (${data.count})` : ''));
   if (data.found_local && queue.length) {
     playAt(0);
@@ -132,6 +140,28 @@ async function ask(text) {
     offerOnline(text);
   }
 }
+
+// Show "play in order / shuffle" when there is a list to act on.
+function updateListActions() {
+  el('list-actions').classList.toggle('hidden', queue.length < 2);
+}
+
+function shuffleQueue() {
+  for (let i = queue.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [queue[i], queue[j]] = [queue[j], queue[i]];
+  }
+}
+
+el('btn-play-order').addEventListener('click', () => {
+  if (queue.length) playAt(0);
+});
+el('btn-play-shuffle').addEventListener('click', () => {
+  if (!queue.length) return;
+  shuffleQueue();
+  renderResults(queue);
+  playAt(0);
+});
 
 el('ask-form').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -333,12 +363,27 @@ el('btn-install-pack').addEventListener('click', async () => {
 });
 
 el('nav-settings').addEventListener('click', openSettings);
-el('nav-rescan').addEventListener('click', async () => {
-  setStatus('סורק את המאגר…');
-  const res = await api.rescan();
-  if (res.ok) setStatus(`הסריקה הושלמה: ${res.result.total} שירים במאגר (נוספו ${res.result.added}).`);
-  else setStatus('שגיאה בסריקה: ' + res.error);
+// Background scan — never blocks the UI (spec §9). Runs on startup and on the
+// manual button; results/index refresh when the "scan_done" event arrives.
+let scanning = false;
+
+async function startBackgroundScan(announce) {
+  if (scanning) return;
+  const res = await api.rescanAsync();
+  if (res.ok && res.result.started) {
+    scanning = true;
+    if (announce) setStatus('סורק את המאגר ברקע… אפשר להמשיך להשתמש');
+  }
+}
+
+api.onBackendEvent((msg) => {
+  if (msg.event !== 'scan_done') return;
+  scanning = false;
+  if (msg.error) { setStatus('שגיאה בסריקה: ' + msg.error); return; }
+  setStatus(`המאגר עודכן: ${msg.total} שירים (נוספו ${msg.added}).`);
 });
+
+el('nav-rescan').addEventListener('click', () => startBackgroundScan(true));
 
 // -- opening suggestion (§7) ----------------------------------------------
 async function loadSuggestion() {
@@ -358,6 +403,7 @@ el('suggestion-dismiss').addEventListener('click', () =>
 function showRadio(show) {
   el('radio-panel').classList.toggle('hidden', !show);
   el('results').classList.toggle('hidden', show);
+  if (show) el('list-actions').classList.add('hidden');
 }
 
 function clearStationHighlight() {
@@ -455,4 +501,7 @@ window.addEventListener('DOMContentLoaded', () => {
   initTheme();
   loadSuggestion();
   el('ask-input').focus();
+  // Auto-scan the library in the background on every launch (spec §9), so the
+  // catalogue stays fresh without the user ever pressing "scan".
+  startBackgroundScan(false);
 });
