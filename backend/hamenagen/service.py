@@ -117,6 +117,18 @@ class PlayerService:
         st["enabled"] = True
         return st
 
+    def install_model(self) -> dict:
+        """Ensure the local AI model is downloaded (first-run install, spec §6.1).
+
+        Loading the backend downloads the model once when online; afterwards it
+        is used offline. Safe to call repeatedly — it no-ops once installed.
+        """
+        backend = self.classifier.embedding
+        if backend is None:
+            return {"ok": False, "reason": "embeddings disabled", **self.classifier_status()}
+        ok = backend.load()
+        return {"ok": ok, **self.classifier_status()}
+
     def reclassify_all(self) -> dict:
         """Re-run classification over every indexed track (e.g. after enabling
         embeddings or updating the lexicon). Returns how many changed."""

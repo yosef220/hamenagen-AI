@@ -34,12 +34,13 @@ class Classification:
 
 
 class EmbeddingBackend:
-    """Optional local-embedding topic backend.
+    """Optional local-embedding topic backend (light ONNX via fastembed).
 
-    Tries to load a small ``sentence-transformers`` model lazily. If the
-    package or model is unavailable, :attr:`available` stays ``False`` and
-    :meth:`classify` returns ``None`` — the hybrid classifier then just falls
-    through, so nothing breaks offline.
+    Loads a small multilingual ONNX model lazily (no PyTorch), downloading it
+    once on first run with a network and using it offline thereafter. If
+    fastembed or the model is unavailable, :attr:`available` stays ``False``
+    and :meth:`classify` returns ``None`` — the hybrid classifier then falls
+    through to the curated lexicon, so nothing breaks offline.
     """
 
     #: A short natural-language "prototype" per topic. Similarity is measured
@@ -59,16 +60,21 @@ class EmbeddingBackend:
 
     def __init__(
         self,
-        model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        model_name: str = "intfloat/multilingual-e5-small",
         *,
-        threshold: float = 0.45,
+        threshold: float = 0.82,
         cache_dir: str | None = None,
     ):
+        import threading
+
         self.model_name = model_name
         self.threshold = threshold
         self.cache_dir = cache_dir
         self._model = None
-        self._proto_vecs: dict[str, "object"] = {}
+        self._proto = None          # (topics, dim) L2-normalised prototype matrix
+        self._proto_keys: list[str] = []
+        self._np = None
+        self._lock = threading.Lock()  # serialize the (one-time) model download
         self.available = False
         self.load_error: str | None = None
 
@@ -78,44 +84,61 @@ class EmbeddingBackend:
         try:
             from pathlib import Path as _P
 
-            return any(_P(self.cache_dir).glob("models--*"))
+            return any(_P(self.cache_dir).glob("models--*")) or any(
+                _P(self.cache_dir).rglob("*.onnx")
+            )
         except Exception:
             return False
 
+    def _prefix(self, text: str) -> str:
+        # The e5 family expects a short instruction prefix.
+        return "query: " + text
+
     def load(self) -> bool:
+        """Load the local ONNX embedding model, downloading it once if needed.
+
+        Uses fastembed (onnxruntime) — light (~50MB of libs) and no PyTorch.
+        The first call with a network connection downloads a small model
+        (~120MB) into ``cache_dir``; afterwards it runs fully offline.
+        """
         if self._model is not None:
             return True
-        try:  # pragma: no cover - depends on optional heavy dependency
-            import os
+        with self._lock:  # another thread may have loaded it while we waited
+            if self._model is not None:
+                return True
+            try:  # pragma: no cover - depends on optional dependency + download
+                import os
 
-            # If the model is already cached (e.g. shipped in the offline
-            # bundle), force offline mode so it never tries to reach the network.
-            if self._cache_has_model():
-                os.environ.setdefault("HF_HUB_OFFLINE", "1")
-                os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+                if self._cache_has_model():
+                    os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
-            from sentence_transformers import SentenceTransformer, util  # type: ignore
+                import numpy as np
+                from fastembed import TextEmbedding  # type: ignore
 
-            self._util = util
-            self._model = SentenceTransformer(self.model_name, cache_folder=self.cache_dir)
-            keys = list(self.PROTOTYPES)
-            vecs = self._model.encode(
-                [self.PROTOTYPES[k] for k in keys], convert_to_tensor=True
-            )
-            self._proto_vecs = dict(zip(keys, vecs))
-            self.available = True
-            return True
-        except Exception as exc:  # model / package not present
-            self.load_error = str(exc)
-            self.available = False
-            return False
+                self._np = np
+                model = TextEmbedding(model_name=self.model_name, cache_dir=self.cache_dir)
+                keys = list(self.PROTOTYPES)
+                vecs = np.array(list(model.embed([self._prefix(self.PROTOTYPES[k]) for k in keys])))
+                norms = np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-9
+                self._proto = vecs / norms
+                self._proto_keys = keys
+                self._model = model
+                self.available = True
+                self.load_error = None
+                return True
+            except Exception as exc:  # package or model unavailable / offline
+                self.load_error = str(exc)
+                self.available = False
+                return False
 
     def status(self) -> dict:
-        """Report whether the embedding layer is usable, without forcing a load."""
+        """Report the embedding layer state without forcing a download."""
         return {
             "model": self.model_name,
+            "engine": "onnx/fastembed",
             "loaded": self._model is not None,
             "available": self.available,
+            "cached": self._cache_has_model(),
             "error": self.load_error,
         }
 
@@ -125,14 +148,14 @@ class EmbeddingBackend:
             return None
         if not text.strip():  # pragma: no cover
             return None
-        query = self._model.encode(text, convert_to_tensor=True)  # type: ignore[union-attr]
-        best_topic, best_score = None, 0.0
-        for topic, vec in self._proto_vecs.items():
-            score = float(self._util.cos_sim(query, vec)[0][0])
-            if score > best_score:
-                best_topic, best_score = topic, score
-        if best_topic is not None and best_score >= threshold:
-            return Classification(best_topic, "embedding", round(best_score, 4))
+        np = self._np
+        q = np.array(list(self._model.embed([self._prefix(text)]))[0])  # type: ignore[union-attr]
+        q = q / (np.linalg.norm(q) + 1e-9)
+        sims = self._proto @ q  # cosine similarity against every prototype
+        idx = int(np.argmax(sims))
+        best = float(sims[idx])
+        if best >= threshold:
+            return Classification(self._proto_keys[idx], "embedding", round(best, 4))
         return None
 
 

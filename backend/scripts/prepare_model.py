@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Pre-download the local embedding model into the app's models cache.
+"""Pre-download the local ONNX embedding model into the app's models cache.
 
 Run this once on a machine WITH internet to populate the model, so it can be
-bundled into the offline pack (docs/OFFLINE_PACK.md) or shipped with the app
-for fully-offline classification (spec §6, §8.2).
+bundled with the app / offline pack for fully-offline classification
+(spec §6, §8.2). Uses fastembed (onnxruntime) — light, no PyTorch.
 
 Usage:
     python scripts/prepare_model.py [--model NAME] [--out DIR]
 
-Requires the optional dependency:
-    pip install sentence-transformers
+Requires:
+    pip install fastembed
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+DEFAULT_MODEL = "intfloat/multilingual-e5-small"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,18 +40,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        from sentence_transformers import SentenceTransformer
+        from fastembed import TextEmbedding
     except ImportError:
-        print("sentence-transformers אינו מותקן. הרץ: pip install sentence-transformers", file=sys.stderr)
+        print("fastembed is not installed. Run: pip install fastembed", file=sys.stderr)
         return 2
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    print(f"מוריד את המודל '{args.model}' אל {out} …")
-    model = SentenceTransformer(args.model, cache_folder=str(out))
+    print(f"Downloading model '{args.model}' into {out} ...")
+    model = TextEmbedding(model_name=args.model, cache_dir=str(out))
     # Warm up so cached artefacts are complete.
-    model.encode(["שיר לשבת", "נרות חנוכה"])
-    print("הושלם. המודל מוכן לשימוש אופליין.")
+    list(model.embed(["query: שיר לשבת", "query: נרות חנוכה"]))
+    print("Done. The model is ready for offline use.")
     return 0
 
 

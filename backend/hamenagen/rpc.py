@@ -108,6 +108,38 @@ class RpcServer:
     def rpc_classifier_status(self, params):
         return self.service.classifier_status()
 
+    def rpc_install_model_async(self, params):
+        """Download the AI model on a background thread (first-run install).
+
+        Emits {"event":"model_install", status:"downloading"|"done"|"error"}.
+        """
+        import threading
+
+        if getattr(self, "_installing_model", False):
+            return {"started": False, "reason": "already installing"}
+        status = self.service.classifier_status()
+        if not status.get("enabled"):
+            return {"started": False, "reason": "embeddings disabled"}
+        if status.get("available") or status.get("loaded"):
+            return {"started": False, "reason": "already installed"}
+        self._installing_model = True
+        self._emit("model_install", {"status": "downloading"})
+
+        def worker():
+            try:
+                result = self.service.install_model()
+                self._emit("model_install", {
+                    "status": "done" if result.get("ok") else "error",
+                    **result,
+                })
+            except Exception as exc:  # noqa: BLE001
+                self._emit("model_install", {"status": "error", "error": str(exc)})
+            finally:
+                self._installing_model = False
+
+        threading.Thread(target=worker, daemon=True).start()
+        return {"started": True}
+
     def rpc_reclassify(self, params):
         return self.service.reclassify_all()
 

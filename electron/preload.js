@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('hamenagen', {
   openingSuggestion: () => invoke('backend:opening_suggestion'),
   radioList: (refresh) => invoke('backend:radio_list', { refresh }),
   classifierStatus: () => invoke('backend:classifier_status'),
+  installModelAsync: () => invoke('backend:install_model_async'),
   reclassify: () => invoke('backend:reclassify'),
   checkUpdates: () => invoke('backend:check_updates'),
   applyUpdate: (component, url, version) =>

@@ -331,6 +331,7 @@ el('settings-form').addEventListener('submit', async (e) => {
 el('btn-check-updates').addEventListener('click', async () => {
   const box = el('updates-status');
   box.textContent = 'בודק עדכונים…';
+  checkAppUpdate(true);  // app version (front-end); yt-dlp/lexicon below
   const res = await api.checkUpdates();
   if (!res.ok) { box.textContent = 'שגיאה: ' + res.error; return; }
   const data = res.result;
@@ -377,11 +378,35 @@ async function startBackgroundScan(announce) {
 }
 
 api.onBackendEvent((msg) => {
-  if (msg.event !== 'scan_done') return;
-  scanning = false;
-  if (msg.error) { setStatus('שגיאה בסריקה: ' + msg.error); return; }
-  setStatus(`המאגר עודכן: ${msg.total} שירים (נוספו ${msg.added}).`);
+  if (msg.event === 'scan_done') {
+    scanning = false;
+    if (msg.error) { setStatus('שגיאה בסריקה: ' + msg.error); return; }
+    setStatus(`המאגר עודכן: ${msg.total} שירים (נוספו ${msg.added}).`);
+    return;
+  }
+  if (msg.event === 'model_install') {
+    if (msg.status === 'downloading') {
+      setStatus('מתקין את מודל ה-AI ברקע (הורדה חד-פעמית)… אפשר להמשיך להשתמש');
+    } else if (msg.status === 'done') {
+      setStatus('מודל ה-AI הותקן ✓ מסווג מחדש את המאגר…');
+      api.reclassify().then(() => setStatus('מודל ה-AI מוכן — הסיווג עודכן ✓'));
+    } else if (msg.status === 'error') {
+      // Non-fatal: the curated dictionary keeps working.
+      setStatus('לא ניתן להתקין את מודל ה-AI כעת (המילון ממשיך לעבוד).');
+    }
+  }
 });
+
+// First-run: if the AI model isn't installed yet, download it in the
+// background when online (spec §6.1). The curated dictionary works meanwhile.
+async function ensureModelInstalled() {
+  const res = await api.classifierStatus();
+  if (!res.ok) return;
+  const st = res.result || {};
+  if (st.enabled && !st.available) {
+    api.installModelAsync();
+  }
+}
 
 el('nav-rescan').addEventListener('click', () => startBackgroundScan(true));
 
@@ -477,6 +502,35 @@ function playStream(station) {
 
 el('nav-radio').addEventListener('click', loadRadio);
 
+// -- app self-update check (spec §14) --------------------------------------
+// Compares this build's SHA against a manifest published beside the release.
+// If they differ, a newer build exists — offer a one-click download.
+const UPDATE_MANIFEST_URL =
+  'https://github.com/yosef220/hamenagen-AI/releases/download/portable-latest/update.json';
+
+async function checkAppUpdate(manual) {
+  const cur = (window.__BUILD__ || {}).build || 'dev';
+  try {
+    const r = await fetch(UPDATE_MANIFEST_URL, { cache: 'no-store' });
+    if (!r.ok) throw new Error('manifest ' + r.status);
+    const m = await r.json();
+    if (m.build && cur !== 'dev' && m.build !== cur) {
+      el('update-text').textContent =
+        'גרסה חדשה של המנגן זמינה — כדאי לעדכן.' + (m.notes ? ' ' + m.notes : '');
+      el('update-download').onclick = () => api.openExternal(m.zip_url || (window.__BUILD__).zip_url);
+      el('update-bar').classList.remove('hidden');
+    } else if (manual) {
+      setStatus('התוכנה מעודכנת ✓');
+    }
+  } catch {
+    if (manual) setStatus('לא ניתן לבדוק עדכוני אפליקציה כעת (אין רשת).');
+  }
+}
+
+el('update-dismiss').addEventListener('click', () =>
+  el('update-bar').classList.add('hidden')
+);
+
 // -- theme (light / dark) --------------------------------------------------
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -504,4 +558,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // Auto-scan the library in the background on every launch (spec §9), so the
   // catalogue stays fresh without the user ever pressing "scan".
   startBackgroundScan(false);
+  // First-run: install the AI model in the background when online (spec §6.1).
+  ensureModelInstalled();
+  // Notify if a newer app build is available (one-click download).
+  checkAppUpdate(false);
 });

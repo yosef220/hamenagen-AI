@@ -37,6 +37,17 @@ jobs:
         run: npm install
       - name: Prepare embedded Python (+ backend deps)
         run: npm run prepare:win-python
+      - name: Stamp build info (for the in-app update check)
+        shell: pwsh
+        run: |
+          $sha = "${{ github.sha }}".Substring(0, 12)
+          $ver = (Get-Content package.json | ConvertFrom-Json).version
+          $zip = "https://github.com/${{ github.repository }}/releases/download/portable-latest/hamenagen-$ver.zip"
+          "window.__BUILD__ = " + (@{ version = $ver; build = $sha; zip_url = $zip } | ConvertTo-Json -Compress) + ";" |
+            Set-Content -Encoding utf8 electron/renderer/build-info.js
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          @{ version = $ver; build = $sha; zip_url = $zip; notes = "בנייה אחרונה" } | ConvertTo-Json -Compress |
+            Set-Content -Encoding utf8 dist/update.json
       - name: Build portable EXE
         run: npm run dist
       - name: List build output
@@ -64,11 +75,12 @@ jobs:
           files: |
             dist/*.exe
             dist/hamenagen-*.zip
+            dist/update.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   offline-full:
-    # Heavier: bundles CPU torch + sentence-transformers + the model itself.
+    # Bundles the app + the light ONNX AI model (via fastembed) — no PyTorch.
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -78,15 +90,17 @@ jobs:
       - name: Install npm dependencies
         run: npm install
 
-      - name: Prepare embedded Python (base deps)
+      - name: Prepare embedded Python (incl. fastembed)
         run: npm run prepare:win-python
 
-      - name: Add AI libraries to the embedded Python (CPU torch)
+      - name: Stamp build info
         shell: pwsh
         run: |
-          $py = "build/win-python/python.exe"
-          & $py -m pip install --no-warn-script-location torch --index-url https://download.pytorch.org/whl/cpu
-          & $py -m pip install --no-warn-script-location sentence-transformers
+          $sha = "${{ github.sha }}".Substring(0, 12)
+          $ver = (Get-Content package.json | ConvertFrom-Json).version
+          $zip = "https://github.com/${{ github.repository }}/releases/download/portable-latest/hamenagen-$ver.zip"
+          "window.__BUILD__ = " + (@{ version = $ver; build = $sha; zip_url = $zip } | ConvertTo-Json -Compress) + ";" |
+            Set-Content -Encoding utf8 electron/renderer/build-info.js
 
       - name: Build unpacked app folder
         run: npx --no-install electron-builder --win dir

@@ -50,9 +50,11 @@ class Settings:
     # Enable the optional local embedding classifier layer.
     use_embeddings: bool = True
     # Which local embedding model to use (spec §8.2 layer 3, §19.3).
-    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # A light multilingual ONNX model run via fastembed (no PyTorch), downloaded
+    # once on first run with a network, then used offline.
+    embedding_model: str = "intfloat/multilingual-e5-small"
     # Cosine-similarity threshold above which an embedding topic is accepted.
-    embedding_threshold: float = 0.45
+    embedding_threshold: float = 0.82
     # Also feed song lyrics (from a sibling .lrc/.txt file) to the classifier.
     classify_by_lyrics: bool = True
     # Managed radio source (spec §13). Default: Kol Chai Music live channels.

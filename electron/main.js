@@ -52,6 +52,7 @@ const FORWARD = [
   'opening_suggestion',
   'radio_list',
   'classifier_status',
+  'install_model_async',
   'reclassify',
   'check_updates',
   'apply_update',
