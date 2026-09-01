@@ -42,23 +42,28 @@ jobs:
       - name: List build output
         shell: pwsh
         run: Get-ChildItem dist
-      - name: Upload EXE artifact
+      - name: Upload EXE + ZIP artifacts
         uses: actions/upload-artifact@v4
         with:
           name: hamenagen-portable-windows
-          path: dist/*.exe
+          path: |
+            dist/*.exe
+            dist/hamenagen-*.zip
           if-no-files-found: error
-      - name: Publish EXE to pre-release
+      - name: Publish EXE + ZIP to pre-release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: portable-latest
           name: המנגן — גרסה ניידת (בנייה אחרונה)
           body: |
-            שתי אפשרויות הורדה:
-            • hamenagen-portable-*.exe — גרסה ניידת (online-first). מורידה את מודל ה-AI בהפעלה הראשונה כשיש רשת.
-            • hamenagen-offline-full-windows.zip — חבילה מלאה לאופליין: מכילה את האפליקציה + מודל ה-AI + כל התלויות. פרקו את ה-ZIP והריצו hamenagen.exe — עובד ללא אינטרנט.
+            אפשרויות הורדה:
+            • hamenagen-<גרסה>.zip — גרסה ניידת כ-ZIP (מומלץ אם קובצי EXE נחסמים בסינון הרשת). פרקו והריצו את hamenagen.exe שבפנים.
+            • hamenagen-portable-*.exe — גרסה ניידת כקובץ הפעלה יחיד (online-first).
+            • hamenagen-offline-full-windows-*.zip — חבילה מלאה לאופליין: מכילה את האפליקציה + מודל ה-AI + כל התלויות. פרקו והריצו — עובד ללא אינטרנט.
           prerelease: true
-          files: dist/*.exe
+          files: |
+            dist/*.exe
+            dist/hamenagen-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

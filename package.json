@@ -8,7 +8,7 @@
     "start": "electron .",
     "postinstall": "node scripts/copy-vendor.js",
     "vendor": "node scripts/copy-vendor.js",
-    "dist": "electron-builder --win portable",
+    "dist": "electron-builder --win",
     "prepare:win-python": "powershell -ExecutionPolicy Bypass -File scripts/prepare-win-python.ps1",
     "build:win": "npm run prepare:win-python && npm run dist",
     "test:core": "cd backend && python -m pytest -q"
@@ -33,8 +33,9 @@
       { "from": "build/win-python", "to": "python", "filter": ["**/*"] }
     ],
     "win": {
-      "target": ["portable"],
-      "icon": "assets/icon.ico"
+      "target": ["portable", "zip"],
+      "icon": "assets/icon.ico",
+      "artifactName": "hamenagen-${version}.${ext}"
     },
     "portable": {
       "artifactName": "hamenagen-portable-${version}.exe"

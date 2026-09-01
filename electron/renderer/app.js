@@ -431,8 +431,28 @@ function playStream(station) {
 
 el('nav-radio').addEventListener('click', loadRadio);
 
+// -- theme (light / dark) --------------------------------------------------
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = el('nav-theme');
+  if (btn) btn.textContent = theme === 'light' ? '☀️ בהיר' : '🌙 כהה';
+  try { localStorage.setItem('theme', theme); } catch { /* ignore */ }
+}
+
+function initTheme() {
+  let theme = 'dark';
+  try { theme = localStorage.getItem('theme') || 'dark'; } catch { /* ignore */ }
+  applyTheme(theme === 'light' ? 'light' : 'dark');
+}
+
+el('nav-theme').addEventListener('click', () => {
+  const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  applyTheme(current === 'light' ? 'dark' : 'light');
+});
+
 // -- boot ------------------------------------------------------------------
 window.addEventListener('DOMContentLoaded', () => {
+  initTheme();
   loadSuggestion();
   el('ask-input').focus();
 });

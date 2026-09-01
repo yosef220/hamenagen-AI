@@ -66,9 +66,22 @@ class BackendBridge {
 
   start() {
     if (this.proc) return;
-    this.proc = spawn(this.pythonPath, ['-m', 'hamenagen.rpc'], {
+    // The Windows *embeddable* Python uses a ._pth file that fully defines
+    // sys.path and ignores the CWD and PYTHONPATH — so `-m hamenagen.rpc`
+    // can't find the package and the process exits with code 1. Bootstrap the
+    // path explicitly at runtime (works for both embedded and system Python).
+    const bootstrap =
+      "import os, sys; sys.path.insert(0, os.environ.get('HAMENAGEN_BACKEND_DIR', '')); " +
+      'from hamenagen.rpc import main; main()';
+    this.proc = spawn(this.pythonPath, ['-c', bootstrap], {
       cwd: this.backendDir,
-      env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8' },
+      env: {
+        ...process.env,
+        HAMENAGEN_BACKEND_DIR: this.backendDir,
+        PYTHONUNBUFFERED: '1',
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUTF8: '1',
+      },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 

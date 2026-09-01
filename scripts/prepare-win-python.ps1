@@ -39,6 +39,10 @@ Expand-Archive -Path $tmp -DestinationPath $OutDir -Force
 $pth = Get-ChildItem -Path $OutDir -Filter "python*._pth" | Select-Object -First 1
 if ($pth) {
   (Get-Content $pth.FullName) -replace '#\s*import site', 'import site' | Set-Content $pth.FullName
+  # In the packaged layout the interpreter lives at resources/python and the
+  # backend at resources/backend, so add ..\backend to sys.path. (The bridge
+  # also inserts it at runtime; this makes `-m hamenagen.rpc` work too.)
+  Add-Content $pth.FullName "..\backend"
 }
 
 # Bootstrap pip.
