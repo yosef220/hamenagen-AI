@@ -60,9 +60,9 @@ class EmbeddingBackend:
 
     def __init__(
         self,
-        model_name: str = "intfloat/multilingual-e5-small",
+        model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
         *,
-        threshold: float = 0.82,
+        threshold: float = 0.5,
         cache_dir: str | None = None,
     ):
         import threading
@@ -91,8 +91,8 @@ class EmbeddingBackend:
             return False
 
     def _prefix(self, text: str) -> str:
-        # The e5 family expects a short instruction prefix.
-        return "query: " + text
+        # paraphrase-MiniLM needs no instruction prefix (unlike the e5 family).
+        return text
 
     def load(self) -> bool:
         """Load the local ONNX embedding model, downloading it once if needed.

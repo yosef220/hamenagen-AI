@@ -26,7 +26,7 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-DEFAULT_MODEL = "intfloat/multilingual-e5-small"
+DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -47,10 +47,23 @@ def main(argv: list[str] | None = None) -> int:
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    print(f"Downloading model '{args.model}' into {out} ...")
-    model = TextEmbedding(model_name=args.model, cache_dir=str(out))
-    # Warm up so cached artefacts are complete.
-    list(model.embed(["query: שיר לשבת", "query: נרות חנוכה"]))
+
+    model_name = args.model
+    try:
+        supported = {m["model"] for m in TextEmbedding.list_supported_models()}
+    except Exception:
+        supported = set()
+    if supported and model_name not in supported:
+        # Fall back to a supported multilingual model so the build never breaks
+        # on an exact-id mismatch across fastembed versions.
+        alt = next((m for m in supported if "multilingual" in m.lower()), None)
+        if alt:
+            print(f"'{model_name}' not supported by this fastembed; using '{alt}'.")
+            model_name = alt
+
+    print(f"Downloading model '{model_name}' into {out} ...")
+    model = TextEmbedding(model_name=model_name, cache_dir=str(out))
+    list(model.embed(["שיר לשבת", "נרות חנוכה"]))  # warm up / complete the cache
     print("Done. The model is ready for offline use.")
     return 0
 
