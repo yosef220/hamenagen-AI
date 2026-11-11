@@ -26,7 +26,7 @@ class FakeBackend:
         self.available = True
 
     def classify(self, text, *, threshold=None):
-        if "נוראים" in text:  # not a curated keyword
+        if "מחילה" in text:  # not a curated keyword
             return Classification("אלול", "embedding", 0.71)
         return None
 
@@ -34,13 +34,13 @@ class FakeBackend:
 def test_hybrid_falls_through_to_embeddings():
     clf = HybridClassifier(embedding_backend=FakeBackend())
     # No curated keyword/title hit, but the embedding backend catches it.
-    c = clf.classify(title="שיר ללא מילת מפתח", lyrics="ימים נוראים מתקרבים")
+    c = clf.classify(title="שיר ללא מילת מפתח", lyrics="קולות של רחמים ומחילה")
     assert c.topic == "אלול"
     assert c.source == "embedding"
 
 
 def test_embeddings_skipped_when_disabled():
     clf = HybridClassifier(embedding_backend=FakeBackend())
-    c = clf.classify(title="שיר ללא מילת מפתח", lyrics="ימים נוראים", use_embeddings=False)
+    c = clf.classify(title="שיר ללא מילת מפתח", lyrics="רחמים ומחילה", use_embeddings=False)
     assert c.topic is None
     assert c.source == "none"

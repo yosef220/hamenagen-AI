@@ -82,7 +82,9 @@ def stations_from_model(model: dict, *, pics_url: str = DEFAULT_PICS_URL) -> lis
 
 def fetch_stations(url: str = DEFAULT_SOURCE_URL, *, timeout: float = 8.0) -> list[Station]:
     """Fetch the live page and return its channels. Raises on network error."""
-    req = urllib.request.Request(url, headers={"User-Agent": "hamenagen/0.1"})
+    from . import __version__
+
+    req = urllib.request.Request(url, headers={"User-Agent": f"hamenagen/{__version__}"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - fixed managed host
         html = resp.read().decode("utf-8", errors="replace")
     return stations_from_model(parse_server_model(html))

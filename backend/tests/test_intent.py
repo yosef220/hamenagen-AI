@@ -33,3 +33,34 @@ def test_limit_extraction_digit_and_word():
 def test_random():
     assert parse("תשמיע משהו כיף").action == Action.RANDOM
     assert parse("").action == Action.RANDOM
+
+
+def test_listening_habits():
+    assert parse("השירים שאהבתי").action == Action.FAVORITES
+    assert parse("המועדפים שלי").action == Action.FAVORITES
+    assert parse("מה ששמעתי לאחרונה").action == Action.HISTORY
+    assert parse("השירים שאני הכי שומע").action == Action.MOST_PLAYED
+    assert parse("השירים שאני הכי שומעת").action == Action.MOST_PLAYED
+
+
+def test_span_of_time():
+    i = parse("שעה של שירי שבת")
+    assert (i.action, i.topic, i.minutes, i.limit) == (Action.PLAY_TOPIC, "שבת", 60, None)
+    assert parse("חצי שעה של מוזיקה").action == Action.RANDOM
+    assert parse("חצי שעה של מוזיקה").minutes == 30
+    assert parse("20 דקות של שירי חנוכה").minutes == 20
+    assert parse("עשרים דקות של שירי חנוכה").minutes == 20
+    assert parse("שעתיים של שירי חתונה").minutes == 120
+    assert parse("שעה וחצי של שירים אקראיים").minutes == 90
+
+
+def test_hebrew_prefixes_and_acronyms():
+    assert parse("תשמיע לי שירים לשבת").topic == "שבת"
+    assert parse('שירים לל"ג בעומר').topic == "ל״ג בעומר"
+    assert parse("מוזיקה ווקאלית").topic == "ווקאלי"
+
+
+def test_one_extra_word_may_name_a_song():
+    i = parse("ירושלים של זהב")
+    assert i.action == Action.PLAY_TOPIC and i.topic == "ירושלים"
+    assert i.params["song_query"]  # the service checks for a song by that name first

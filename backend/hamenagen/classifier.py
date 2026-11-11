@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from . import topics as topics_mod
-from .text_normalize import normalize, token_set
+from .text_normalize import contains_phrase, normalize
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,7 @@ class Classification:
     topic: str | None
     source: str          # "title" | "keyword" | "artist" | "embedding" | "none"
     confidence: float    # 0..1
+    tags: tuple[str, ...] = ()  # further topics the song also belongs to
 
 
 class EmbeddingBackend:
@@ -47,12 +48,15 @@ class EmbeddingBackend:
     #: against these rather than against the bare topic word.
     PROTOTYPES: dict[str, str] = {
         "שבת": "שיר לשבת קודש, זמירות שבת, מנוחה, קבלת שבת",
+        "ראש השנה": "שיר לראש השנה, תקיעת שופר, שנה טובה ומתוקה, יום הדין",
+        "יום כיפור": "שיר ליום הכיפורים, תפילת נעילה, סליחה ומחילה",
         "חנוכה": "שיר לחנוכה, נרות, מכבים, נס פך השמן",
         "אלול": "שיר לחודש אלול, סליחות, תשובה, התעוררות רוחנית",
         "סוכות": "שיר לחג הסוכות, סוכה, ארבעת המינים, שמחת בית השואבה",
         "פסח": "שיר לחג הפסח, יציאת מצרים, הגדה, ליל הסדר",
         "פורים": "שיר לפורים, מגילת אסתר, משתה ושמחה",
         "שבועות": "שיר לחג השבועות, מתן תורה",
+        "ל״ג בעומר": "שיר לל״ג בעומר, רבי שמעון בר יוחאי, מירון והדלקה",
         "חתונה": "שיר לחתונה ולשמחות, חתן וכלה, ריקודים",
         "ירושלים": "שיר על ירושלים עיר הקודש והכותל",
         "אמונה": "שיר על אמונה וביטחון בהשם ותפילה",
@@ -163,6 +167,29 @@ class HybridClassifier:
     def __init__(self, embedding_backend: EmbeddingBackend | None = None):
         # The embedding backend is optional and never eagerly loaded.
         self.embedding = embedding_backend
+        self.refresh_lexicon()
+
+    def refresh_lexicon(self) -> None:
+        """Re-read the curated tables (after a lexicon update was merged)."""
+        self._titles = {normalize(k): v for k, v in topics_mod.SONG_TITLE_TOPICS.items()}
+        self._artists = {normalize(k): v for k, v in topics_mod.ARTIST_TOPICS.items()}
+        self._keywords = [
+            (topic, [normalize(kw) for kw in kws if normalize(kw)])
+            for topic, kws in topics_mod.TOPIC_KEYWORDS.items()
+        ]
+
+    def keyword_topics(self, text: str) -> list[str]:
+        """Every topic whose keywords appear in ``text``, in precedence order.
+
+        Keywords match whole words of the normalized text (so "שבתות" does not
+        hit "שבת"), allowing a Hebrew prefix: "לשבת" and "בחנוכה" do hit.
+        """
+        norm = normalize(text)
+        hits: list[str] = []
+        for topic, keywords in self._keywords:
+            if any(contains_phrase(norm, nkw) for nkw in keywords):
+                hits.append(topic)
+        return hits
 
     def classify(
         self,
@@ -174,32 +201,23 @@ class HybridClassifier:
         lyrics: str = "",
         use_embeddings: bool = True,
     ) -> Classification:
-        # Layer 1: curated exact title override.
-        norm_title = normalize(title)
-        if norm_title in _NORMALIZED_TITLE_TOPICS:
-            return Classification(_NORMALIZED_TITLE_TOPICS[norm_title], "title", 1.0)
-
         combined = " ".join(p for p in (title, artist, album, filename, lyrics) if p)
-        toks = token_set(combined)
+        keyword_hits = self.keyword_topics(combined)
 
-        # Layer 2: curated keyword match. Multi-word keywords are checked as
-        # substrings of the normalized text; single words against the token set.
-        norm_combined = normalize(combined)
-        for topic, keywords in topics_mod.TOPIC_KEYWORDS.items():
-            for kw in keywords:
-                nkw = normalize(kw)
-                if not nkw:
-                    continue
-                if " " in nkw:
-                    if nkw in norm_combined:
-                        return Classification(topic, "keyword", 0.9)
-                elif nkw in toks:
-                    return Classification(topic, "keyword", 0.9)
+        # Layer 1: curated exact title override.
+        title_topic = self._titles.get(normalize(title))
+        if title_topic:
+            tags = tuple(t for t in keyword_hits if t != title_topic)
+            return Classification(title_topic, "title", 1.0, tags)
+
+        # Layer 2: curated keyword match; further matches become tags.
+        if keyword_hits:
+            return Classification(keyword_hits[0], "keyword", 0.9, tuple(keyword_hits[1:]))
 
         # Layer 3: artist default (weak).
-        norm_artist = normalize(artist)
-        if norm_artist in _NORMALIZED_ARTIST_TOPICS:
-            return Classification(_NORMALIZED_ARTIST_TOPICS[norm_artist], "artist", 0.5)
+        artist_topic = self._artists.get(normalize(artist))
+        if artist_topic:
+            return Classification(artist_topic, "artist", 0.5)
 
         # Layer 4: optional local embeddings.
         if use_embeddings and self.embedding is not None:
@@ -208,11 +226,3 @@ class HybridClassifier:
                 return result
 
         return Classification(None, "none", 0.0)
-
-
-_NORMALIZED_TITLE_TOPICS = {
-    normalize(k): v for k, v in topics_mod.SONG_TITLE_TOPICS.items()
-}
-_NORMALIZED_ARTIST_TOPICS = {
-    normalize(k): v for k, v in topics_mod.ARTIST_TOPICS.items()
-}

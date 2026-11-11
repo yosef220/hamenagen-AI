@@ -22,11 +22,18 @@ class Track:
     duration: float | None = None   # seconds, if known
     is_video: bool = False
     source: str = "local"           # "local" | "youtube"
-    topic: str | None = None        # assigned by the classifier
+    topic: str | None = None        # main topic, assigned by the classifier
     topic_source: str = "none"
     download_date: str | None = None  # ISO 8601 — when added to the library
     release_date: str | None = None   # ISO 8601 — original publication date
     added_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    tags: str = ""                  # further topics, stored as "|a|b|"
+    mtime: float | None = None      # file modification time at the last scan
+    size: int | None = None         # file size in bytes at the last scan
+
+    @property
+    def tag_list(self) -> list[str]:
+        return [t for t in (self.tags or "").split("|") if t]
 
     def to_dict(self) -> dict:
         return asdict(self)

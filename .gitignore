@@ -15,8 +15,9 @@ venv/
 .pytest_cache/
 *.egg-info/
 
-# App data / runtime artifacts
-data/
+# App data / runtime artifacts (the repo-root data folder of a dev run; the
+# core's own bundled data in backend/hamenagen/data IS tracked)
+/data/
 backend/data/
 *.db
 downloads/
@@ -24,3 +25,6 @@ downloads/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local UI harness output
+/harness-out/
