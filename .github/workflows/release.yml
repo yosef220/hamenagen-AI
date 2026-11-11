@@ -2,7 +2,8 @@ name: בדיקה, בנייה ושחרור
 
 # Every pull request to main: core tests + an interface smoke test (the real
 # app driven against a demo library) + the three Windows editions.
-# A tag v* additionally publishes them as the latest GitHub release, with
+# A tag v* — or a manual run with "release" ticked, which creates the tag from
+# package.json — additionally publishes them as the latest GitHub release, with
 # Hebrew notes and update.json, and points 0.1 installs at the new version.
 
 on:
@@ -10,7 +11,12 @@ on:
     branches: [main]
   push:
     tags: ['v*']
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'לפרסם גרסה: התגית v<גרסה> נוצרת לפי package.json'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -166,7 +172,7 @@ jobs:
 
   release:
     name: שחרור גרסה
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release)
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -176,13 +182,24 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: The version to publish
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Release notes and update manifests
-        run: python3 scripts/release_notes.py "${{ github.ref_name }}" "${{ github.repository }}" dist
+        run: python3 scripts/release_notes.py "${{ steps.version.outputs.tag }}" "${{ github.repository }}" dist
 
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
-          name: המנגן ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: המנגן ${{ steps.version.outputs.tag }}
           body_path: dist/RELEASE_NOTES.md
           make_latest: 'true'
           files: |
