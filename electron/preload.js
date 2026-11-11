@@ -9,7 +9,24 @@
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
-const { pathToFileURL } = require('url');
+
+/**
+ * A correct file:// URL for a local path — Windows drive letters and UNC
+ * shares, backslashes, Hebrew and spaced names, '#' and '%' in file names.
+ * (The sandboxed preload has no Node `url.pathToFileURL`, so this is plain JS.)
+ */
+function toFileUrl(p) {
+  if (!p) return '';
+  let s = String(p).replace(/\\/g, '/');
+  if (s.startsWith('//')) {
+    const parts = s.slice(2).split('/');
+    const host = parts.shift();
+    return `file://${host}/${parts.map(encodeURIComponent).join('/')}`;
+  }
+  if (/^[A-Za-z]:/.test(s)) s = `/${s}`;
+  const segments = s.split('/').map((seg, i) => (i === 1 && /^[A-Za-z]:$/.test(seg) ? seg : encodeURIComponent(seg)));
+  return `file://${segments.join('/')}`;
+}
 
 const core = (method, params) => ipcRenderer.invoke('backend', method, params || {});
 
@@ -20,11 +37,8 @@ function listen(channel, handler) {
 }
 
 contextBridge.exposeInMainWorld('hamenagen', {
-  // A correct file:// URL for a local path (Windows drive letters,
-  // backslashes, Hebrew and spaced names) for the <audio> element.
-  fileUrl: (p) => {
-    try { return pathToFileURL(p).href; } catch { return ''; }
-  },
+  // The file:// URL of a local song, for the <audio> element.
+  fileUrl: (p) => toFileUrl(p),
 
   // The Python core. Every call resolves to { ok, result } or { ok:false, error }.
   appInfo: () => core('app_info'),

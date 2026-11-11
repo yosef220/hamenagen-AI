@@ -76,35 +76,45 @@
   }
 
   // ------------------------------------------------------------ request line
-  function askLine() {
-    const input = h('input', {
-      class: 'ask-input',
-      id: 'ask-input',
-      type: 'text',
-      autocomplete: 'off',
-      spellcheck: 'false',
-      placeholder: 'מה לשמוע? למשל: שעה של שירי שבת',
-      'aria-label': 'בקשה בשפה חופשית',
-    });
-    const form = h('form', { class: 'ask-form', role: 'search', onsubmit: (e) => { e.preventDefault(); H.ask(input.value); } },
-      icon('search'), input,
-      h('button', { class: 'btn btn-primary', type: 'submit' }, 'השמע'));
+  // Built once and never re-rendered, so a refresh (a scan finishing, a song
+  // counted as played) can never wipe what the user is typing.
+  const askInput = h('input', {
+    class: 'ask-input',
+    id: 'ask-input',
+    type: 'text',
+    autocomplete: 'off',
+    spellcheck: 'false',
+    placeholder: 'מה לשמוע? למשל: שעה של שירי שבת',
+    'aria-label': 'בקשה בשפה חופשית',
+  });
+  const askChips = h('div', { class: 'chips' });
+  const askSection = h('section', { class: 'ask', 'aria-label': 'בקשה' },
+    h('form', { class: 'ask-form', role: 'search', onsubmit: (e) => { e.preventDefault(); H.ask(askInput.value); } },
+      icon('search'), askInput,
+      h('button', { class: 'btn btn-primary', type: 'submit' }, 'השמע')),
+    askChips);
+
+  function updateChips() {
     const chips = SUGGESTIONS.slice();
     if (today && today.primary && today.primary.count) chips.unshift(`שעה של ${today.primary.phrase}`);
-    return h('section', { class: 'ask', 'aria-label': 'בקשה' }, form,
-      h('div', { class: 'chips' }, [...new Set(chips)].slice(0, 6).map((text) =>
-        h('button', { class: 'chip', type: 'button', onclick: () => H.ask(text) }, text))));
+    H.clear(askChips).append(...[...new Set(chips)].slice(0, 6).map((text) =>
+      h('button', { class: 'chip', type: 'button', onclick: () => H.ask(text) }, text)));
   }
+
+  // The page: the luach above the request line, everything else below it.
+  const luachHost = h('div', { class: 'home-luach' });
+  const restHost = h('div', { class: 'home-rest' });
+  root.append(luachHost, askSection, restHost);
 
   // ------------------------------------------------------------ sections
   function topicsSection(topics) {
-    const withSongs = topics.filter((t) => t.count);
-    const shown = (withSongs.length >= 4 ? withSongs : topics).slice(0, 8);
+    // Topics with songs first (the most songs first), then the rest.
+    const shown = topics.slice().sort((a, b) => (b.count > 0) - (a.count > 0) || 0);
     return h('section', { class: 'section', 'aria-label': 'נושאים' },
       h('div', { class: 'section-head' },
         h('h2', {}, 'נושאים'),
         h('button', { class: 'btn btn-quiet more', type: 'button', onclick: () => H.go('topics') }, 'כל הנושאים', icon('chevron-left', 'icon-sm'))),
-      h('div', { class: 'tiles' }, shown.map((t) => H.topicTile(t))));
+      h('div', { class: 'tiles tiles-row' }, shown.map((t) => H.topicTile(t))));
   }
 
   function listSection(title, tracks, emptyText, more) {
@@ -130,13 +140,14 @@
     try {
       [today, overview] = await Promise.all([api.today(), api.overview()]);
     } catch (err) {
-      H.clear(root).appendChild(H.emptyState('לא הצלחתי לטעון את דף הבית', err.message));
+      H.clear(restHost).appendChild(H.emptyState('לא הצלחתי לטעון את דף הבית', err.message));
       return;
     }
     H.topicLabels = Object.fromEntries(overview.topics.map((t) => [t.key, t.label]));
     H.updateRail(overview);
-    const ask = askLine();
-    const parts = [luach(today), ask];
+    H.clear(luachHost).appendChild(luach(today));
+    updateChips();
+    const parts = [];
     if (!overview.stats.tracks) {
       parts.push(scanningPanel(overview));
     } else {
@@ -147,17 +158,14 @@
         listSection('נוספו לאחרונה', overview.recent, 'עוד לא נוספו שירים.',
           h('button', { class: 'btn btn-quiet more', type: 'button', onclick: () => H.go('results', { kind: 'recent_downloaded' }) }, 'הכל', icon('chevron-left', 'icon-sm')))));
     }
-    H.clear(root).append(...parts);
-    H.markActive(root);
+    H.clear(restHost).append(...parts);
+    H.markActive(restHost);
   }
 
   H.views = H.views || {};
   H.views.home = {
     show: render,
     refresh: render,
-    focusAsk() {
-      const input = H.$('#ask-input');
-      if (input) input.focus();
-    },
+    focusAsk() { askInput.focus(); askInput.select(); },
   };
 })();

@@ -4,7 +4,9 @@
 (function () {
   const { h, icon, api } = H;
   const root = H.$('#view-radio');
-  const GROUPS = { 2: 'אווירה ומועדים', 1: 'סגנונות', 3: 'אמנים' };
+  // Kol Chai's categories, in the order the page shows them.
+  const GROUPS = [[2, 'אווירה ומועדים'], [1, 'סגנונות'], [3, 'אמנים']];
+  const groupName = (cat) => (GROUPS.find(([c]) => c === cat) || [0, 'מיוחדים'])[1];
   let stations = [];
   let info = null;
 
@@ -66,11 +68,11 @@
     }
     const groups = new Map();
     for (const st of rest) {
-      const g = GROUPS[st.category] || 'מיוחדים';
+      const g = groupName(st.category);
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g).push(st);
     }
-    for (const name of [...Object.values(GROUPS), 'מיוחדים']) {
+    for (const name of [...GROUPS.map(([, n]) => n), 'מיוחדים']) {
       const list = groups.get(name);
       if (!list || !list.length) continue;
       parts.push(h('section', { class: 'radio-group', 'aria-label': name }, h('h3', {}, name), h('div', { class: 'stations' }, list.map(stationCard))));

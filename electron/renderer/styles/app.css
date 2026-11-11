@@ -431,6 +431,9 @@ select.select {
 .chip:hover { background: var(--hover); color: var(--ink); }
 .chip .icon { width: 14px; height: 14px; }
 
+.home-luach, .home-rest { display: flex; flex-direction: column; gap: var(--s10); }
+.home-luach:empty, .home-rest:empty { display: none; }
+
 .home-cols {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -479,21 +482,12 @@ select.select {
 .tile-label { position: relative; font-weight: 600; }
 .tile-count { position: relative; font-size: var(--fs-sm); color: var(--ink-2); }
 .tile.empty { opacity: 0.55; }
+/* On the home page the tiles take a single row: whatever fits is shown. */
+.tiles-row { grid-template-rows: auto; grid-auto-rows: 0; row-gap: 0; overflow: hidden; }
 .tiles-lg { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s4); }
 .tiles-lg .tile { min-height: 168px; padding: var(--s4); }
 .tiles-lg .tile-letter { font-size: 4.6rem; inset-inline-start: var(--s4); }
 .tile-phrase { position: relative; font-size: var(--fs-sm); color: var(--ink-2); }
-
-/* Topic tints. */
-[data-tint="gold"] { --tint: var(--t-gold); }
-[data-tint="wine"] { --tint: var(--t-wine); }
-[data-tint="slate"] { --tint: var(--t-slate); }
-[data-tint="cedar"] { --tint: var(--t-cedar); }
-[data-tint="tekhelet"] { --tint: var(--t-tekhelet); }
-[data-tint="stone"] { --tint: var(--t-stone); }
-[data-tint="ember"] { --tint: var(--t-ember); }
-[data-tint="ink"] { --tint: var(--t-ink); }
-[data-tint="none"] { --tint: var(--t-none); }
 
 /* ------------------------------------------------------- letter covers */
 .cover {
@@ -518,11 +512,22 @@ select.select {
   opacity: calc(var(--cover-wash) * 1.6);
   z-index: -1;
 }
-.cover-sm { width: 52px; height: 52px; font-size: 1.9rem; }
-.cover-xs { width: 40px; height: 40px; font-size: 1.45rem; }
+.cover-sm { width: 52px; height: 52px; font-size: 2.3rem; padding-bottom: 4px; }
+.cover-xs { width: 40px; height: 40px; font-size: 1.8rem; padding-bottom: 3px; }
 .cover-radio { background: var(--mantle); color: var(--thread); }
 .cover-radio::before { display: none; }
 .cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+/* Topic tints — after .tile and .cover so a tint always wins over their default. */
+[data-tint="gold"] { --tint: var(--t-gold); }
+[data-tint="wine"] { --tint: var(--t-wine); }
+[data-tint="slate"] { --tint: var(--t-slate); }
+[data-tint="cedar"] { --tint: var(--t-cedar); }
+[data-tint="tekhelet"] { --tint: var(--t-tekhelet); }
+[data-tint="stone"] { --tint: var(--t-stone); }
+[data-tint="ember"] { --tint: var(--t-ember); }
+[data-tint="ink"] { --tint: var(--t-ink); }
+[data-tint="none"] { --tint: var(--t-none); }
 
 /* ------------------------------------------------------------ track lists */
 .tracks { display: flex; flex-direction: column; }
@@ -588,6 +593,7 @@ select.select {
   color: var(--ink-2);
   max-width: 60ch;
 }
+.view > .empty-state { padding: 0; }
 .empty-state h3 { color: var(--ink); font-family: var(--font-display); font-weight: 500; font-size: var(--fs-xl); }
 
 /* ------------------------------------------------------------ results head */
@@ -1002,5 +1008,8 @@ input[type="range"]:hover::-webkit-slider-thumb, input[type="range"]:focus-visib
   .luach-occasion { padding-inline-start: 0; border-inline-start: 0; padding-top: var(--s5); border-top: 1px solid rgba(216, 178, 94, 0.35); }
   .dock { grid-template-columns: minmax(180px, 1fr) minmax(280px, 1.4fr) auto; gap: var(--s4); }
   .volume { width: 110px; }
-  .home-cols { grid-template-columns: 1fr; gap: var(--s8); }
+  .home-luach, .home-rest { display: flex; flex-direction: column; gap: var(--s10); }
+.home-luach:empty, .home-rest:empty { display: none; }
+
+.home-cols { grid-template-columns: 1fr; gap: var(--s8); }
 }

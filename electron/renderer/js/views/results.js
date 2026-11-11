@@ -31,7 +31,8 @@
     const head = h('header', { class: 'results-head' },
       h('div', { class: 'results-kicker' }, params.text !== undefined ? `ביקשת: „${params.text}”` : 'רשימה'),
       h('h1', { class: 'results-title' }, res.understood || 'תוצאות'),
-      total ? h('div', { class: 'results-meta num' }, `${H.songs(total)} · ${H.span(res.seconds)}`) : null,
+      total ? h('div', { class: 'results-meta num' }, `${H.songs(total)} · ${H.span(res.seconds)}${
+        res.intent && res.intent.minutes && res.seconds < res.intent.minutes * 60 * 0.9 ? ' — כל מה שיש במאגר' : ''}`) : null,
       total ? h('div', { class: 'results-actions' },
         h('button', { class: 'btn btn-primary', type: 'button', onclick: () => H.player.playList(res.tracks, 0, { shuffle: false }) }, icon('play'), 'נגן לפי הסדר'),
         h('button', { class: 'btn btn-outline', type: 'button', onclick: () => H.player.playList(res.tracks, 0, { shuffle: true }) }, icon('shuffle'), 'ערבב'),
