@@ -421,13 +421,31 @@ def is_song_title(title: str) -> bool:
     return bool(words) and len(" ".join(words)) >= 3
 
 
+# When a song is listed under several occasions, this order picks its main
+# topic: "בר יוחאי" is sung on Friday nights too, but it is the song of Lag
+# BaOmer; "עת שערי רצון" is said on Yom Kippur too, but it is a Rosh Hashana
+# piyut; "צמאה נפשי" is a Shabbat zemer that some sing on Sukkot. Themes
+# (Jerusalem, faith, weddings) come after every occasion.
+INDEX_PRECEDENCE = ["ל״ג בעומר", "חנוכה", "פורים", "פסח", "ראש השנה", "יום כיפור", "אלול", "שבת",
+                    "שבועות", "סוכות", "חתונה", "ירושלים", "אמונה"]
+
+# Names that are parts of the prayer service, not songs, or too general to
+# say which occasion a song belongs to ("ברכת המזון" is in the Haggadah, but
+# it is said after every meal).
+NOT_SONGS = {
+    "ברכת המזון", "קדיש יתום", "קדיש דרבנן", "קדיש שלם", "חצי קדיש", "סעודה ראשונה", "סעודה שניה",
+    "סעודה שנייה", "סעודה רביעית", "קודם הבדלה", "ספירת העומר", "מזמורי הודיה", "חצי הלל", "נגיד",
+    "הסידור האפגני", "תפילות בסוכה", "כשנכנסים לסוכה", "נטילת לולב",
+}
+
+
 def build_song_index(f: Fetcher, log) -> dict:
     entries: dict[str, dict] = {}
-    order = {t: i for i, t in enumerate(TOPICS)}
+    order = {t: i for i, t in enumerate(INDEX_PRECEDENCE)}
 
     def add(title: str, topic: str, source: str, artist: str = "", aliases=()):
         key = normalize_title(title)
-        if not key:
+        if not key or title in NOT_SONGS:
             return
         e = entries.setdefault(key, {"title": title, "topics": [], "aliases": [], "artist": artist, "src": []})
         if topic not in e["topics"]:
@@ -502,7 +520,9 @@ def build_lexicon(docs: dict[str, list[str]], background: list[str], keep: int) 
             if "_" not in feat and len(feat) < 2:
                 continue
             weights[feat] = (1.0 + math.log(tf)) * math.log(n / df[feat])
-        top = sorted(weights.items(), key=lambda kv: -kv[1])[:keep]
+        top = sorted(weights.items(), key=lambda kv: -kv[1])
+        if keep > 0:
+            top = top[:keep]
         norm = math.sqrt(sum(v * v for _, v in top)) or 1.0
         lexicon[topic] = {k: round(v / norm, 5) for k, v in top}
     return lexicon
@@ -515,7 +535,7 @@ def main() -> int:
     ap.add_argument("--out", default=str(HERE.parent / "hamenagen" / "data"))
     ap.add_argument("--offline", action="store_true", help="use only what is already cached")
     ap.add_argument("--background", type=int, default=1500, help="random articles for IDF")
-    ap.add_argument("--keep", type=int, default=6000, help="features kept per topic")
+    ap.add_argument("--keep", type=int, default=12000, help="features kept per topic (0 = all)")
     ap.add_argument("--delay", type=float, default=1.0, help="seconds between requests")
     args = ap.parse_args()
 

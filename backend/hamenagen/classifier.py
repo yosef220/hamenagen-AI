@@ -394,9 +394,12 @@ class HybridClassifier:
         # Layer 2: a known song or piyut (Wikipedia, Sefaria).
         hit = self.song_index.lookup(title, filename) if self.song_index else None
         if hit is not None:
+            # (A song listed under several occasions comes with its main one
+            # first — see INDEX_PRECEDENCE in build_knowledge.py.)
+            topics = list(hit.topics)
             where = {"he.wikipedia": "ויקיפדיה", "sefaria": "ספריא"}.get(hit.source, "אינדקס")
             note = f"אינדקס השירים: „{hit.title}” ({where})"
-            return with_tags(hit.topics[0], "index", 0.95 if hit.exact else 0.85, note, hit.topics[1:])
+            return with_tags(topics[0], "index", 0.95 if hit.exact else 0.85, note, topics[1:])
 
         # Layer 3: curated keyword match; further matches become tags.
         if matches:
@@ -409,6 +412,7 @@ class HybridClassifier:
             return Classification(artist_topic, "artist", 0.5, note=f"הזמר {artist}")
 
         # Layer 5: the vocabulary of each occasion.
+        leaders: tuple[str, ...] = ()
         if self.topic_lexicon:
             main_text = title or (Path(filename).stem if filename else "")
             lex = self.topic_lexicon.classify(main_text, album)
@@ -416,11 +420,15 @@ class HybridClassifier:
                 words = "”, „".join(lex.words)
                 note = f"אוצר המילים של המועד: „{words}”" if words else "אוצר המילים של המועד"
                 return Classification(lex.topic, "lexicon", 0.7, note=note)
+            leaders = lex.top
 
-        # Layer 6: optional local embeddings.
+        # Layer 6: optional local embeddings — trusted when the vocabulary
+        # agrees (the model's topic is one of the two the words lean to), or
+        # when no word of the title is known at all. On real song titles this
+        # kept the model's right answers and cut its wrong ones.
         if use_embeddings and self.embedding is not None:
             result = self.embedding.classify(combined)
-            if result is not None:
+            if result is not None and (not leaders or result.topic in leaders):
                 return result
 
         return Classification(None, "none", 0.0)

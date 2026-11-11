@@ -177,10 +177,14 @@ class SongIndex:
                   if len(k.split()) > len(words) and k.split()[: len(words)] == words]
         if longer and len({self._by_key[k]["topics"][0] for k in longer}) == 1:
             return self._hit(min(longer, key=len), False)
-        # A known name opens the title ("אשת חיל מי ימצא"); the longest wins.
+        # A known song opens the title ("אשת חיל מי ימצא"); the longest wins.
+        # Only names of songs and piyutim (Wikipedia articles) count here: a
+        # prayer-book section name such as "לשנה הבאה" also opens ordinary
+        # phrases ("לשנה הבאה בטוב").
         for n in range(len(words) - 1, 1, -1):
             prefix = " ".join(words[:n])
-            if prefix in self._by_key and words[0] not in _GENERIC_FIRST_WORDS:
+            entry = self._by_key.get(prefix)
+            if entry and words[0] not in _GENERIC_FIRST_WORDS and "he.wikipedia" in (entry.get("src") or []):
                 return self._hit(prefix, False)
         return None
 
@@ -204,9 +208,11 @@ class SongIndex:
 
 # ------------------------------------------------------------------ the lexicon
 # Calibrated on backend/scripts/topic_eval_he.json for precision ≥ 0.9 and
-# checked on the held-out set (backend/scripts/eval_knowledge.py).
-LEXICON_MIN_SCORE = 0.10
-LEXICON_MIN_MARGIN = 0.05
+# checked on the held-out set and on real song titles
+# (backend/scripts/eval_knowledge.py). The weights are spread over thousands
+# of features per topic, so a clear lead is a small number.
+LEXICON_MIN_SCORE = 0.02
+LEXICON_MIN_MARGIN = 0.02
 # Album and folder names count, but less than the title itself.
 CONTEXT_WEIGHT = 0.5
 
@@ -218,6 +224,7 @@ class LexiconResult:
     margin: float
     second: str | None
     words: tuple[str, ...] = ()   # the title words that weighed most for the topic
+    top: tuple[str, ...] = ()     # the two leading topics (empty when no word is known)
 
 
 class TopicLexicon:
@@ -287,6 +294,7 @@ class TopicLexicon:
         ranked = sorted(s.items(), key=lambda kv: -kv[1])
         (best, top), (second, nxt) = ranked[0], (ranked[1] if len(ranked) > 1 else (None, 0.0))
         margin = top - nxt
+        leaders = tuple(t for t, v in ranked[:2] if v > 0)
         if top >= self.min_score and margin >= self.min_margin:
-            return LexiconResult(best, top, margin, second, self.key_words(f"{title} {context}", best))
-        return LexiconResult(None, top, margin, best)
+            return LexiconResult(best, top, margin, second, self.key_words(f"{title} {context}", best), leaders)
+        return LexiconResult(None, top, margin, best, (), leaders)

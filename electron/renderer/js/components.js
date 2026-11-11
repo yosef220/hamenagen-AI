@@ -161,9 +161,12 @@
 
   function closeTrackMenu() {
     if (songMenu.hidden) return;
+    // Give focus back only if it was inside the menu (keyboard use), and
+    // without scrolling: the page may have moved since the menu opened.
+    const hadFocus = songMenu.contains(document.activeElement);
     songMenu.hidden = true;
     menuTrack = null;
-    if (menuReturn && menuReturn.focus) menuReturn.focus();
+    if (hadFocus && menuReturn && menuReturn.focus && document.contains(menuReturn)) menuReturn.focus({ preventScroll: true });
     menuReturn = null;
   }
   H.closeTrackMenu = closeTrackMenu;

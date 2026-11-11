@@ -1,0 +1,4206 @@
+{
+ "version": "2026-11-11",
+ "licence": "CC BY-SA 4.0",
+ "attribution": "נבנה מוויקיפדיה העברית (CC BY-SA 4.0) ומטקסטים של ספריא ברישיונות פתוחים; מופץ ברישיון CC BY-SA 4.0. Built from Hebrew Wikipedia (CC BY-SA 4.0) and openly licensed Sefaria texts; distributed under CC BY-SA 4.0.",
+ "entries": [
+  {
+   "title": "א סוכה א קליינע",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "א שבת טיש",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אבוא בחיל להתיצבה",
+   "topics": [
+    "פסח"
+   ],
+   "aliases": [
+    "אלהי הרוחות לכל בשר",
+    "חסל סידור פסח",
+    "חסל סדור פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אבותי כי בטחו",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אבי אבי",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אבלה נפשי וחשך תארי",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אבני יקר",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אגדלך אלהי כל נשמה",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "אגדלך"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אגדת שלום שבזי",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אגיל ואשמח בלבבי",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אדון בפקדך",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אדון הסליחות",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אדון מועד כתקח",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "aliases": [
+    "מרובים צרכי עמך"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אדיר איום ונורא",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אדיר במלוכה",
+   "topics": [
+    "פסח"
+   ],
+   "aliases": [
+    "כי לו נאה"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "אדיר הוא",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "אדיר ונאור",
+   "topics": [
+    "יום כיפור"
+   ],
+   "aliases": [
+    "מי אל כמוך"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אדירי איומה יאדירו בקול",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אדני יום לך אערך תחינה",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אדני נגדך כל תאותי",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אדר והוד",
+   "topics": [
+    "ראש השנה"
+   ],
+   "aliases": [
+    "שמו מפארים עדת חבלו",
+    "שמו מפארים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אהוב מהר המור",
+   "topics": [
+    "חתונה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אוחילה לאל",
+   "topics": [
+    "ראש השנה",
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אום אני חומה",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אור וירושלים",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אורחים לחג",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אז בהר מור",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אז טרם נמתחו",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אז שש מאות",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אזהרות",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אזכרה אלהים ואהמיה",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אחד מי יודע",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "אחות קטנה",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "איה כל נפלאותיך",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "איילת חן",
+   "topics": [
+    "חתונה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "איך יודעים שבא אביב",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "איך נפתח פה",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אכלו משמנים",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אל ארך אפים",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אל חי יפתח",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אל מאד נעלה",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אל מסתתר",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אל נורא עלילה",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אל רחום שמך",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אל תעש עמנו כלה",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אלה אזכרה",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אלה בשלישימו",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אלהי אל תדינני כמעלי",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אלהים אלי אתה",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אלוהי עוז",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אלי ציון ועריה",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אליהו הנביא",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אליך אקרא יה",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אליך ה' נשאתי עיני",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אם אפס רבע הקן",
+   "topics": [
+    "אלול"
+   ],
+   "aliases": [
+    "אם אפס רובע הקן"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אם אשכחך",
+   "topics": [
+    "ירושלים"
+   ],
+   "aliases": [
+    "ציון תמתי"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אם עונינו רבו להגדיל",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אמונים ערכו שבח",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אמנם כן",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אמר ה' ליעקב",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אמר רבי עקיבא",
+   "topics": [
+    "ל״ג בעומר"
+   ],
+   "aliases": [
+    "אמר רבי עקיבא - שיר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אנא בחסדך תרוממני",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אנא בכוח",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "אנא בכח",
+    "תפילת רבי נחוניה בן הקנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אנא בכח",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "אנא בקראנו",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אנו נושאים לפידים",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אני הוא השואל",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אני וסימון ומואיז הקטן",
+   "topics": [
+    "ירושלים"
+   ],
+   "aliases": [
+    "אני, סימון ומואיז הקטן"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אני מזכיר היום חסדי אבותי",
+   "topics": [
+    "ראש השנה",
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אני פורים",
+   "topics": [
+    "פורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אנשי אמונה אבדו",
+   "topics": [
+    "אלול"
+   ],
+   "aliases": [
+    "אנשי אמונה",
+    "אנשי אמנה אבדו"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אסדר תושבחתא",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אעדיף כל שמונה",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אף ברי אותת",
+   "topics": [
+    "סוכות"
+   ],
+   "aliases": [
+    "יפתח ארץ לישע"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אפפונו מים",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אקדמות",
+   "topics": [
+    "שבועות"
+   ],
+   "aliases": [
+    "אקדמות מלין",
+    "אקדמות מילין"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אראלי מעלה",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ארבעה אחים",
+   "topics": [
+    "פסח"
+   ],
+   "aliases": [
+    "ארבעת האחים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ארוממך לכבוד שמך",
+   "topics": [
+    "סוכות"
+   ],
+   "aliases": [
+    "לעיר ציון הר קדשך"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ארמי אבד אבי",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "ארץ ורום בהבראם",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ארץ זבת חלב ודבש",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ארץ שבעת המינים",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ארשת שפתינו",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אש אש",
+   "topics": [
+    "ל״ג בעומר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אשיר לאל אשר שבת",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אשמנו מכל עם",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אשר בגלל אבות",
+   "topics": [
+    "סוכות"
+   ],
+   "aliases": [
+    "אשר בגלל אבות בנים גידל"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אשר הניא",
+   "topics": [
+    "פורים"
+   ],
+   "aliases": [
+    "שושנת יעקב"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אשר יצר אור",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אשרי עין ראתה שושנת השרון",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אשת חיל",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "אשת חיל מי ימצא",
+    "משלי פרק לא"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "אתאנו לחלות פניך",
+   "topics": [
+    "ראש השנה",
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אתה אל כביר",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אתה הנחלת",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אתוודה על עברות",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "aliases": [
+    "רבונו של עולם אתוודה על עברות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "אתקינו סעודתא",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "אסדר לסעודתא",
+    "בני היכלא",
+    "אזמר בשבחין"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "באו זרים למקדשי",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "באנו חושך לגרש",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "בדעתו אביעה חידות",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "בזוכרי על משכבי",
+   "topics": [
+    "אלול"
+   ],
+   "aliases": [
+    "בזכרי על משכבי",
+    "בלעם חזק"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "בטרם שחקים וארקים נמתחו",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "בליל עשור",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "במה מדליקין",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "במוצאי יום מנוחה",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "במוצאי מנוחה קדמנוך תחילה",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "במרומי ערץ",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "בן אדם מה לך נרדם",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "בן אדמה",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "בר יוחאי",
+   "topics": [
+    "ל״ג בעומר",
+    "שבת"
+   ],
+   "aliases": [
+    "בר יוחאי נמשחת אשריך"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "בר כוכבא",
+   "topics": [
+    "ל״ג בעומר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "בראש השנה",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ברוך אל עליון",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "ברוך ה' יום יום",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ברח דודי",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ברכות הדלקת נרות חנוכה",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "ברכת הבנים",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "בשנה הבאה",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "בת אהובת אל",
+   "topics": [
+    "ראש השנה",
+    "אלול"
+   ],
+   "aliases": [
+    "חון תחון"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "בת עמי לא תחשה",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "גאט פון אברהם",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "אלוהי אברהם"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "גבעת התחמושת",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "גילו הגלילים",
+   "topics": [
+    "חנוכה"
+   ],
+   "aliases": [
+    "גילו המכבים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "דוי הסר",
+   "topics": [
+    "חתונה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "דיינו",
+   "topics": [
+    "פסח"
+   ],
+   "aliases": [
+    "כמה מעלות טובות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "דרור יקרא",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "ה' שמעתי שמעך",
+   "topics": [
+    "ראש השנה",
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הא לחמא עניא",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "האדרת והאמונה",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הבה נרימה",
+   "topics": [
+    "חנוכה"
+   ],
+   "aliases": [
+    "חג הניצחון",
+    "חג הנצחון"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הורה היאחזות",
+   "topics": [
+    "שבועות"
+   ],
+   "aliases": [
+    "הורה האחזות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הורה מדורה",
+   "topics": [
+    "ל״ג בעומר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הורה ממטרה",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הושענא רבה",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "היום הרת עולם",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "היום תאמצנו",
+   "topics": [
+    "ראש השנה",
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הכותל",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "המבדיל בין קודש לחול",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "המבדיל"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הנה אני בא",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הנני כאן",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הנרות הללו",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "הנשמה לך 9: להודות ולהלל",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הערב בבית",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הפינג'אן",
+   "topics": [
+    "ל״ג בעומר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "הקיץ עבר",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "השר משה מונטיפיורי",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ואמרתם כה לחי",
+   "topics": [
+    "ל״ג בעומר",
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ובכן ואמרתם זבח פסח",
+   "topics": [
+    "פסח"
+   ],
+   "aliases": [
+    "אומץ גבורותיך הפלאת",
+    "אומץ גבורותיך הפלאת בפסח",
+    "ואמרתם זבח פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ובכן ויהי בחצי הלילה",
+   "topics": [
+    "פסח"
+   ],
+   "aliases": [
+    "אז רוב ניסים הפלאת בלילה",
+    "ויהי בחצי הלילה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "והאר עינינו",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "והיא שעמדה",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "וחג שבועות תעשה לך",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ויאהב אומן",
+   "topics": [
+    "פורים"
+   ],
+   "aliases": [
+    "ויאהב אומן יתומת הגן",
+    "קרובץ לפורים",
+    "קרוב\"ץ לפורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ויאתיו כל לעבדך",
+   "topics": [
+    "ראש השנה",
+    "יום כיפור"
+   ],
+   "aliases": [
+    "ויאתיו"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ויהי בחצי הלילה",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "ויתן לך",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "וכל מאמינים",
+   "topics": [
+    "ראש השנה",
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ונתנה תוקף",
+   "topics": [
+    "ראש השנה",
+    "יום כיפור"
+   ],
+   "aliases": [
+    "נתנה תוקף",
+    "אגדת רבי אמנון ממגנצא"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "זאת ירושלים",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "זבח פסח",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "זהרת אל-מדאא'ן",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "זוהר לסעודה ראשונה",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "זכור אב",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "זכור ברית אברהם",
+   "topics": [
+    "אלול"
+   ],
+   "aliases": [
+    "זכור ברית"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "זמירות לליל שבת",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "זמירות לסעודת היום",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "חביבי יה חביבי",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "חג אסיף",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "חג פורים",
+   "topics": [
+    "פורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "חד גדיא",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "חי ה' וברוך צורי",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "חנוכה חנוכה",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "חנוכייה לי יש",
+   "topics": [
+    "חנוכה"
+   ],
+   "aliases": [
+    "חנוכיה לי יש"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "חסל סידור פסח",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "יא מחיג'ה",
+   "topics": [
+    "חתונה"
+   ],
+   "aliases": [
+    "יא מחג'ה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "י\"ג מידות",
+   "topics": [
+    "אלול"
+   ],
+   "aliases": [
+    "שלוש עשרה מידות הרחמים",
+    "י\"ג מידות הרחמים",
+    "שלוש עשרה מידות",
+    "13 מידות",
+    "מידות הרחמים",
+    "אל מלך יושב על כסא רחמים",
+    "שלש עשרה מידות",
+    "אל מלך",
+    "חלוקת י\"ג המידות",
+    "שלוש עשרה מידות של רחמים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ידי רשים",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ידיד נפש",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "ידידי השכחת",
+   "topics": [
+    "פסח",
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ידידי רועי מקימי",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "ידידי רועי"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יה אכסוף",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "יה אכסף"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יה הצל יונה",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יה ריבון",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "יה ריבון עלם",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "יה ריבון",
+    "יה ריבון עולם ועולמיא",
+    "יה ריבון עולם ועלמיא",
+    "יה רבון עולם",
+    "יה רבון עולם ועלמיא",
+    "יה רבון",
+    "יה רבון עולם ועולמיא",
+    "יה רבון עלם ועלמיא",
+    "יה ריבון עולם",
+    "קה ריבון",
+    "יה רבון עלם"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יה שמך ארוממך",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יה שמע אביוניך",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יהודה המכבי",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יודוך רעיוני",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יום השבת אין כמוהו",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יום זה לישראל",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "יום זה מכובד",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "יום זה שירו לאל",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יום חמישי של סוכות",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "יום טוב לנו",
+   "topics": [
+    "פורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יום טוב ראשון של סוכות",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "יום ליבשה",
+   "topics": [
+    "פסח"
+   ],
+   "aliases": [
+    "ים ליבשה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יום רביעי של סוכות",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "יום שבת",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יום שבתון",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "יונה מצאה בו מנוח",
+    "ובאו כולם בברית יחד"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "יום שישי של סוכות",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "יום שלישי של סוכות",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "יום שני של סוכות",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "יונה מה תהגי",
+   "topics": [
+    "יום כיפור",
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יחד באורך",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יחיד רם לעולם",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יכול מראש חודש",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "ים השיבולים",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ימי החנוכה",
+   "topics": [
+    "חנוכה"
+   ],
+   "aliases": [
+    "חנוכה, אוי חנוכה",
+    "אוי חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יעזוב רשע נתיבו",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יעירוני רעיוני",
+   "topics": [
+    "אלול"
+   ],
+   "aliases": [
+    "ישאלוני רעיוני"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יעלה יעלה",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יעלה תחנוננו",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יציב פתגם",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ירושלים",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ירושלים האחרת",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ירושלים שבלב",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ירושלים של ברזל",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ירושלים של זהב",
+   "topics": [
+    "ירושלים"
+   ],
+   "aliases": [
+    "ירושלים דדהבא"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ירושלים שלי",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ירושלם",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ירצה צום עמך",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "aliases": [
+    "מחר יהיה האות הזה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "יש עיר",
+   "topics": [
+    "ירושלים"
+   ],
+   "aliases": [
+    "ישנה עיר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ישמח חתני",
+   "topics": [
+    "חתונה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ישמח לבי",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ישמיענו סלחתי",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ישן אל תרדם",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ישראל נושע בה' תשועת עולמים",
+   "topics": [
+    "אלול"
+   ],
+   "aliases": [
+    "ישראל נושע"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ישראל עבדיך",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ישראל עמך תחינה עורכים",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "כאחלמה קבועה בעטרת",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "כאיל תערוג",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "כד קטן",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "כהושעת אלים",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "כוס רביעית",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "כוס שלישית",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "כוס שניה",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "כי אנו עמך",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "כי אשמרה",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "כי אשמרה שבת",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "כי הנה כחומר",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "aliases": [
+    "כחומר ביד היוצר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "כי תבוא אל מודיעין",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ככלות ייני",
+   "topics": [
+    "פורים"
+   ],
+   "aliases": [
+    "שיר המים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "כל יום בסוכות שחל בשבת",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "כל מקדש",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "כל מקדש שביעי",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "כל מקדשי שביעי",
+    "כל מקדש"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "כנגד ארבעה בנים",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "כשיוצאים מן הסוכה",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "כתר מלכות",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "לאל עורך דין",
+   "topics": [
+    "ראש השנה",
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "לביבות",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "לחיים טיש ל\"ג בעומר",
+   "topics": [
+    "ל״ג בעומר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ליהודים הייתה אורה ושמחה וששון ויקר",
+   "topics": [
+    "פורים"
+   ],
+   "aliases": [
+    "ליהודים הייתה אורה",
+    "ליהודים היתה אורה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ליל שיכורים",
+   "topics": [
+    "פורים"
+   ],
+   "aliases": [
+    "ליל שיכורים הוא הלילה",
+    "ליל שכורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ליל שמורים אותו אל חצה",
+   "topics": [
+    "פסח"
+   ],
+   "aliases": [
+    "אזכרה שנות עולמים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ליצן קטן נחמד",
+   "topics": [
+    "פורים"
+   ],
+   "aliases": [
+    "ליצן קטן שלי"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ליצנים קטנים",
+   "topics": [
+    "פורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "לך אלי תשוקתי",
+   "topics": [
+    "יום כיפור"
+   ],
+   "aliases": [
+    "לך אלי"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "לך ירושלים",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "לכבוד החנוכה",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "לכה דודי",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "לכל אחד ירושלים",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "למה הקץ נסתם נא",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "למענך אלהי",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "למתודה חטאתיו",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "לנר ולבשמים",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "לשוני כוננת",
+   "topics": [
+    "פסח",
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "לשנה הבאה",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "מה ידידות",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "מה ידידות מנוחתך"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "מה יפית",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "מאיופס"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מה נשתנה",
+   "topics": [
+    "פסח"
+   ],
+   "aliases": [
+    "ארבע קושיות"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "מול הר סיני",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מוצאי שבת",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "מוצ\"ש",
+    "מוצש\"ק",
+    "צאת השבת",
+    "צאת שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מוציא מצה",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "מזמור לדוד",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "מחי ומסי",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מי בן שיח",
+   "topics": [
+    "חתונה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מי ברכב",
+   "topics": [
+    "שבועות",
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מי זה הדליק",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מי זה מקיש על חלון",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מי ידליק",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מי ימלל",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מי כמוך ואין כמוך",
+   "topics": [
+    "פורים"
+   ],
+   "aliases": [
+    "אדון חסדך בל יחדל",
+    "אדון חסדך"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מי שענה לאברהם אבינו",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מכניסי רחמים",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מלאו אסמינו בר",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מלאכי רחמים",
+   "topics": [
+    "אלול"
+   ],
+   "aliases": [
+    "רבנו שמואל הכהן"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מלך אמון מאמרך",
+   "topics": [
+    "ראש השנה"
+   ],
+   "aliases": [
+    "מלך אמון",
+    "אל חנן נחלתו"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מלך גואל ומושיע",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מלך עליון אל דר במרום",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מנוחה ושמחה",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "מסיימים את ההלל",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "מעוז צור",
+   "topics": [
+    "חנוכה"
+   ],
+   "aliases": [
+    "מעוז צור ישועתי"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "מעוזי אז כלה קץ",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מעל פסגת הר הצופים",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מעשה אלוהינו",
+   "topics": [
+    "יום כיפור"
+   ],
+   "aliases": [
+    "מעשה אלהינו",
+    "אין מי בשחק יערוך לו"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מעשה בלביבות",
+   "topics": [
+    "חנוכה"
+   ],
+   "aliases": [
+    "הוי חנה זלדה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מעשה שהיה בבני ברק",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "מפי אל",
+   "topics": [
+    "שבועות",
+    "סוכות"
+   ],
+   "aliases": [
+    "אין אדיר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מקהלות עם",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מקום של אש",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מראה כהן",
+   "topics": [
+    "יום כיפור"
+   ],
+   "aliases": [
+    "אמת מה נהדר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מראש מקדמי ארץ",
+   "topics": [
+    "פורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "משה אמת ותורתו אמת",
+   "topics": [
+    "סוכות"
+   ],
+   "aliases": [
+    "משה אמת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "משה בתיבה",
+   "topics": [
+    "פסח"
+   ],
+   "aliases": [
+    "דומם שטה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "משחק פורים",
+   "topics": [
+    "פורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "משמים שלום לעם",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "משנכנס אדר מרבין בשמחה",
+   "topics": [
+    "פורים"
+   ],
+   "aliases": [
+    "משנכנס אדר מרבים בשמחה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "משתחוים להדרת קודש",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "מתחילה עובדי עבודה זרה היו אבותינו",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "נאסף תשרי",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "נגילה הללויה",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ניגוני מירון",
+   "topics": [
+    "ל״ג בעומר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ניצנים נראו בארץ",
+   "topics": [
+    "פסח",
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "נר לי",
+   "topics": [
+    "חנוכה"
+   ],
+   "aliases": [
+    "נר לי דקיק"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "נר ראשון של חנוכה",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "נרות רבים",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "נרותי הזעירים",
+   "topics": [
+    "חנוכה"
+   ],
+   "aliases": [
+    "נרותי הזערורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "סביבון סוב סוב סוב",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "סביבוני ירוץ בגיל",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "סוכה ולולב לעם סגולה",
+   "topics": [
+    "סוכות"
+   ],
+   "aliases": [
+    "סוכה ולולב"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "סלח נא אשמות",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "סלינו על כתפינו",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "סעודת יום שבת",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "עבדים היינו",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "עזרני אל חי",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "עיר שלום",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "על אהבתך",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "על ישראל אמונתו",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "על כפיו יביא",
+   "topics": [
+    "ירושלים"
+   ],
+   "aliases": [
+    "ברחובנו הצר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "עליונים ששו",
+   "topics": [
+    "שבועות"
+   ],
+   "aliases": [
+    "אז שש מאות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "עמך לשחרך",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "עשה למען שמך",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "עשר המכות",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "עת שערי רצון להפתח",
+   "topics": [
+    "ראש השנה",
+    "יום כיפור",
+    "אלול"
+   ],
+   "aliases": [
+    "עת שערי רצון להיפתח",
+    "העוקד הנעקד והמזבח",
+    "עוקד והנעקד והמזבח",
+    "עת שערי רצון"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "פטיש מסמר",
+   "topics": [
+    "סוכות"
+   ],
+   "aliases": [
+    "פטיש מסמר ניקח מהר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "פסח כאן",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "פסח מצה ומרור",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "פרעה בפיג'מה",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "פתח לנו שער",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "צור משלו",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "צור משלו אכלנו",
+   "topics": [
+    "שבת",
+    "ירושלים"
+   ],
+   "aliases": [
+    "צור משלו",
+    "יבנה המקדש"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ציון הלא תשאלי",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "צמאה נפשי",
+   "topics": [
+    "שבת",
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "קוראי מגילה",
+   "topics": [
+    "פורים"
+   ],
+   "aliases": [
+    "קוראי מגלה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "קידוש ליל שבת",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "קידושא רבא",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "קידושא רבה",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "קמתי באשמורת",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "קרב יום",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "קשתנו על שכמנו",
+   "topics": [
+    "ל״ג בעומר"
+   ],
+   "aliases": [
+    "היום ל\"ג בעומר"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "ריבון כל העולמים",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "רעה בשבטך",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "רפא צירי",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שאו שערים",
+   "topics": [
+    "סוכות"
+   ],
+   "aliases": [
+    "שאו שערים ראשיכם"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שבחי ירושלים",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שבט יהודה בדוחק ובצער",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שבת המלכה",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "החמה מראש האילנות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שואף כמו עבד",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שובי בת ירושלים",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שולחן עורך",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "שומר החומות",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שומר ישראל",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שופט כל הארץ",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שושנת יעקב",
+   "topics": [
+    "פורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שחר אבקשך",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שחר קמתי להודות",
+   "topics": [
+    "אלול"
+   ],
+   "aliases": [
+    "נפשי בשאלתי ועמי בבקשתי",
+    "שחר קמתי"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שיבולי פז",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שיבולת בשדה",
+   "topics": [
+    "שבועות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שימו לב אל הנשמה",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "אודה לאל",
+    "אודה לאל לבב חוקר",
+    "שימו לב על הנשמה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שימו שמן",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שיר הייחוד",
+   "topics": [
+    "יום כיפור"
+   ],
+   "aliases": [
+    "שיר היחוד"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שיר הכבוד",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שיר המסכות",
+   "topics": [
+    "פורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שיר הרעשן",
+   "topics": [
+    "פורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שיר ידידות",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שיר לחודש תשרי",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שירים למוצאי שבת",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "שירת הבקשות",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שישו את ירושלים",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שישו ושמחו",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שלום לך דודי",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "שלום לבן דודי"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שלום עליכם",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "שלומית בונה סוכה",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שלח את עמי",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שם אל קמתי לברך",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שמחה רבה",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שמע קולי",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שמע קולנו",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שמרו שבתותי",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "שבת היום"
+   ],
+   "src": [
+    "he.wikipedia",
+    "sefaria"
+   ]
+  },
+  {
+   "title": "שנאנים שאננים",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שנה טובה",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שני זיתים",
+   "topics": [
+    "חנוכה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שנים עשר ירחים",
+   "topics": [
+    "ראש השנה"
+   ],
+   "aliases": [
+    "שיר החודשים",
+    "שנים עשר הירחים",
+    "בתשרי נתן הדקל"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שערי שמים פתח",
+   "topics": [
+    "אלול"
+   ],
+   "aliases": [
+    "שערי שמים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שפוך חמתך",
+   "topics": [
+    "פסח"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "שפל רוח",
+   "topics": [
+    "ראש השנה"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שפעת רביבים",
+   "topics": [
+    "סוכות"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "שקט שקט, החנוכייה דולקת",
+   "topics": [
+    "חנוכה"
+   ],
+   "aliases": [
+    "שקט שקט, החנוכיה דולקת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "חדש ששוני",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "תהילים כ\"ג",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "מזמור לדוד",
+    "מזמור כג",
+    "מזמור לדוד ה' רועי לא אחסר",
+    "תהלים כ\"ג"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "תהילים כט",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "תהילים צב",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "תהילים צג",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "תהילים צה",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "תהילים צו",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "תהילים צז",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "תהילים צח",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "תהילים צט",
+   "topics": [
+    "שבת"
+   ],
+   "src": [
+    "sefaria"
+   ]
+  },
+  {
+   "title": "תורה הקדושה התחנני בבקשה",
+   "topics": [
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "תכפו עלינו צרות",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "תמהנו מרעות",
+   "topics": [
+    "יום כיפור",
+    "אלול"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "תן כתף",
+   "topics": [
+    "פורים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "תנו רבנן",
+   "topics": [
+    "פסח",
+    "סוכות"
+   ],
+   "aliases": [
+    "תנו תנו רבנן"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "תפילה לירושלים",
+   "topics": [
+    "ירושלים"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "תפילת גשם",
+   "topics": [
+    "סוכות"
+   ],
+   "aliases": [
+    "תפילת הגשם",
+    "תיקון הגשם"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "תפילת טל",
+   "topics": [
+    "פסח"
+   ],
+   "aliases": [
+    "תיקון הטל",
+    "תפילת הטל"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "תשבי צורי",
+   "topics": [
+    "שבת"
+   ],
+   "aliases": [
+    "אל יאריך זמן"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "תתן אחרית לעמך",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  },
+  {
+   "title": "תתנם לחרפה",
+   "topics": [
+    "יום כיפור"
+   ],
+   "src": [
+    "he.wikipedia"
+   ]
+  }
+ ]
+}

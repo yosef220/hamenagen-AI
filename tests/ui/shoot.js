@@ -122,12 +122,13 @@ async function run() {
       await page.waitForSelector('#view-library .track');
       await shot(page, `03-library${suffix}`);
 
-      // The song menu: why a song has its topic, and choosing another one.
-      const row = page.locator('#view-library .track', { hasText: 'ניגון געגועים' }).first();
-      await row.click({ button: 'right' });
+      // The song menu: why a song has its topic (a piyut from the song index)…
+      await page.locator('#view-library .track', { hasText: 'בר יוחאי' }).first().click({ button: 'right' });
       await page.waitForSelector('#track-menu:not([hidden]) .chip-choice');
+      const known = await page.textContent('#track-menu .menu-why');
+      if (!/אינדקס השירים/.test(known)) errors.push(`song menu for a known piyut says: ${known}`);
       await shot(page, `10-song-menu${suffix}`);
-      // (Taking a screenshot resizes the page, which closes the menu.)
+      // …and choosing another topic for a song nothing could place.
       await page.locator('#view-library .track', { hasText: 'ניגון געגועים' }).first().click({ button: 'right' });
       await page.waitForSelector('#track-menu:not([hidden]) .chip-choice');
       await page.locator('#track-menu .chip-choice', { hasText: 'אמונה' }).first().click();

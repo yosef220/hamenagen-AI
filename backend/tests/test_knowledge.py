@@ -42,7 +42,8 @@ def test_titles_fold_spellings_and_recording_words():
 
 INDEX = SongIndex([
     {"title": "יה ריבון עלם ועלמיא", "topics": ["שבת"], "aliases": ["יה ריבון"], "src": ["he.wikipedia"]},
-    {"title": "אשת חיל", "topics": ["שבת"], "src": ["sefaria"]},
+    {"title": "אשת חיל", "topics": ["שבת"], "src": ["he.wikipedia", "sefaria"]},
+    {"title": "לשנה הבאה", "topics": ["פסח"], "src": ["sefaria"]},
     {"title": "מעוז צור", "topics": ["חנוכה"], "src": ["he.wikipedia"]},
     {"title": "אוחילה לאל", "topics": ["ראש השנה", "יום כיפור"], "src": ["he.wikipedia"]},
     {"title": "שיר המעלות בשוב", "topics": ["ירושלים"]},
@@ -65,6 +66,12 @@ def test_index_matches_a_known_name_at_the_start_of_a_title():
     assert hit and hit.topics == ("שבת",) and not hit.exact
     # The title is the start of a longer known name.
     assert INDEX.lookup("יה ריבון עלם").topics == ("שבת",)
+
+
+def test_prayer_book_section_names_match_only_whole():
+    # "לשנה הבאה" closes the Haggadah, but it also opens ordinary phrases.
+    assert INDEX.lookup("לשנה הבאה").topics == ("פסח",)
+    assert INDEX.lookup("לשנה הבאה בטוב") is None
 
 
 def test_index_does_not_guess():
@@ -152,7 +159,8 @@ def test_shipped_index_knows_classic_songs(title, topic):
 
 @needs_data
 @pytest.mark.parametrize("title,topic", [
-    ("סופגניות חמות", "חנוכה"),
+    ("נרות דולקים", "חנוכה"),
+    ("מצה ומרור", "פסח"),
     ("שעיר לעזאזל", "יום כיפור"),
     ("משלוח מנות", "פורים"),
     ("ארבעת המינים", "סוכות"),
