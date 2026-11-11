@@ -27,10 +27,16 @@ except Exception:  # pragma: no cover
 
 # Directories we never descend into — noise, and often huge.
 _SKIP_DIR_NAMES = {
-    "$recycle.bin", "system volume information", "windows", "program files",
-    "program files (x86)", "programdata", "appdata", "node_modules",
-    ".git", "__pycache__", ".cache",
+    "$recycle.bin", "system volume information", "windows", "windows.old",
+    "$windows.~bt", "$windows.~ws", "program files", "program files (x86)",
+    "programdata", "appdata", "recovery", "msocache", "node_modules",
+    ".git", "__pycache__", ".cache", "site-packages",
 }
+
+# Files this small are notification sounds and voice clips, not songs. Only
+# applied while walking folders; an explicitly added file is always accepted.
+MIN_SONG_BYTES = 64 * 1024
+MIN_SONG_SECONDS = 20.0
 
 
 def _stable_id(path: str) -> str:
@@ -96,14 +102,24 @@ def read_sidecar_lyrics(path: str | Path, *, max_chars: int = 4000) -> str:
     return ""
 
 
-def scan_file(path: str | Path, *, include_video: bool = False) -> Track | None:
+def is_media(path: str | Path, *, include_video: bool = False) -> bool:
+    ext = Path(path).suffix.lower()
+    return ext in AUDIO_EXTENSIONS or (include_video and ext in VIDEO_EXTENSIONS)
+
+
+def track_id_for(path: str | Path) -> str:
+    """The id a file gets in the index (stable while the file stays put)."""
+    return _stable_id(str(Path(path).resolve()))
+
+
+def scan_file(path: str | Path, *, include_video: bool = False, stat: os.stat_result | None = None) -> Track | None:
     p = Path(path)
     ext = p.suffix.lower()
     is_video = ext in VIDEO_EXTENSIONS
-    if ext not in AUDIO_EXTENSIONS and not (include_video and is_video):
+    if not is_media(p, include_video=include_video):
         return None
     try:
-        stat = p.stat()
+        stat = stat or p.stat()
     except OSError:
         return None
 
@@ -114,6 +130,8 @@ def scan_file(path: str | Path, *, include_video: bool = False) -> Track | None:
     return Track(
         id=_stable_id(abspath),
         path=abspath,
+        mtime=stat.st_mtime,
+        size=stat.st_size,
         title=tags.get("title") or title,
         artist=tags.get("artist") or artist,
         album=tags.get("album", ""),
@@ -128,6 +146,43 @@ def scan_file(path: str | Path, *, include_video: bool = False) -> Track | None:
     )
 
 
+def iter_media_files(
+    roots: list[str | Path],
+    *,
+    include_video: bool = False,
+    follow_symlinks: bool = False,
+) -> Iterator[tuple[Path, os.stat_result]]:
+    """Yield ``(path, stat)`` for every likely song under the given roots.
+
+    Cheap: no tags are read, so a rescan can skip files it already knows.
+    """
+    seen_dirs: set[str] = set()
+    for root in roots:
+        root_path = Path(root)
+        if not root_path.exists():
+            continue
+        for dirpath, dirnames, filenames in os.walk(root_path, followlinks=follow_symlinks):
+            key = os.path.normcase(os.path.abspath(dirpath))
+            if key in seen_dirs:  # overlapping roots (e.g. home + a folder in it)
+                dirnames[:] = []
+                continue
+            seen_dirs.add(key)
+            dirnames[:] = [
+                d for d in dirnames if d.lower() not in _SKIP_DIR_NAMES and not d.startswith((".", "$"))
+            ]
+            for name in filenames:
+                if not is_media(name, include_video=include_video):
+                    continue
+                full = Path(dirpath) / name
+                try:
+                    st = full.stat()
+                except OSError:
+                    continue
+                if st.st_size < MIN_SONG_BYTES:
+                    continue
+                yield full, st
+
+
 def scan_roots(
     roots: list[str | Path],
     *,
@@ -135,13 +190,36 @@ def scan_roots(
     follow_symlinks: bool = False,
 ) -> Iterator[Track]:
     """Yield a :class:`Track` for every media file under the given roots."""
-    for root in roots:
-        root_path = Path(root)
-        if not root_path.exists():
-            continue
-        for dirpath, dirnames, filenames in os.walk(root_path, followlinks=follow_symlinks):
-            dirnames[:] = [d for d in dirnames if d.lower() not in _SKIP_DIR_NAMES and not d.startswith(".")]
-            for name in filenames:
-                track = scan_file(Path(dirpath) / name, include_video=include_video)
-                if track is not None:
-                    yield track
+    for path, st in iter_media_files(roots, include_video=include_video, follow_symlinks=follow_symlinks):
+        track = scan_file(path, include_video=include_video, stat=st)
+        if track is not None and not is_too_short(track):
+            yield track
+
+
+def is_too_short(track: Track) -> bool:
+    return track.duration is not None and track.duration < MIN_SONG_SECONDS
+
+
+def default_roots() -> list[str]:
+    """Where to look when the user chose no folders: the whole computer.
+
+    The user's home folder (Music, Downloads, Desktop, Documents …) plus, on
+    Windows, the root of every other fixed or removable drive (D:, E: …).
+    """
+    roots = [str(Path.home())]
+    if os.name == "nt":  # pragma: no cover - Windows only
+        try:
+            import ctypes
+            import string
+
+            mask = ctypes.windll.kernel32.GetLogicalDrives()
+            for i, letter in enumerate(string.ascii_uppercase):
+                if not mask & (1 << i) or letter in ("A", "B", "C"):
+                    continue
+                drive = f"{letter}:\\"
+                kind = ctypes.windll.kernel32.GetDriveTypeW(drive)
+                if kind in (2, 3):  # DRIVE_REMOVABLE, DRIVE_FIXED
+                    roots.append(drive)
+        except Exception:
+            pass
+    return roots

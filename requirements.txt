@@ -14,7 +14,10 @@ rapidfuzz>=3.6
 # Online source plugin (YouTube). Must be kept up to date (spec §11, §14).
 yt-dlp>=2024.1.0
 
-# Optional local topic-embedding model (spec §8.2 layer 3). Heavy (~100-400MB
-# model download); the classifier works without it via the curated lexicon.
-# Enable by uncommenting, then run: python backend/scripts/prepare_model.py
-# sentence-transformers>=2.6
+# Local topic-embedding model (spec §8.2 layer 3): multilingual-e5-small run
+# with ONNX Runtime — no PyTorch. The offline edition ships the model; other
+# editions download it once on first run, then work offline. The classifier
+# still works without it via the curated lexicon.
+onnxruntime>=1.20
+tokenizers>=0.20
+numpy>=1.26

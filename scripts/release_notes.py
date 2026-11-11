@@ -1,0 +1,102 @@
+"""Write the release notes and the update manifests for a tagged release.
+
+    python scripts/release_notes.py v1.0.0 owner/repo dist
+
+Produces, next to the built files in ``dist``:
+
+* ``RELEASE_NOTES.md``  — the Hebrew release page, with real file sizes
+* ``update.json``       — what 1.x installs check (releases/latest/download)
+* ``legacy/update.json``— the old 0.1 format, so 0.1 installs see 1.0
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from datetime import date
+from pathlib import Path
+
+
+def size_text(n: int) -> str:
+    mb = n / (1024 * 1024)
+    return f"{mb:,.0f}MB" if mb >= 10 else f"{mb:.1f}MB"
+
+
+def main(tag: str, repo: str, folder: str) -> int:
+    version = tag.lstrip("v")
+    dist = Path(folder)
+    base = f"https://github.com/{repo}/releases/download/{tag}"
+    page = f"https://github.com/{repo}/releases/tag/{tag}"
+
+    files = {
+        "portable": f"Hamenagen-{version}-Windows.zip",
+        "offline": f"Hamenagen-{version}-Windows-Offline.zip",
+        "setup_zip": f"Hamenagen-{version}-Setup.zip",
+        "setup_exe": f"Hamenagen-{version}-Setup.exe",
+    }
+    sizes = {k: size_text((dist / v).stat().st_size) if (dist / v).exists() else "—" for k, v in files.items()}
+    missing = [v for v in files.values() if not (dist / v).exists()]
+    if missing:
+        print("missing:", ", ".join(missing), file=sys.stderr)
+        return 1
+
+    notes = f"""## המנגן {version}
+
+נגן מוזיקה קהילתי חכם ל-Windows: מבין בקשות בעברית חופשית, מכיר את הלוח העברי, ועובד בלי אינטרנט.
+
+### איזה קובץ להוריד
+
+| קובץ | למי זה מתאים | גודל |
+| --- | --- | --- |
+| **[{files['portable']}]({base}/{files['portable']})** | הגרסה הניידת — בלי התקנה. מחלצים את ה-ZIP לתיקייה ומריצים `Hamenagen.exe`. בפעם הראשונה שיש אינטרנט היא מורידה את מודל הסיווג (פעם אחת). | {sizes['portable']} |
+| **[{files['offline']}]({base}/{files['offline']})** | למחשב בלי אינטרנט בכלל: הכל בפנים, כולל מודל הסיווג. מחלצים ומריצים. | {sizes['offline']} |
+| **[{files['setup_zip']}]({base}/{files['setup_zip']})** | התקנה רגילה: קיצור דרך בשולחן העבודה ובתפריט התחל, והסרה מהגדרות Windows. בתוך ה-ZIP נמצא קובץ ההתקנה. | {sizes['setup_zip']} |
+| [{files['setup_exe']}]({base}/{files['setup_exe']}) | אותה התקנה ישירות כקובץ EXE (סינון רשת עלול לחסום הורדה של EXE גדול — אז ה-ZIP). | {sizes['setup_exe']} |
+
+הגרסה הניידת שומרת את הספרייה בתיקייה `data` שליד התוכנה, כך שאפשר להעביר אותה עם התיקייה. הגרסה המותקנת שומרת ב-`%APPDATA%\\Hamenagen`.
+
+### מה חדש ב-1.0
+- **עיצוב חדש לגמרי** — בהיר וכהה (או לפי Windows), גודל טקסט, ואותיות במקום תמונות.
+- **הלוח העברי בדף הבית** — התאריך באותיות, המועד של היום וכפתור להשמעה, או ספירה לאחור למועד הבא.
+- **מועדים חדשים** — ערב שבת, מוצאי שבת, ספירת העומר ("היום 12 לעומר"), ל״ג בעומר, בין המצרים, תשעה באב. בימי הספירה ובין המצרים מוצעת מוזיקה ווקאלית.
+- **בקשות חדשות** — "שעה של שירי שבת", "השירים שאהבתי", "מה ששמעתי לאחרונה", "השירים שאני הכי שומע".
+- **לב, היסטוריה ותור** — סימון שירים בלב, תור השמעה עם ערבוב וחזרה, וטיימר שינה שמנמיך בהדרגה.
+- **ספרייה מלאה** — מיון, סינון לפי נושא, חיפוש, ושיר יכול להשתייך ליותר מנושא אחד.
+- **סריקה מהירה** — קבצים שלא השתנו לא נקראים שוב; צלילי מערכת והקלטות קצרות לא נכנסים.
+- **Windows** — כפתורי נגן בשורת המשימות, מקשי מדיה, ותצוגה בחלונית המדיה של Windows.
+- **תיקונים** — שירים עם שמות בעברית מתנגנים בכל מקרה, ושירי חנוכה לא "נעלמים" כשחנוכה חל בשבת.
+
+### בהפעלה הראשונה
+התוכנה אינה חתומה דיגיטלית, ולכן Windows עשוי להציג "Windows הגן על המחשב שלך". לוחצים **מידע נוסף** ← **הפעל בכל זאת**.
+"""
+    (dist / "RELEASE_NOTES.md").write_text(notes, encoding="utf-8")
+
+    manifest = {
+        "app": {
+            "version": version,
+            "published": date.today().isoformat(),
+            "notes": "עיצוב חדש, הלוח העברי בדף הבית, מועדפים, היסטוריה וטיימר שינה.",
+            "page": page,
+            "downloads": {
+                "portable": f"{base}/{files['portable']}",
+                "offline": f"{base}/{files['offline']}",
+                "setup": f"{base}/{files['setup_zip']}",
+            },
+        }
+    }
+    (dist / "update.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    legacy = dist / "legacy"
+    legacy.mkdir(exist_ok=True)
+    (legacy / "update.json").write_text(json.dumps({
+        "version": version,
+        "build": version,
+        "zip_url": f"{base}/{files['portable']}",
+        "notes": f"גרסה {version} יצאה: עיצוב חדש, הלוח העברי, מועדפים והיסטוריה.",
+    }, ensure_ascii=False), encoding="utf-8")
+    print(f"notes + manifests for {version} written")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(*sys.argv[1:4]))

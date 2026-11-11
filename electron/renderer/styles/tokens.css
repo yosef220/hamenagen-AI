@@ -1,0 +1,182 @@
+/*
+ * המנגן — design tokens.
+ *
+ * Two worlds from one object: the light theme is a white Shabbat tablecloth
+ * with tekhelet ink ("מפת שבת"); the dark theme is the velvet of a Torah
+ * mantle ("קטיפה"). Gold thread marks the luach and whatever is playing now.
+ * Components use these tokens only — never literal colours.
+ */
+
+:root {
+  color-scheme: light;
+
+  --bg: #F5F7FA;
+  --surface: #FFFFFF;
+  --sunken: #EDF1F6;
+  --raised: #FFFFFF;
+  --line: #DCE3EC;
+  --line-strong: #C5D0DE;
+  --ink: #142036;
+  --ink-2: #4A5870;
+  --ink-3: #6B7890;
+  --tekhelet: #1D5B9F;
+  --tekhelet-ink: #FFFFFF;
+  --tekhelet-soft: #E3EDF8;
+  --gold: #A97A1F;
+  --gold-soft: #F6EEDC;
+  --live: #C8372D;
+  --good: #2F7A4F;
+  --warn: #9A6A00;
+  --bad: #B3362C;
+  --hover: rgba(20, 32, 54, 0.05);
+  --press: rgba(20, 32, 54, 0.09);
+  --focus: #1D5B9F;
+  --scrim: rgba(11, 19, 34, 0.32);
+  --shadow-overlay: 0 18px 48px rgba(20, 32, 54, 0.18), 0 2px 6px rgba(20, 32, 54, 0.08);
+  --toast-bg: #142036;
+  --toast-ink: #F5F7FA;
+
+  /* The luach panel stays velvet in both themes: it is the one bold object. */
+  --mantle: #16365F;
+  --mantle-2: #1D4373;
+  --mantle-ink: #F3F6FB;
+  --mantle-ink-2: #B9C7DC;
+  --thread: #D8B25E;
+
+  /* Topic tints for letter covers and tiles. */
+  --t-gold: #A97A1F;
+  --t-wine: #8A2E3B;
+  --t-slate: #4F5D73;
+  --t-cedar: #3E6B4F;
+  --t-tekhelet: #1D5B9F;
+  --t-stone: #8C7458;
+  --t-ember: #B0532A;
+  --t-ink: #3A4A64;
+  --t-none: #7D889B;
+  --cover-wash: 0.11;
+
+  /* Type */
+  --font-display: 'Frank Ruhl Libre', 'David Libre', 'David', 'Times New Roman', serif;
+  --font-ui: 'IBM Plex Sans Hebrew', 'Segoe UI', 'Arial Hebrew', Arial, sans-serif;
+  --fs-xs: 0.8rem;
+  --fs-sm: 0.867rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.133rem;
+  --fs-xl: 1.4rem;
+  --fs-2xl: 1.867rem;
+  --fs-3xl: 2.4rem;
+  --fs-luach: 7.2rem;
+
+  /* Space (4px grid) and shape */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s8: 32px;
+  --s10: 40px;
+  --s12: 48px;
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+  --rail-w: 216px;
+  --dock-h: 84px;
+  --drawer-w: 380px;
+  --content-max: 1120px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0B1322;
+    --surface: #111B2E;
+    --sunken: #0E1729;
+    --raised: #16223A;
+    --line: #22314B;
+    --line-strong: #2E4163;
+    --ink: #E9EEF6;
+    --ink-2: #A6B3C7;
+    --ink-3: #7F8DA4;
+    --tekhelet: #6FA6E6;
+    --tekhelet-ink: #0B1322;
+    --tekhelet-soft: #16304F;
+    --gold: #D8B25E;
+    --gold-soft: #2A2416;
+    --live: #F0645A;
+    --good: #6CC08F;
+    --warn: #E2B44F;
+    --bad: #F0645A;
+    --hover: rgba(233, 238, 246, 0.05);
+    --press: rgba(233, 238, 246, 0.09);
+    --focus: #8DB9EE;
+    --scrim: rgba(0, 0, 0, 0.45);
+    --shadow-overlay: 0 18px 48px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+    --toast-bg: #E9EEF6;
+    --toast-ink: #0B1322;
+    --mantle: #13284A;
+    --mantle-2: #19335C;
+    --mantle-ink: #F3F6FB;
+    --mantle-ink-2: #A9B8CF;
+    --thread: #D8B25E;
+    --t-gold: #D8B25E;
+    --t-wine: #D9808C;
+    --t-slate: #9AA8BE;
+    --t-cedar: #7FB894;
+    --t-tekhelet: #6FA6E6;
+    --t-stone: #C9B08E;
+    --t-ember: #E58B5F;
+    --t-ink: #B7C3D6;
+    --t-none: #8592A8;
+    --cover-wash: 0.16;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0B1322;
+  --surface: #111B2E;
+  --sunken: #0E1729;
+  --raised: #16223A;
+  --line: #22314B;
+  --line-strong: #2E4163;
+  --ink: #E9EEF6;
+  --ink-2: #A6B3C7;
+  --ink-3: #7F8DA4;
+  --tekhelet: #6FA6E6;
+  --tekhelet-ink: #0B1322;
+  --tekhelet-soft: #16304F;
+  --gold: #D8B25E;
+  --gold-soft: #2A2416;
+  --live: #F0645A;
+  --good: #6CC08F;
+  --warn: #E2B44F;
+  --bad: #F0645A;
+  --hover: rgba(233, 238, 246, 0.05);
+  --press: rgba(233, 238, 246, 0.09);
+  --focus: #8DB9EE;
+  --scrim: rgba(0, 0, 0, 0.45);
+  --shadow-overlay: 0 18px 48px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --toast-bg: #E9EEF6;
+  --toast-ink: #0B1322;
+  --mantle: #13284A;
+  --mantle-2: #19335C;
+  --mantle-ink: #F3F6FB;
+  --mantle-ink-2: #A9B8CF;
+  --thread: #D8B25E;
+  --t-gold: #D8B25E;
+  --t-wine: #D9808C;
+  --t-slate: #9AA8BE;
+  --t-cedar: #7FB894;
+  --t-tekhelet: #6FA6E6;
+  --t-stone: #C9B08E;
+  --t-ember: #E58B5F;
+  --t-ink: #B7C3D6;
+  --t-none: #8592A8;
+  --cover-wash: 0.16;
+}
+
+/* Text size setting: everything is sized in rem. */
+html { font-size: 15px; }
+html[data-text="large"] { font-size: 17px; }
+html[data-text="xlarge"] { font-size: 19px; }

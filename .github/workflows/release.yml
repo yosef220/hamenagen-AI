@@ -1,0 +1,202 @@
+name: בדיקה, בנייה ושחרור
+
+# Every pull request to main: core tests + an interface smoke test (the real
+# app driven against a demo library) + the three Windows editions.
+# A tag v* additionally publishes them as the latest GitHub release, with
+# Hebrew notes and update.json, and points 0.1 installs at the new version.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    tags: ['v*']
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: בדיקות — ליבה וממשק
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Core tests
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest mutagen rapidfuzz numpy
+          cd backend && python -m pytest -q
+
+      - name: Install npm packages
+        run: npm ci
+
+      - name: Check every script parses
+        run: for f in electron/*.js electron/renderer/js/*.js electron/renderer/js/views/*.js electron-builder.config.js; do node --check "$f"; done
+
+      - name: Interface smoke test (real app, real core, demo library)
+        run: |
+          npx playwright install-deps chromium
+          python tests/ui/make_library.py "$RUNNER_TEMP/music"
+          xvfb-run -a -s "-screen 0 1600x1000x24" node tests/ui/shoot.js "$RUNNER_TEMP/music" "$RUNNER_TEMP/shots" --themes=light,dark
+
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interface-screenshots
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore
+
+  build:
+    name: Windows — ${{ matrix.edition }}
+    needs: test
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: [portable, offline, setup]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: The tag must match package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $ver = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ("v$ver" -ne "${{ github.ref_name }}") { throw "tag ${{ github.ref_name }} does not match package.json version $ver" }
+
+      - name: Install npm packages
+        run: npm ci
+
+      - name: Embedded Python with the core's libraries
+        run: npm run prepare:win-python
+
+      - name: Stamp the build
+        shell: pwsh
+        run: |
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $ver = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "window.__BUILD__ = " + (@{ version = $ver; build = $sha; edition = '${{ matrix.edition }}' } | ConvertTo-Json -Compress) + ";" |
+            Set-Content -Encoding utf8 electron/renderer/build-info.js
+
+      - name: Put the AI model inside the app (offline edition)
+        if: matrix.edition == 'offline'
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+        run: build/win-python/python.exe backend/scripts/prepare_model.py --out build/models
+
+      - name: Package
+        env:
+          HAMENAGEN_EDITION: ${{ matrix.edition }}
+        run: npx electron-builder --win --publish never --config electron-builder.config.js
+
+      - name: Check the packaged core answers
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+        run: |
+          $res = "dist/win-unpacked/resources"
+          foreach ($p in @("$res/python/python.exe", "$res/backend/hamenagen/rpc.py", "$res/backend/hamenagen/data/radio_seed.json", "dist/win-unpacked/Hamenagen.exe")) {
+            if (-not (Test-Path $p)) { throw "missing from the package: $p" }
+          }
+          $env:HAMENAGEN_BACKEND_DIR = (Resolve-Path "$res/backend").Path
+          $env:HAMENAGEN_DATA_DIR = Join-Path $env:RUNNER_TEMP "hm-data"
+          $requests = Join-Path $env:RUNNER_TEMP "requests.jsonl"
+          @(
+            '{"id":1,"method":"ping"}',
+            '{"id":2,"method":"today"}',
+            '{"id":3,"method":"handle_request","params":{"text":"שעה של שירי שבת"}}'
+          ) | Set-Content -Encoding ascii $requests
+          $boot = "import os, sys; sys.path.insert(0, os.environ['HAMENAGEN_BACKEND_DIR']); from hamenagen.rpc import main; main()"
+          $out = Get-Content $requests | & "$res/python/python.exe" -c $boot
+          $out | ForEach-Object { if ($_.Length -gt 300) { $_.Substring(0, 300) } else { $_ } } | Write-Host
+          if (-not ($out -match '"pong": true')) { throw "the packaged core did not answer" }
+          if (-not ($out -match '"id": 3, "ok": true')) { throw "the packaged core failed a request" }
+
+      - name: Check the bundled model works with no network (offline edition)
+        if: matrix.edition == 'offline'
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+          HF_HUB_OFFLINE: '1'
+        run: |
+          $res = "dist/win-unpacked/resources"
+          $env:HAMENAGEN_BACKEND_DIR = (Resolve-Path "$res/backend").Path
+          $env:MODELS = (Resolve-Path "$res/models").Path
+          & "$res/python/python.exe" -c "import os, sys; sys.path.insert(0, os.environ['HAMENAGEN_BACKEND_DIR']); from hamenagen.classifier import EmbeddingBackend; b = EmbeddingBackend(cache_dir=os.environ['MODELS'], allow_download=False); assert b.load(), b.load_error; c = b.classify('\u05e1\u05d5\u05e4\u05d2\u05e0\u05d9\u05d5\u05ea \u05d7\u05de\u05d5\u05ea'); print('model ok:', c); assert c is not None and c.topic == '\u05d7\u05e0\u05d5\u05db\u05d4'"
+
+      - name: Wrap the installer in a ZIP (network filters cut large .exe downloads)
+        if: matrix.edition == 'setup'
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist/Hamenagen-*-Setup.exe | Select-Object -First 1
+          Compress-Archive -Path $exe.FullName -DestinationPath ($exe.FullName -replace '\.exe$', '.zip') -Force
+
+      - name: List the files
+        shell: pwsh
+        run: Get-ChildItem dist -File | Format-Table Name, @{ n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) } }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hamenagen-${{ matrix.edition }}
+          path: |
+            dist/Hamenagen-*.zip
+            dist/Hamenagen-*-Setup.exe
+          if-no-files-found: error
+
+  release:
+    name: שחרור גרסה
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Release notes and update manifests
+        run: python3 scripts/release_notes.py "${{ github.ref_name }}" "${{ github.repository }}" dist
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: המנגן ${{ github.ref_name }}
+          body_path: dist/RELEASE_NOTES.md
+          make_latest: 'true'
+          files: |
+            dist/Hamenagen-*.zip
+            dist/Hamenagen-*-Setup.exe
+            dist/update.json
+
+      - name: Tell 0.1 installs about the new version
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: portable-latest
+          name: המנגן 0.1 (גרסה ישנה)
+          prerelease: true
+          make_latest: 'false'
+          body: |
+            זו גרסת הבדיקה הישנה (0.1). הגרסה החדשה: https://github.com/${{ github.repository }}/releases/latest
+          files: dist/legacy/update.json

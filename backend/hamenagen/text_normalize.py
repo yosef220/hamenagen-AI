@@ -18,6 +18,12 @@ import unicodedata
 # Hebrew niqqud (vowel points) and cantillation marks live in these ranges.
 _NIQQUD_RE = re.compile(r"[֑-ׇ]")
 
+# Geresh / gershayim (and their ASCII stand-ins) *inside* a Hebrew word mark
+# an acronym or a numeral — ל״ג, רשב״י, תשפ״ז — so they are dropped rather
+# than split the word: "ל״ג בעומר", "ל\"ג בעומר" and "לג בעומר" all become
+# "לג בעומר".
+_ACRONYM_MARK_RE = re.compile(r"(?<=[\u05d0-\u05ea])[\u05f3\u05f4\"'`’]+(?=[\u05d0-\u05ea])")
+
 # Characters we treat as word separators regardless of how the file was named.
 _SEPARATORS_RE = re.compile(r"[\s_\-–—.,;:!?/\\|()\[\]{}\"'`׳״’‘“”]+")
 
@@ -68,6 +74,7 @@ def normalize(text: str) -> str:
         return ""
     text = unicodedata.normalize("NFC", text)
     text = strip_niqqud(text)
+    text = _ACRONYM_MARK_RE.sub("", text)
     text = text.lower()
     text = _SEPARATORS_RE.sub(" ", text)
     text = _fold_finals(text)
@@ -88,3 +95,37 @@ def tokens(text: str, *, drop_stopwords: bool = True) -> list[str]:
 def token_set(text: str, *, drop_stopwords: bool = True) -> set[str]:
     """Return the unique token set of ``text`` (order independent)."""
     return set(tokens(text, drop_stopwords=drop_stopwords))
+
+
+# Hebrew attaches short words to the next one: ל+שבת, ב+חנוכה, ו+ה+כלה.
+# Matching a keyword against a word may peel off one or two of these.
+_PREFIX_LETTERS = set("והבלמשכ")
+_DOUBLE_PREFIXES = {"וה", "וב", "ול", "ומ", "וש", "וכ", "שה", "שב", "של", "שמ", "מה", "לה", "בה", "כש", "וכש"}
+
+
+def word_variants(token: str) -> set[str]:
+    """``token`` plus the stems left after removing a Hebrew prefix.
+
+    >>> sorted(word_variants("לשבת"))
+    ['לשבת', 'שבת']
+    """
+    out = {token}
+    if len(token) > 2 and token[0] in _PREFIX_LETTERS:
+        out.add(token[1:])
+    if len(token) > 3 and token[:2] in _DOUBLE_PREFIXES:
+        out.add(token[2:])
+    return out
+
+
+def contains_phrase(norm_text: str, norm_phrase: str) -> bool:
+    """Whether the (normalized) phrase occurs in the (normalized) text as
+    whole words, allowing a Hebrew prefix on the phrase's first word."""
+    words = norm_text.split()
+    target = norm_phrase.split()
+    if not target or len(target) > len(words):
+        return False
+    first, rest = target[0], target[1:]
+    for i in range(len(words) - len(target) + 1):
+        if first in word_variants(words[i]) and words[i + 1 : i + 1 + len(rest)] == rest:
+            return True
+    return False

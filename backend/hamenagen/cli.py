@@ -35,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     p_intent.add_argument("text")
 
     sub.add_parser("suggest", help="הצעת פתיחה לפי התאריך העברי")
+    sub.add_parser("today", help="הלוח של היום: תאריך עברי, מועדים והמועד הבא")
+    sub.add_parser("overview", help="סיכום המאגר: מספרים, נושאים, אחרונים")
     sub.add_parser("radio", help="רשימת ערוצי הרדיו החי")
     sub.add_parser("classifier", help="הצג את מצב מודל הסיווג המקומי")
     sub.add_parser("reclassify", help="סווג מחדש את כל השירים במאגר")
@@ -58,6 +60,10 @@ def main(argv: list[str] | None = None) -> int:
             _print(parse_intent(args.text).to_dict())
         elif args.cmd == "suggest":
             _print(service.opening_suggestion() or {"suggestion": None})
+        elif args.cmd == "today":
+            _print(service.today())
+        elif args.cmd == "overview":
+            _print(service.library_overview())
         elif args.cmd == "radio":
             _print(service.radio_list())
         elif args.cmd == "classifier":
@@ -65,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "reclassify":
             _print(service.reclassify_all())
         elif args.cmd == "update-check":
-            _print(service.check_updates())
+            _print(service.check_updates(manual=True))
         elif args.cmd == "update-apply":
             _print(service.apply_update(args.component, url=args.url, version=args.version))
         elif args.cmd == "pack-status":

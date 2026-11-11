@@ -1,120 +1,73 @@
-# המנגן — נגן מוזיקה קהילתי חכם
+# המנגן
 
-> Smart Community Music Player — an **offline-first** desktop player that
-> understands free-text Hebrew requests ("תשמיע לי שירים של שבת"), builds
-> playlists from the entire local library, and — when online — completes
-> missing songs from an external source (YouTube, via a pluggable adapter).
+נגן מוזיקה קהילתי חכם ל-Windows. כותבים לו בעברית רגילה — „שעה של שירי שבת”, „השירים שאהבתי”, „אמת של שמוליק סוכות” — והוא מוצא את השירים בכל המחשב, מבין לאיזה מועד כל שיר שייך, ומציע בכל יום את מה שמתאים לו לפי הלוח העברי. הכל עובד בלי אינטרנט; כשיש חיבור, הוא משלים שירים חסרים ומנגן את ערוצי קול חי.
 
-**סטטוס:** תשתית ראשונה עובדת (שלב א׳ + חלקים משלבים ב׳/ג׳). מבוסס על
-[מסמך האפיון](docs/SPEC.md).
+![דף הבית של המנגן ביום שישי של חנוכה](docs/screenshots/home.png)
 
----
+## להורדה
 
-## מה כבר עובד (this bootstrap)
+הגרסה האחרונה תמיד כאן: **[github.com/yosef220/hamenagen-AI/releases/latest](https://github.com/yosef220/hamenagen-AI/releases/latest)**
 
-| יכולת | מצב | היכן |
-|-------|-----|------|
-| סריקת מאגר + אינדקס SQLite | ✅ | `backend/hamenagen/scanner.py`, `index_db.py` |
-| מנוע הוראות בשפה טבעית (עברית) | ✅ | `backend/hamenagen/intent.py` |
-| חיפוש חכם רב-שדות + סובלנות לשגיאות | ✅ | `backend/hamenagen/fuzzy.py` |
-| סיווג נושאי היברידי (מילון + Embeddings אופציונלי) | ✅ | `backend/hamenagen/classifier.py`, `topics.py` |
-| לוח עברי + הצעות לפי מועד (אופליין מלא) | ✅ | `backend/hamenagen/hebrew_calendar.py` |
-| מודל נתונים לשיר (§10) | ✅ | `backend/hamenagen/models.py` |
-| השלמה מקוונת מלאה (יוטיוב, yt-dlp) — חיפוש→בחירה→הורדה→הוספה→הדלקה | ✅ | `backend/hamenagen/fetcher.py`, `service.py` |
-| התקדמות הורדה בזמן אמת (אירועי RPC) | ✅ | `rpc.py`, `electron/backend_bridge.js` |
-| מודל סיווג AI מקומי מחובר (Embeddings) + סיווג לפי מילות שיר | ✅ | `classifier.py`, `scripts/prepare_model.py` |
-| ממשק Electron RTL בעברית + נגן | ✅ | `electron/` |
-| גשר JSON-RPC בין Electron ל-Python | ✅ | `electron/backend_bridge.js`, `backend/hamenagen/rpc.py` |
-| אריזה ל-EXE נייד ל-Windows + Python מוטמע | ✅ | `scripts/prepare-win-python.ps1`, `package.json` |
-| **רדיו חי — לשונית ערוצי קול חי מיוזיק (HLS)** | ✅ | `backend/hamenagen/radio.py`, `electron/renderer/app.js` |
-| **עדכונים (§14) — manifest מרכזי, עדכון yt-dlp/מילון** | ✅ | `backend/hamenagen/updater.py` |
-| **חבילת אופליין (§6.2) — בנייה/אימות/התקנה של `*.pack`** | ✅ | `backend/hamenagen/offline_pack.py` |
-| בדיקות יחידה לליבה | ✅ 41 בדיקות | `backend/tests/` |
+| קובץ | למי |
+| --- | --- |
+| `Hamenagen-<גרסה>-Windows.zip` | **הגרסה הניידת** — בלי התקנה. מחלצים לתיקייה ומריצים `Hamenagen.exe`. מודל הסיווג יורד פעם אחת בהפעלה הראשונה שיש בה אינטרנט. |
+| `Hamenagen-<גרסה>-Windows-Offline.zip` | **למחשב בלי אינטרנט בכלל** — אותה גרסה, עם מודל הסיווג כבר בפנים. |
+| `Hamenagen-<גרסה>-Setup.zip` | **התקנה רגילה** — קיצורי דרך, תפריט התחל והסרה מהגדרות Windows. בתוך ה-ZIP נמצא קובץ ההתקנה. |
 
----
+כל הקבצים ארוזים ב-ZIP כי סינוני רשת חוסמים לפעמים הורדה של קובצי EXE גדולים. התוכנה אינה חתומה דיגיטלית: אם Windows מציג „Windows הגן על המחשב שלך”, לוחצים **מידע נוסף** ← **הפעל בכל זאת**.
 
-## הרצה מהירה
+## מה הוא יודע
 
-### הליבה בלבד (ללא ממשק גרפי) — עובד בכל מקום
+**מבין בקשות.** הבקשה מתפרקת לכוונה ולפרמטרים, בלי שרת ובלי ענן:
 
-```bash
-cd backend
-python -m hamenagen.cli scan ~/Music              # בונה אינדקס
-python -m hamenagen.cli ask "תשמיע לי שירים של שבת"
-python -m hamenagen.cli ask "תשמיע אמת של שמוליק סוכות"
-python -m hamenagen.cli suggest                   # הצעה לפי התאריך העברי
-python -m hamenagen.cli classifier                # מצב מודל הסיווג המקומי
-python -m hamenagen.cli reclassify                # סיווג מחדש של כל המאגר
-```
+| בקשה | מה מתנגן |
+| --- | --- |
+| תשמיע לי שירים של שבת | כל השירים שסווגו לשבת |
+| שעה של שירי שבת | רשימה של כשעה, מעורבבת |
+| השירים האחרונים שהורדתי / שיצאו | לפי תאריך ההורדה / היציאה |
+| השירים שאהבתי · מה ששמעתי לאחרונה · השירים שאני הכי שומע | הלב, ההיסטוריה, הכי מושמעים |
+| תשמיע אמת של שמוליק סוכות | השיר המסוים — גם כשהקובץ נקרא `שמוליק_סוכות_אמת.mp3` |
+| שירים לל״ג בעומר · מוזיקה ווקאלית | עם תחיליות וראשי תיבות |
 
-### היישום המלא (Electron)
+**מסווג כל שיר לנושא.** קודם שם השיר (למשל „מנוחה ושמחה” הוא זמר שבת גם בלי המילה „שבת”), אחר כך מילון מתוחזק ושם התיקייה, ובסוף מודל שפה קטן שרץ על המחשב עצמו ומשווה את השיר לאוצר מילים של כל מועד — כך „אפיקומן” מגיע לפסח ו„פך שמן קטן” לחנוכה. המודל נבחר במדידה על שמות שירים בעברית מול המודלים החדשים של 2026, ומעדיף לשתוק על פני טעות. שיר יכול להשתייך ליותר מנושא אחד.
 
-```bash
-npm install
-# מומלץ להתקין את התלויות האופציונליות של הפייתון:
-pip install -r requirements.txt
-npm start
-```
+**מכיר את הלוח.** בדף הבית התאריך העברי באותיות, המועד של היום וכפתור להשמעה — או ספירה לאחור למועד הבא. ערב שבת ומוצאי שבת, ראש השנה, יום כיפור, סוכות, חנוכה, פורים, פסח, ל״ג בעומר, שבועות, חודש אלול ועשרת ימי תשובה. בימי ספירת העומר („היום 12 לעומר”) ובין המצרים הוא מציע מוזיקה ווקאלית (אפשר לכבות), ובתשעה באב לא מציע כלום.
 
-> ה-`main` של Electron מריץ אוטומטית `python -m hamenagen.rpc`. אפשר לכוון את
-> נתיב הפייתון עם משתנה הסביבה `HAMENAGEN_PYTHON`.
+**נגן שלם.** תור עם ערבוב וחזרה, לב לשירים אהובים, טיימר שינה שמנמיך בהדרגה, מילים מקובץ ‎.lrc או ‎.txt שליד השיר, כפתורי נגן בשורת המשימות, מקשי מדיה וחלונית המדיה של Windows.
 
-### בדיקות
+**רדיו.** כל ערוצי קול חי מיוזיק, עם השידור המרכזי 102.5FM בראש ו„מה מתנגן עכשיו” בכל ערוץ. בלי אינטרנט מוצגת רשימה שמורה.
+
+**משלים מהרשת.** כשבקשה לא מוצאת שיר במחשב, המנגן מחפש אותו ביוטיוב, בוחר את התוצאה המתאימה ביותר (ואפשר לבחור אחרת), מוריד, מוסיף לספרייה ומנגן.
+
+**מתעדכן.** בכל הפעלה (אם לא כובה) הוא בודק אם יצאה גרסה חדשה ומציע להוריד אותה. רכיב ההורדה ומילון הנושאים מתעדכנים מתוך ההגדרות.
+
+## צילומי מסך
+
+| | |
+| --- | --- |
+| ![בקשה: שעה של שירי שבת](docs/screenshots/request.png) | ![הספרייה](docs/screenshots/library.png) |
+| ![הרדיו](docs/screenshots/radio.png) | ![ההגדרות](docs/screenshots/settings.png) |
+| ![דף הבית בערכה הכהה](docs/screenshots/home-dark.png) | ![התור בערכה הכהה](docs/screenshots/queue-dark.png) |
+
+## פרטיות
+
+אין משתמשים, אין סיסמאות ואין איסוף נתונים. הספרייה, ההגדרות, הלב וההיסטוריה נשמרים רק במחשב: בגרסה הניידת בתיקייה `data` שליד התוכנה, ובגרסה המותקנת ב-`%APPDATA%\Hamenagen`. התוכנה פונה לרשת רק כדי: לחפש ולהוריד שיר שביקשתם, לנגן ולהציג את ערוצי הרדיו, לבדוק אם יש גרסה חדשה, ולהוריד פעם אחת את מודל הסיווג.
+
+## למפתחים
 
 ```bash
-cd backend && python -m pytest -q      # 28 passed
+npm install                        # Electron, הגופנים והאייקונים (נשמרים מקומית)
+pip install -r requirements.txt    # תלויות הליבה (רשות: mutagen, rapidfuzz, yt-dlp, fastembed)
+npm start                          # מריץ את התוכנה; הנתונים בתיקייה data של המאגר
 ```
 
----
+- **בדיקות הליבה:** `cd backend && python -m pytest -q`
+- **בדיקת הממשק:** `python tests/ui/make_library.py /tmp/music` ואז `xvfb-run node tests/ui/shoot.js /tmp/music /tmp/shots` — מריץ את התוכנה האמיתית מול ספריית דוגמה, עובר על כל המסכים בשתי הערכות ושומר צילומים.
+- **הליבה משורת הפקודה:** `python -m hamenagen.cli today`, `... ask "שעה של שירי שבת"`, `... scan ~/Music`.
+- **אריזה ושחרור:** ראו [docs/PACKAGING.md](docs/PACKAGING.md). בקצרה: מעדכנים את הגרסה ב-`package.json` וב-`backend/hamenagen/__init__.py`, מוסיפים תגית `v<גרסה>`, וה-CI בונה את שלוש המהדורות, בודק אותן ומפרסם.
 
-## התקנה ובדיקה מפורטת
+מבנה: `backend/hamenagen` — הליבה בפייתון (הבנת בקשות, סיווג, לוח עברי, ספרייה, רדיו, עדכונים); `electron/` — החלון והממשק; `tests/ui` — בדיקת הממשק; `scripts/` — אריזה ואייקונים. פרטים ב-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ושינויים ב-[CHANGELOG.md](CHANGELOG.md).
 
-### דרישות מקדימות
-- **Node.js 18+** ו-**Python 3.10+**.
-- (אופציונלי) **ffmpeg** — נדרש להמרת אודיו בהורדות מיוטיוב.
+## רישיונות של רכיבים
 
-### מצב פיתוח (להרצה ובדיקה מהירה)
-```bash
-npm install                       # Electron + hls.js (~300–500MB ל-node_modules)
-pip install -r requirements.txt   # mutagen, rapidfuzz, yt-dlp (~30–60MB)
-npm start                         # מריץ את היישום
-```
-
-### בדיקות
-```bash
-cd backend && python -m pytest -q     # 41 עוברות
-```
-
-### עדכונים וחבילת אופליין
-```bash
-python -m hamenagen.cli update-check                 # דורש שרת עדכונים מוגדר
-python -m hamenagen.cli update-apply ytdlp           # עדכון עצמי של yt-dlp
-python -m hamenagen.cli pack-install assets.pack     # התקנה אופליין
-```
-
-### גדלים משוערים
-| רכיב | גודל |
-|------|------|
-| `node_modules` (פיתוח בלבד) | ~300–500MB |
-| תלויות Python | ~30–60MB |
-| מודל ה-AI (אופציונלי) | ~120–420MB |
-| EXE נייד סופי (Windows, עם Python מוטמע) | ~150–250MB |
-
-לאריזת ה-EXE הנייד ראה [docs/PACKAGING.md](docs/PACKAGING.md).
-
-## עיצוב לפי עקרונות האפיון
-
-* **Offline-first** — כל הליבה (חיפוש, NLP, לוח עברי, סיווג) רצה על ספריית
-  התקן של פייתון בלבד. כל תלות חיצונית (`mutagen`, `rapidfuzz`, `yt-dlp`,
-  `sentence-transformers`) היא **אופציונלית** ומתפוגגת בחן אם חסרה.
-* **מקור חיצוני מתחלף** — `fetcher.py` מגדיר `SourcePlugin`; יוטיוב הוא רק
-  המימוש הנוכחי, וקל להחליפו במקור מורשה (§18).
-* **נייד** — אין שרת ואין פורט; ה-Electron מדבר עם הפייתון דרך stdio בלבד.
-
-ראו את [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) לפירוט הארכיטקטורה, ואת
-[docs/SPEC.md](docs/SPEC.md) למסמך האפיון המלא.
-
-## הערה משפטית
-
-הורדת תוכן מיוטיוב עלולה להתנגש בתנאי השימוש ובזכויות יוצרים (§18 באפיון).
-הארכיטקטורה תוכננה עם מקור מתחלף כדי לאפשר מעבר קל למקור מורשה.
+הגופנים Frank Ruhl Libre ו-IBM Plex Sans Hebrew — SIL Open Font License. האייקונים — Lucide (ISC). ניגון HLS — hls.js (Apache-2.0). הליבה משתמשת ב-yt-dlp (Unlicense), mutagen (GPL-2.0), rapidfuzz (MIT), onnxruntime (MIT) ו-tokenizers (Apache-2.0). מודל הסיווג: `intfloat/multilingual-e5-small` (MIT).

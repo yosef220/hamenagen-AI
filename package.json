@@ -1,43 +1,31 @@
 {
   "name": "hamenagen",
   "productName": "המנגן",
-  "version": "0.1.0",
-  "description": "נגן מוזיקה קהילתי חכם — Smart Community Music Player (offline-first, Hebrew NLP)",
+  "version": "1.0.0",
+  "description": "המנגן — נגן מוזיקה קהילתי חכם: מבין בקשות בעברית, מכיר את הלוח העברי ועובד בלי אינטרנט",
   "main": "electron/main.js",
+  "hamenagenEdition": "portable",
   "scripts": {
     "start": "electron .",
     "postinstall": "node scripts/copy-vendor.js",
     "vendor": "node scripts/copy-vendor.js",
-    "dist": "electron-builder --win portable",
     "prepare:win-python": "powershell -ExecutionPolicy Bypass -File scripts/prepare-win-python.ps1",
+    "dist": "electron-builder --win --publish never --config electron-builder.config.js",
     "build:win": "npm run prepare:win-python && npm run dist",
-    "test:core": "cd backend && python -m pytest -q"
+    "icons": "node scripts/make-icons.js",
+    "test:core": "cd backend && python -m pytest -q",
+    "test:ui": "node tests/ui/shoot.js"
   },
-  "author": "hamenagen",
+  "author": "המנגן",
   "license": "UNLICENSED",
   "private": true,
-  "dependencies": {
-    "hls.js": "^1.5.17"
-  },
   "devDependencies": {
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
-  },
-  "build": {
-    "appId": "org.community.hamenagen",
-    "productName": "המנגן",
-    "directories": { "output": "dist" },
-    "files": ["electron/**/*", "assets/**/*"],
-    "extraResources": [
-      { "from": "backend", "to": "backend", "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc", "!tests/**", "!data/**"] },
-      { "from": "build/win-python", "to": "python", "filter": ["**/*"] }
-    ],
-    "win": {
-      "target": ["portable"],
-      "icon": "assets/icon.ico"
-    },
-    "portable": {
-      "artifactName": "hamenagen-portable-${version}.exe"
-    }
+    "@fontsource/frank-ruhl-libre": "5.3.0",
+    "@fontsource/ibm-plex-sans-hebrew": "5.3.0",
+    "electron": "44.10.0",
+    "electron-builder": "26.18.1",
+    "hls.js": "1.7.3",
+    "lucide-static": "1.62.0",
+    "playwright": "1.63.0"
   }
 }

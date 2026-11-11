@@ -1,64 +1,52 @@
-# אריזה ל-Windows (EXE נייד)
+# אריזה ושחרור
 
-מטרה: קובץ הפעלה **נייד** (Portable) יחיד ל-Windows, שיוצר קיצור דרך בשולחן
-העבודה עם אייקון (אפיון §4, §6).
+## שלוש המהדורות
 
-## אסטרטגיה
-Electron (הממשק) + Python (הליבה). שני מסלולים אפשריים לאריזת הפייתון:
+| מהדורה | קובץ | מה בפנים |
+| --- | --- | --- |
+| ניידת | `Hamenagen-<v>-Windows.zip` | התוכנה + Python מוטמע + ספריות הליבה. המודל יורד פעם אחת. הנתונים ב-`data` שליד התוכנה. |
+| אופליין | `Hamenagen-<v>-Windows-Offline.zip` | כמו הניידת, ובנוסף מודל הסיווג ב-`resources/models`. |
+| התקנה | `Hamenagen-<v>-Setup.zip` (ובתוכו `Setup.exe`) | התקנה למשתמש הנוכחי, בלי הרשאות מנהל: קיצורי דרך, תפריט התחל, הסרה. הנתונים ב-`%APPDATA%\Hamenagen`. |
 
-1. **Python מוטמע (embeddable)** — לצרף הפצת Python מוטמעת של Windows בתוך
-   `resources/backend/` יחד עם התלויות. `backend_bridge.js` יפעיל אותה עם
-   `HAMENAGEN_PYTHON` שמצביע ל-`python.exe` המצורף. יתרון: אין תלות ב-Python
-   מותקן אצל המשתמש.
-2. **PyInstaller** — לארוז את `hamenagen.rpc` ל-`hamenagen-backend.exe`
-   נפרד, ולהפעיל אותו במקום `python -m hamenagen.rpc`.
+ההגדרות ב-[`electron-builder.config.js`](../electron-builder.config.js); המהדורה נבחרת במשתנה `HAMENAGEN_EDITION` ונכתבת לתוך ה-`package.json` הארוז (`hamenagenEdition`), ומשם `electron/main.js` יודע איפה לשמור נתונים.
 
-מומלץ מסלול (1) לפשטות תחזוקה של התלויות (במיוחד `yt-dlp` שמתעדכן תכופות, §14),
-והוא זה שמומש בקוד.
+## שחרור גרסה
 
-## שלבי בנייה (מסלול Electron portable + Python מוטמע)
-על מכונת **Windows**:
+1. מעדכנים את המספר ב-`package.json` וב-`backend/hamenagen/__init__.py`, ומוסיפים פסקה ל-`CHANGELOG.md`.
+2. ממזגים ל-`main` ומוסיפים תגית: `git tag v1.0.1 && git push origin v1.0.1`.
+3. התהליך [`release.yml`](../.github/workflows/release.yml) רץ לבד:
+   - בדיקות הליבה ובדיקת הממשק (התוכנה האמיתית מול ספריית דוגמה, שתי הערכות);
+   - בנייה של שלוש המהדורות על Windows, ובכל אחת בדיקה שהליבה הארוזה עונה; באופליין גם שהמודל נטען בלי רשת;
+   - פרסום כגרסה האחרונה ב-GitHub, עם הערות בעברית ו-`update.json`;
+   - עדכון `update.json` של גרסת 0.1 הישנה, כדי שמי שעדיין משתמש בה יקבל הודעה על הגרסה החדשה.
+
+התגית חייבת להתאים לגרסה ב-`package.json`, אחרת הבנייה נעצרת.
+
+## בדיקת עדכונים בתוכנה
+
+כל גרסה בודקת את `https://github.com/yosef220/hamenagen-AI/releases/latest/download/update.json` (בהפעלה, אם „לבדוק עדכונים” דלוק, או ידנית בהגדרות). הקובץ מכיל את מספר הגרסה, תיאור קצר וקישור הורדה לכל מהדורה, כך שמשתמש בגרסת האופליין מקבל את גרסת האופליין. התוכנה לא מתעדכנת לבד — היא מציעה להוריד.
+
+## בנייה מקומית (על Windows)
+
 ```powershell
-npm install
-npm run build:win     # = prepare:win-python  +  dist
-# פלט: dist\hamenagen-portable-0.1.0.exe
+npm ci
+npm run prepare:win-python          # Python 3.11 מוטמע + ספריות הליבה ב-build\win-python
+npm run dist                        # dist\Hamenagen-<v>-Windows.zip
+
+# גרסת אופליין:
+build\win-python\python.exe backend\scripts\prepare_model.py --out build\models
+$env:HAMENAGEN_EDITION = "offline"; npm run dist
+
+# התקנה:
+$env:HAMENAGEN_EDITION = "setup"; npm run dist
 ```
 
-`npm run build:win` עושה שני דברים:
-1. `scripts/prepare-win-python.ps1` — מוריד CPython "embeddable" ל-
-   `build/win-python`, מפעיל `import site`, מבצע bootstrap ל-pip, ומתקין את
-   `requirements.txt` לתוכו.
-2. `electron-builder --win portable` — אורז הכול ל-EXE נייד יחיד.
+הפייתון המוטמע של Windows מתעלם מ-`PYTHONPATH`, ולכן `backend_bridge.js` מפעיל את הליבה עם `-c` שמוסיף את תיקיית הליבה ל-`sys.path` בעצמו.
 
-`package.json` כבר מוגדר:
-* `build.win.target = ["portable"]`, `build.win.icon = assets/icon.ico`.
-* `build.extraResources` מעתיק את `backend/` (בלי tests/data) ואת
-  `build/win-python` → `resources/python`.
+## האייקון
 
-בזמן ריצה `electron/backend_bridge.js` מזהה אוטומטית את ה-Python המוטמע תחת
-`resources/python` (ונופל ל-`python` שב-PATH בפיתוח).
+המקור הוא [`assets/icon.svg`](../assets/icon.svg) — האות מ׳ ב-Frank Ruhl Libre על קטיפת תכלת עם פס רקמה בזהב. `npm run icons` מייצר ממנו את `icon.png`, את `icon.ico` (כל גודל מצויר בנפרד, כדי שהקטנים יישארו חדים) ואת כפתורי הנגן לשורת המשימות.
 
-> הערה: הרצת `npm run dist` **לבד** מצריכה ש-`build/win-python` כבר קיים. לפיתוח
-> מהיר בלי אריזה השתמש ב-`npm start` (משתמש ב-Python המערכתי).
+## חבילת אופליין (`.pack`)
 
-### הטמעת מודל ה-AI בחבילה (רשות)
-כדי לצרף גם את מודל הסיווג לאריזה (עבודה אופליין מלאה כבר מההתקנה):
-```powershell
-build\win-python\python.exe backend\scripts\prepare_model.py --out backend\data\models
-```
-ואז לכלול את `backend/data/models` ב-extraResources, או לספק אותו דרך
-[חבילת האופליין](OFFLINE_PACK.md).
-
-## אייקון
-מקור: `assets/icon.svg` → `assets/icon.png` → `assets/icon.ico` (כולם כבר
-במאגר). ליצירה מחדש:
-```bash
-python -c "from PIL import Image; Image.open('assets/icon.png').save('assets/icon.ico', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])"
-```
-
-## קיצור דרך בשולחן העבודה
-נוצר בהפעלה ראשונה (בגרסה ארוזה בלבד) ב-`electron/main.js`
-(`ensureDesktopShortcut` → `shell.writeShortcutLink`).
-
-## חבילת אופליין
-ראה [OFFLINE_PACK.md](OFFLINE_PACK.md) — מנגנון להתקנת המודולים ללא רשת.
+למחשב שכבר מותקנת בו התוכנה ואין בו אינטרנט, אפשר להעביר רכיבים בקובץ `.pack` שמניחים ליד התוכנה — ראו [OFFLINE_PACK.md](OFFLINE_PACK.md). למחשב חדש בלי אינטרנט פשוט יותר להוריד את גרסת האופליין.

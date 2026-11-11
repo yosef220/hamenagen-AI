@@ -1,37 +1,61 @@
 """Line-delimited JSON-RPC bridge over stdio (Electron ↔ Python).
 
-The Electron main process spawns ``python -m hamenagen.rpc`` and exchanges
-newline-delimited JSON messages with it:
+The Electron main process spawns the core and exchanges newline-delimited
+JSON messages with it:
 
     request : {"id": 1, "method": "handle_request", "params": {"text": "..."}}
     response: {"id": 1, "ok": true, "result": {...}}
     error   : {"id": 1, "ok": false, "error": "..."}
+    event   : {"event": "scan_progress", ...}            (no id, pushed)
 
 Keeping the transport this simple (no HTTP server, no ports) keeps the app
 portable and avoids opening any network socket on the user's machine.
+
+Quick requests are answered inline, in order. Requests that touch the network
+or take long (search, download, radio, updates) run on a small worker pool and
+answer when done — responses carry their id, so order does not matter — and
+library-wide jobs (scan, model install, reclassify) run on their own thread
+and report through events. The window therefore never waits on the network.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+import threading
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from .fetcher import SearchResult
 from .service import PlayerService
 
+# Methods answered on the worker pool rather than inline.
+_SLOW = {
+    "online_search", "online_download", "radio_list", "check_updates", "apply_update",
+    "install_offline_pack", "rescan", "reclassify",
+}
+
 
 class RpcServer:
-    def __init__(self) -> None:
-        self.service = PlayerService()
+    def __init__(self, service: PlayerService | None = None) -> None:
+        self.service = service or PlayerService()
         self.fetcher = self.service.fetcher
-        self._out = sys.stdout  # set for real in serve(); used by progress hook
+        self._out = sys.stdout  # set for real in serve(); used by progress hooks
+        self._write_lock = threading.Lock()  # serialize stdout across threads
+        self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="rpc")
+        self._jobs: dict[str, bool] = {}
+        self._jobs_lock = threading.Lock()
+
+    def _write(self, obj: dict) -> None:
+        line = json.dumps(obj, ensure_ascii=False) + "\n"
+        with self._write_lock:
+            self._out.write(line)
+            self._out.flush()
 
     def _emit(self, event: str, payload: dict) -> None:
         """Push an out-of-band notification (no id) to the client, e.g. progress."""
-        self._out.write(json.dumps({"event": event, **payload}, ensure_ascii=False) + "\n")
-        self._out.flush()
+        self._write({"event": event, **payload})
 
     # Each handler takes a params dict and returns a JSON-serialisable value.
     def _dispatch(self, method: str, params: dict[str, Any]) -> Any:
@@ -40,24 +64,148 @@ class RpcServer:
             raise ValueError(f"unknown method: {method}")
         return handler(params)
 
-    # -- methods -----------------------------------------------------------
+    def _answer(self, rid, method: str, params: dict) -> None:
+        try:
+            out = {"id": rid, "ok": True, "result": self._dispatch(method, params)}
+        except Exception as exc:  # noqa: BLE001 - report all errors to caller
+            out = {"id": rid, "ok": False, "error": str(exc), "trace": traceback.format_exc()}
+        self._write(out)
+
+    def _start_job(self, name: str, work, done_event: str) -> dict:
+        """Run ``work()`` on its own thread once at a time; emit its result."""
+        with self._jobs_lock:
+            if self._jobs.get(name):
+                return {"started": False, "reason": "already running"}
+            self._jobs[name] = True
+
+        def runner():
+            try:
+                self._emit(done_event, work() or {})
+            except Exception as exc:  # noqa: BLE001
+                self._emit(done_event, {"error": str(exc)})
+            finally:
+                with self._jobs_lock:
+                    self._jobs[name] = False
+
+        threading.Thread(target=runner, name=f"job-{name}", daemon=True).start()
+        return {"started": True}
+
+    # -- general -----------------------------------------------------------
     def rpc_ping(self, params):
         return {"pong": True}
 
-    def rpc_handle_request(self, params):
-        return self.service.handle_request(params.get("text", ""))
+    def rpc_app_info(self, params):
+        return self.service.app_info()
 
-    def rpc_rescan(self, params):
-        return self.service.rescan(params.get("roots"))
+    def rpc_today(self, params):
+        return self.service.today()
 
     def rpc_opening_suggestion(self, params):
         return self.service.opening_suggestion()
 
+    # -- playing -----------------------------------------------------------
+    def rpc_handle_request(self, params):
+        return self.service.handle_request(params.get("text", ""))
+
+    def rpc_playlist(self, params):
+        return self.service.playlist(
+            params.get("kind", "random"),
+            topic=params.get("topic"),
+            minutes=params.get("minutes"),
+            limit=params.get("limit"),
+        )
+
+    def rpc_set_favorite(self, params):
+        return self.service.set_favorite(params.get("id", ""), bool(params.get("on", True)))
+
+    def rpc_record_play(self, params):
+        return self.service.record_play(params.get("id", ""))
+
+    def rpc_track_lyrics(self, params):
+        return self.service.track_lyrics(params.get("id", ""))
+
+    # -- library -----------------------------------------------------------
+    def rpc_library_overview(self, params):
+        return self.service.library_overview()
+
+    def rpc_list_tracks(self, params):
+        return self.service.list_tracks(**params)
+
+    def rpc_topics(self, params):
+        return self.service.topics()
+
+    def rpc_rescan(self, params):
+        return self.service.rescan(params.get("roots"))
+
+    def rpc_rescan_async(self, params):
+        """Scan the library on a background thread so the UI never freezes.
+
+        Emits ``scan_progress`` while walking and ``scan_done`` at the end.
+        """
+        roots = params.get("roots")
+
+        def work():
+            self.service.scanning = True
+            self._emit("scan_progress", {"files": 0, "added": 0, "updated": 0})
+            try:
+                return self.service.rescan(roots, on_progress=lambda p: self._emit("scan_progress", p))
+            finally:
+                self.service.scanning = False
+
+        return self._start_job("scan", work, "scan_done")
+
+    # -- the AI model ------------------------------------------------------
+    def rpc_classifier_status(self, params):
+        return self.service.classifier_status()
+
+    def rpc_install_model_async(self, params):
+        """Get the AI model ready on a background thread (first-run install).
+
+        Emits ``model_install`` with status "downloading" | "done" | "error".
+        Loading reads the bundled copy in the offline edition, or downloads it
+        once otherwise.
+        """
+        status = self.service.classifier_status()
+        if not status.get("enabled"):
+            return {"started": False, "reason": "embeddings disabled"}
+        if status.get("loaded"):
+            return {"started": False, "reason": "already installed"}
+
+        def work():
+            self._emit("model_install", {"status": "loading" if status.get("cached") else "downloading"})
+            backend = self.service.classifier.embedding
+            if backend is not None:
+                def progress(p: dict) -> None:
+                    pct = round(p["downloaded"] * 100 / p["total"], 1) if p.get("total") else None
+                    self._emit("model_install", {"status": "downloading", "percent": pct, "file": p.get("file")})
+                backend.on_download = progress
+            result = self.service.install_model()
+            return {"status": "done" if result.get("ok") else "error", **result}
+
+        return self._start_job("model", work, "model_install")
+
+    def rpc_reclassify(self, params):
+        return self.service.reclassify_all()
+
+    def rpc_reclassify_async(self, params):
+        def work():
+            return self.service.reclassify_all(on_progress=lambda p: self._emit("reclassify_progress", p))
+
+        return self._start_job("reclassify", work, "reclassify_done")
+
+    # -- settings ----------------------------------------------------------
+    def rpc_get_settings(self, params):
+        return self.service.get_settings()
+
+    def rpc_update_settings(self, params):
+        return self.service.update_settings(params.get("settings") or {})
+
+    # -- radio, updates, packs ---------------------------------------------
     def rpc_radio_list(self, params):
         return self.service.radio_list(refresh=params.get("refresh", True))
 
     def rpc_check_updates(self, params):
-        return self.service.check_updates()
+        return self.service.check_updates(manual=bool(params.get("manual")))
 
     def rpc_apply_update(self, params):
         return self.service.apply_update(
@@ -72,30 +220,13 @@ class RpcServer:
     def rpc_install_offline_pack(self, params):
         return self.service.install_offline_pack(params.get("path"))
 
-    def rpc_classifier_status(self, params):
-        return self.service.classifier_status()
-
-    def rpc_reclassify(self, params):
-        return self.service.reclassify_all()
-
-    def rpc_get_settings(self, params):
-        from dataclasses import asdict
-
-        return asdict(self.service.settings)
-
-    def rpc_update_settings(self, params):
-        s = self.service.settings
-        for key, value in (params.get("settings") or {}).items():
-            if hasattr(s, key):
-                setattr(s, key, value)
-        s.save(self.service.data_dir / "settings.json")
-        from dataclasses import asdict
-
-        return asdict(s)
+    # -- online completion (spec §11) ----------------------------------------
+    def rpc_online_available(self, params):
+        return {"available": self.fetcher.available()}
 
     def rpc_online_search(self, params):
         query = params.get("query", "")
-        outcome = self.fetcher.search(query, limit=params.get("limit", 5))
+        outcome = self.fetcher.search(query, limit=params.get("limit", 6))
         return {
             "ok": outcome.ok,
             "message": outcome.message,
@@ -130,8 +261,11 @@ class RpcServer:
         }
 
     # -- loop --------------------------------------------------------------
-    def serve(self, stdin=sys.stdin, stdout=sys.stdout) -> None:
+    def serve(self, stdin=sys.stdin, stdout=sys.stdout, *, wait: bool = False) -> None:
+        """Answer requests until stdin closes. ``wait`` lets pending slow
+        requests finish first (tests); the app just exits."""
         self._out = stdout
+        self._emit("ready", {"version": self.service.app_info()["version"]})
         for line in stdin:
             line = line.strip()
             if not line:
@@ -141,21 +275,23 @@ class RpcServer:
             except json.JSONDecodeError:
                 continue
             rid = msg.get("id")
-            try:
-                result = self._dispatch(msg.get("method", ""), msg.get("params") or {})
-                out = {"id": rid, "ok": True, "result": result}
-            except Exception as exc:  # noqa: BLE001 - report all errors to caller
-                out = {
-                    "id": rid,
-                    "ok": False,
-                    "error": str(exc),
-                    "trace": traceback.format_exc(),
-                }
-            stdout.write(json.dumps(out, ensure_ascii=False) + "\n")
-            stdout.flush()
+            method = msg.get("method", "")
+            params = msg.get("params") or {}
+            if method in _SLOW:
+                self._pool.submit(self._answer, rid, method, params)
+            else:
+                self._answer(rid, method, params)
+        self._pool.shutdown(wait=wait, cancel_futures=not wait)
 
 
 def main() -> None:
+    # Hebrew must survive a Windows console code page; the bridge also sets
+    # PYTHONUTF8, this covers a manual run.
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     RpcServer().serve()
 
 

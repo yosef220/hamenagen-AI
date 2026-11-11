@@ -8,15 +8,24 @@ central manifest — hosted by the organisation — and report/apply updates to:
 * the download library (``yt-dlp``, which breaks often and must stay fresh),
 * the Hebrew-calendar data and the radio list.
 
-The manifest is a small JSON document::
+The manifest is a small JSON document, published as ``update.json`` beside
+every release::
 
     {
-      "app":     {"version": "0.2.0", "url": "https://.../hamenagen-0.2.0.exe"},
+      "app": {
+        "version": "1.0.0",
+        "notes": "מה חדש …",
+        "page": "https://github.com/…/releases/latest",
+        "downloads": {"portable": "https://…-Windows.zip",
+                      "offline": "https://…-Windows-Offline.zip",
+                      "setup": "https://…-Setup.zip"}
+      },
       "lexicon": {"version": "3",      "url": "https://.../topics.json"},
-      "ytdlp":   {"version": "2026.8.1"},
-      "model":   {"name": "...", "url": "https://.../model.pack"},
-      "radio":   {"url": "https://kcm.fm/Live/"}
+      "ytdlp":   {"version": "2026.8.1"}
     }
+
+Each edition of the app offers the download that matches it, so a user of
+the offline edition is never sent to the smaller online one.
 
 The comparison logic (:func:`diff_versions`) is pure and unit-tested; the
 network fetch and the apply actions are thin wrappers that degrade gracefully
@@ -90,10 +99,12 @@ class Updater:
         data_dir: str | Path,
         *,
         app_version: str = __version__,
+        edition: str = "portable",
     ):
         self.manifest_url = manifest_url
         self.data_dir = Path(data_dir)
         self.app_version = app_version
+        self.edition = edition
 
     def current_versions(self) -> dict:
         lexicon_ver = "0"
@@ -109,21 +120,44 @@ class Updater:
 
     def fetch_manifest(self, *, timeout: float = 8.0) -> dict:
         req = urllib.request.Request(
-            self.manifest_url, headers={"User-Agent": "hamenagen/0.1"}
+            self.manifest_url, headers={"User-Agent": f"hamenagen/{__version__}"}
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
             return json.loads(resp.read().decode("utf-8"))
 
+    def app_release(self, manifest: dict) -> dict | None:
+        """The app entry of a manifest, resolved for this edition."""
+        entry = manifest.get("app") or {}
+        latest = entry.get("version")
+        if not latest:
+            return None
+        downloads = entry.get("downloads") or {}
+        url = downloads.get(self.edition) or downloads.get("portable") or entry.get("url") or entry.get("page")
+        return {
+            "current": self.app_version,
+            "latest": str(latest),
+            "newer": is_newer(str(latest), self.app_version),
+            "url": url,
+            "page": entry.get("page") or url,
+            "notes": entry.get("notes", ""),
+            "published": entry.get("published", ""),
+        }
+
     def check(self) -> dict:
         """Check for updates. Never raises: offline -> ``online: False``."""
         if not self.manifest_url:
-            return {"online": False, "reason": "no manifest url", "updates": []}
+            return {"online": False, "reason": "no manifest url", "updates": [], "app": None}
         try:
             manifest = self.fetch_manifest()
         except Exception as exc:
-            return {"online": False, "reason": str(exc), "updates": []}
-        updates = diff_versions(self.current_versions(), manifest)
-        return {"online": True, "manifest_url": self.manifest_url, "updates": updates}
+            return {"online": False, "reason": str(exc), "updates": [], "app": None}
+        updates = [u for u in diff_versions(self.current_versions(), manifest) if u["component"] != "app"]
+        return {
+            "online": True,
+            "manifest_url": self.manifest_url,
+            "updates": updates,
+            "app": self.app_release(manifest),
+        }
 
     # -- apply actions -----------------------------------------------------
     def apply_ytdlp(self) -> dict:
@@ -143,7 +177,7 @@ class Updater:
         if not url:
             return {"ok": False, "message": "אין כתובת למילון"}
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "hamenagen/0.1"})
+            req = urllib.request.Request(url, headers={"User-Agent": f"hamenagen/{__version__}"})
             with urllib.request.urlopen(req, timeout=8.0) as resp:  # noqa: S310
                 data = resp.read()
             json.loads(data.decode("utf-8"))  # validate

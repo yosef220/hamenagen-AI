@@ -1,6 +1,6 @@
 [project]
 name = "hamenagen"
-version = "0.1.0"
+version = "1.0.0"
 description = "Smart Community Music Player — offline-first core (Hebrew NLP, fuzzy matching, Hebrew calendar)"
 requires-python = ">=3.10"
 dependencies = []
@@ -9,7 +9,7 @@ dependencies = []
 tags = ["mutagen>=1.47"]
 fuzzy = ["rapidfuzz>=3.6"]
 online = ["yt-dlp>=2024.1.0"]
-embeddings = ["sentence-transformers>=2.6"]
+embeddings = ["fastembed>=0.3.0"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]

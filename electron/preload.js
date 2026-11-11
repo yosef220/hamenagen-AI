@@ -3,38 +3,80 @@
 /**
  * Preload script — exposes a minimal, safe API to the renderer.
  *
- * With context isolation on, the renderer never touches Node or the backend
- * directly; it can only call the whitelisted methods below, each of which is
- * forwarded to the Python core in the main process.
+ * With context isolation and the sandbox on, the renderer never touches Node
+ * or the core directly; it can only call the named functions below. Each core
+ * call is checked against an allowlist again in the main process.
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-const invoke = (channel, params) => ipcRenderer.invoke(channel, params);
+/**
+ * A correct file:// URL for a local path — Windows drive letters and UNC
+ * shares, backslashes, Hebrew and spaced names, '#' and '%' in file names.
+ * (The sandboxed preload has no Node `url.pathToFileURL`, so this is plain JS.)
+ */
+function toFileUrl(p) {
+  if (!p) return '';
+  let s = String(p).replace(/\\/g, '/');
+  if (s.startsWith('//')) {
+    const parts = s.slice(2).split('/');
+    const host = parts.shift();
+    return `file://${host}/${parts.map(encodeURIComponent).join('/')}`;
+  }
+  if (/^[A-Za-z]:/.test(s)) s = `/${s}`;
+  const segments = s.split('/').map((seg, i) => (i === 1 && /^[A-Za-z]:$/.test(seg) ? seg : encodeURIComponent(seg)));
+  return `file://${segments.join('/')}`;
+}
+
+const core = (method, params) => ipcRenderer.invoke('backend', method, params || {});
+
+function listen(channel, handler) {
+  const listener = (_evt, msg) => handler(msg);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
 
 contextBridge.exposeInMainWorld('hamenagen', {
-  ping: () => invoke('backend:ping'),
-  ask: (text) => invoke('backend:handle_request', { text }),
-  rescan: (roots) => invoke('backend:rescan', { roots }),
-  openingSuggestion: () => invoke('backend:opening_suggestion'),
-  radioList: (refresh) => invoke('backend:radio_list', { refresh }),
-  classifierStatus: () => invoke('backend:classifier_status'),
-  reclassify: () => invoke('backend:reclassify'),
-  checkUpdates: () => invoke('backend:check_updates'),
-  applyUpdate: (component, url, version) =>
-    invoke('backend:apply_update', { component, url, version }),
-  offlinePackStatus: () => invoke('backend:offline_pack_status'),
-  installOfflinePack: (path) => invoke('backend:install_offline_pack', { path }),
-  getSettings: () => invoke('backend:get_settings'),
-  updateSettings: (settings) => invoke('backend:update_settings', { settings }),
-  onlineSearch: (query, limit) => invoke('backend:online_search', { query, limit }),
-  onlineDownload: (result, downloadId) =>
-    invoke('backend:online_download', { result, download_id: downloadId }),
-  openExternal: (url) => invoke('shell:openExternal', url),
-  // Subscribe to backend events (e.g. { event: 'download_progress', ... }).
-  onBackendEvent: (handler) => {
-    const listener = (_evt, msg) => handler(msg);
-    ipcRenderer.on('backend:event', listener);
-    return () => ipcRenderer.removeListener('backend:event', listener);
-  },
+  // The file:// URL of a local song, for the <audio> element.
+  fileUrl: (p) => toFileUrl(p),
+
+  // The Python core. Every call resolves to { ok, result } or { ok:false, error }.
+  appInfo: () => core('app_info'),
+  today: () => core('today'),
+  ask: (text) => core('handle_request', { text }),
+  playlist: (kind, opts) => core('playlist', { kind, ...(opts || {}) }),
+  setFavorite: (id, on) => core('set_favorite', { id, on }),
+  recordPlay: (id) => core('record_play', { id }),
+  lyrics: (id) => core('track_lyrics', { id }),
+  overview: () => core('library_overview'),
+  listTracks: (query) => core('list_tracks', query),
+  topics: () => core('topics'),
+  rescan: (roots) => core('rescan_async', roots ? { roots } : {}),
+  classifierStatus: () => core('classifier_status'),
+  installModel: () => core('install_model_async'),
+  reclassify: () => core('reclassify_async'),
+  getSettings: () => core('get_settings'),
+  updateSettings: (settings) => core('update_settings', { settings }),
+  radioList: (refresh) => core('radio_list', { refresh }),
+  checkUpdates: (manual) => core('check_updates', { manual: !!manual }),
+  applyUpdate: (component, url, version) => core('apply_update', { component, url, version }),
+  offlinePackStatus: () => core('offline_pack_status'),
+  installOfflinePack: (path) => core('install_offline_pack', { path }),
+  onlineAvailable: () => core('online_available'),
+  onlineSearch: (query, limit) => core('online_search', { query, limit }),
+  onlineDownload: (result, downloadId) => core('online_download', { result, download_id: downloadId }),
+
+  // The operating system.
+  shellInfo: () => ipcRenderer.invoke('app:info'),
+  setTheme: (theme) => ipcRenderer.invoke('app:setTheme', theme),
+  openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
+  showInFolder: (filePath) => ipcRenderer.invoke('app:showItemInFolder', filePath),
+  openFolder: (folder) => ipcRenderer.invoke('app:openFolder', folder),
+  chooseFolder: (title) => ipcRenderer.invoke('app:chooseFolder', title),
+  playerState: (state) => ipcRenderer.send('player:state', state),
+
+  // Pushed notifications: core events, theme changes, taskbar buttons.
+  onBackendEvent: (handler) => listen('backend:event', handler),
+  onThemeChange: (handler) => listen('app:theme', handler),
+  onPlayerCommand: (handler) => listen('player:command', handler),
 });
