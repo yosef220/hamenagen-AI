@@ -231,5 +231,18 @@
     setTimeout(checkAppUpdate, 4000);
   }
 
-  window.addEventListener('DOMContentLoaded', boot);
+  // The luach turns over at midnight even when the app stays open all night.
+  function scheduleMidnight() {
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+    setTimeout(() => {
+      if (currentView === 'home') views.home.refresh();
+      scheduleMidnight();
+    }, next - now);
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    boot();
+    scheduleMidnight();
+  });
 })();
