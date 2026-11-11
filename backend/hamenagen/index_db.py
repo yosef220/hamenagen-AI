@@ -290,12 +290,16 @@ class MusicIndex:
         topic: str | None = None,
         text: str = "",
         favorites_only: bool = False,
+        source: str | None = None,
         offset: int = 0,
         limit: int = 200,
     ) -> dict:
         """One page of the library table, with the total that matches."""
         where: list[str] = []
         params: list = []
+        if source:
+            where.append("source = ?")
+            params.append(source)
         if topic == "__none__":
             where.append("(topic IS NULL OR topic = '')")
         elif topic:

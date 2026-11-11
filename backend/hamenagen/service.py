@@ -457,7 +457,7 @@ class PlayerService:
         return [dict(t, count=counts.get(t["key"], 0)) for t in topics_mod.topic_list()]
 
     def list_tracks(self, **params) -> dict:
-        allowed = {"sort", "descending", "topic", "text", "favorites_only", "offset", "limit"}
+        allowed = {"sort", "descending", "topic", "text", "favorites_only", "source", "offset", "limit"}
         page = self.index.list_tracks(**{k: v for k, v in params.items() if k in allowed})
         return {**page, "tracks": self._tracks_payload(page["tracks"])}
 
@@ -476,6 +476,12 @@ class PlayerService:
 
     # -- the calendar (spec §7) ------------------------------------------------
     def today(self, on: date | None = None) -> dict:
+        # HAMENAGEN_TODAY=YYYY-MM-DD shows another day (screenshots, testing).
+        if on is None and os.environ.get("HAMENAGEN_TODAY"):
+            try:
+                on = date.fromisoformat(os.environ["HAMENAGEN_TODAY"])
+            except ValueError:
+                on = None
         info = today_info(on, vocal_suggestions=self.settings.vocal_suggestions)
         counts = self.index.topic_counts()
         for occ in info["occasions"]:
