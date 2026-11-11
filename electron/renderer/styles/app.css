@@ -533,7 +533,7 @@ select.select {
 .tracks { display: flex; flex-direction: column; }
 .track {
   display: grid;
-  grid-template-columns: 32px 40px minmax(0, 1fr) minmax(0, 0.45fr) 64px 36px;
+  grid-template-columns: 32px 40px minmax(0, 1fr) minmax(0, 0.45fr) 64px 36px 36px;
   align-items: center;
   gap: var(--s3);
   min-height: 56px;
@@ -558,12 +558,13 @@ select.select {
 .track-sub { font-size: var(--fs-sm); color: var(--ink-2); }
 .track-topic { font-size: var(--fs-sm); color: var(--tint, var(--ink-2)); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .track-dur { font-size: var(--fs-sm); color: var(--ink-2); text-align: end; font-variant-numeric: tabular-nums; }
-.track .heart { width: 32px; height: 32px; opacity: 0; }
-.track:hover .heart, .track .heart[aria-pressed="true"], .track .heart:focus-visible { opacity: 1; }
+.track .heart, .track .more { width: 32px; height: 32px; opacity: 0; }
+.track:hover .heart, .track .heart[aria-pressed="true"], .track .heart:focus-visible,
+.track:hover .more, .track .more:focus-visible, .track .more[aria-expanded="true"] { opacity: 1; }
 .tracks-compact .track { grid-template-columns: 40px minmax(0, 1fr) 56px; min-height: 52px; }
 .tracks-head {
   display: grid;
-  grid-template-columns: 32px 40px minmax(0, 1fr) minmax(0, 0.45fr) 64px 36px;
+  grid-template-columns: 32px 40px minmax(0, 1fr) minmax(0, 0.45fr) 64px 36px 36px;
   gap: var(--s3);
   padding: 0 var(--s2) var(--s2);
   border-bottom: 1px solid var(--line);
@@ -919,6 +920,62 @@ input[type="range"]:hover::-webkit-slider-thumb, input[type="range"]:focus-visib
 .menu button:hover { background: var(--hover); }
 .menu button[aria-checked="true"] { color: var(--tekhelet); font-weight: 600; }
 .menu .menu-off { color: var(--ink-2); border-top: 1px solid var(--line); border-radius: 0; margin-top: var(--s1); }
+
+/* The song menu: why, queue, topic, vocal. */
+.track-menu { width: min(360px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow-y: auto; padding: 0; gap: 0; }
+.track-menu .menu-head { padding: var(--s3) var(--s3) var(--s2); border-bottom: 1px solid var(--line); }
+.track-menu .menu-song { font-family: var(--font-display); font-size: var(--fs-md); font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.track-menu .menu-why { display: flex; gap: 6px; align-items: flex-start; margin-top: 4px; font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.45; }
+.track-menu .menu-why .icon { flex: none; margin-top: 3px; color: var(--ink-3); }
+.track-menu .menu-group { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s2); border-bottom: 1px solid var(--line); }
+.track-menu .menu-group:last-child { border-bottom: 0; }
+.track-menu .menu-item { display: flex; align-items: center; gap: var(--s2); min-height: 34px; }
+.track-menu .menu-item .icon { color: var(--ink-2); }
+.track-menu .menu-label { padding: 2px var(--s2); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.02em; color: var(--ink-3); }
+.track-menu .menu-row { display: flex; flex-wrap: wrap; gap: var(--s1); padding: 0 var(--s1); }
+.track-menu .menu-note { display: flex; gap: 6px; align-items: center; margin: 2px var(--s2) 0; font-size: var(--fs-sm); color: var(--ink-2); }
+.chip-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 0 var(--s1); }
+.menu .chip-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  text-align: start;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.menu .chip-choice::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tint, var(--line-strong));
+}
+.menu .chip-choice.quiet::before { display: none; }
+.menu .chip-choice:hover { background: var(--hover); }
+.menu .chip-choice[aria-checked="true"] { border-color: var(--tint, var(--tekhelet)); box-shadow: inset 0 0 0 1px var(--tint, var(--tekhelet)); font-weight: 600; color: var(--ink); }
+.segmented-sm { align-self: flex-start; margin: 0 var(--s1); }
+.segmented-sm button { min-height: 28px; }
+
+/* Songs the detector heard as vocal, waiting for the listener. */
+.review { margin: var(--s4) 0 var(--s5); padding: var(--s4); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); }
+.review-head { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; justify-content: space-between; margin-bottom: var(--s3); }
+.review-head h2 { display: flex; gap: var(--s2); align-items: center; margin: 0; font-family: var(--font-display); font-size: var(--fs-lg); }
+.review-head p { margin: 4px 0 0; color: var(--ink-2); font-size: var(--fs-sm); max-width: 62ch; }
+.review-list { display: flex; flex-direction: column; }
+.review-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto auto; gap: var(--s3); align-items: center; min-height: 52px; padding: var(--s1) var(--s2); border-radius: var(--r-md); }
+.review-row:hover { background: var(--hover); }
+.review-row .badge { font-size: var(--fs-xs); padding: 2px 8px; border-radius: 999px; background: var(--gold-soft); color: var(--gold); white-space: nowrap; }
+.review-row .badge.maybe { background: var(--sunken); color: var(--ink-2); }
+.review-row .actions { display: flex; gap: var(--s1); }
 
 .toasts {
   position: fixed;

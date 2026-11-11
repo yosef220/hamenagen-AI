@@ -89,16 +89,39 @@
           h('span', { class: 'idx-n' }, String(i + 1)),
           h('button', { class: 'icon-btn play-hint', type: 'button', 'aria-label': `נגן את ${H.trackTitle(track)}`, onclick: (e) => { e.stopPropagation(); play(); } }, icon('play', 'icon-sm'))),
         H.cover(track), main,
-        h('div', { class: 'track-topic', 'data-tint': H.tint(track.topic) }, topicLabel(track)),
+        h('div', { class: 'track-topic', 'data-tint': H.tint(track.topic), title: topicWhy(track) }, topicLabel(track)),
         h('div', { class: 'track-dur' }, track.duration ? H.clock(track.duration) : ''),
-        heartButton(track));
+        heartButton(track),
+        h('button', {
+          class: 'icon-btn more',
+          type: 'button',
+          'aria-label': `עוד פעולות על ${H.trackTitle(track)}`,
+          'aria-haspopup': 'menu',
+          onclick: (e) => { e.stopPropagation(); H.openTrackMenu(track, e.currentTarget); },
+        }, icon('ellipsis')));
     row.addEventListener('dblclick', play);
     if (opts.compact) row.addEventListener('click', play);
     row.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') play();
+      if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+        e.preventDefault();
+        H.openTrackMenu(track, row);
+      }
+    });
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      H.openTrackMenu(track, { x: e.clientX, y: e.clientY });
     });
     return row;
   }
+
+  /** "Why this topic", in the listener's words, for the tooltip and the menu. */
+  function topicWhy(track) {
+    if (!track.topic) return 'עוד אין נושא לשיר הזה';
+    const label = (H.topicLabels && H.topicLabels[track.topic]) || track.topic;
+    return track.topic_note ? `${label} — ${track.topic_note}` : label;
+  }
+  H.topicWhy = topicWhy;
 
   function topicLabel(track) {
     if (!track.topic) return '';
@@ -121,6 +144,171 @@
     }
   }
   H.markActive = markActive;
+
+  // ------------------------------------------------------------ the song menu
+  /*
+   * One menu for every song row: why it has its topic, choosing another
+   * topic, marking it vocal (or not), queueing it and finding the file.
+   * Corrections go to the core, which keeps them across scans and lets the
+   * rest of the album follow.
+   */
+  const songMenu = h('div', { class: 'menu track-menu', id: 'track-menu', role: 'menu', hidden: true, 'aria-label': 'פעולות על השיר' });
+  document.body.appendChild(songMenu);
+  let menuTrack = null;
+  let menuReturn = null;
+  let menuOpenedAt = 0;
+  let menuViewport = '';
+
+  function closeTrackMenu() {
+    if (songMenu.hidden) return;
+    // Give focus back only if it was inside the menu (keyboard use), and
+    // without scrolling: the page may have moved since the menu opened.
+    const hadFocus = songMenu.contains(document.activeElement);
+    songMenu.hidden = true;
+    menuTrack = null;
+    if (hadFocus && menuReturn && menuReturn.focus && document.contains(menuReturn)) menuReturn.focus({ preventScroll: true });
+    menuReturn = null;
+  }
+  H.closeTrackMenu = closeTrackMenu;
+
+  /** Apply what the core returned to every copy of the song on screen. */
+  function applyTrack(track, fresh) {
+    if (!fresh) return;
+    for (const key of ['topic', 'topic_source', 'topic_note', 'tags', 'vocal', 'topic_chosen']) track[key] = fresh[key];
+    for (const q of [H.player.queue, H.player.original]) {
+      for (const t of q) if (t.id === track.id) Object.assign(t, { topic: fresh.topic, tags: fresh.tags, topic_note: fresh.topic_note });
+    }
+    for (const row of H.$$(`.track[data-id="${CSS.escape(track.id)}"]`)) {
+      const cell = row.querySelector('.track-topic');
+      if (cell) {
+        cell.textContent = topicLabel(track);
+        cell.dataset.tint = H.tint(track.topic);
+        cell.title = topicWhy(track);
+      }
+      const cover = row.querySelector('.cover');
+      if (cover) cover.dataset.tint = H.tint(track.topic);
+    }
+    api.emit('track-changed', { id: track.id, track });
+  }
+
+  async function chooseTopic(track, topic) {
+    closeTrackMenu();
+    try {
+      const res = await api.setTrackTopic(track.id, topic);
+      applyTrack(track, res.track);
+      const label = topic === null ? 'אוטומטי' : topic === '' ? 'בלי נושא' : ((H.topicLabels && H.topicLabels[topic]) || topic);
+      const more = res.propagated ? ` · ${H.songs(res.propagated)} מאותו אלבום או תיקייה התעדכנו` : '';
+      H.toast(`„${H.trackTitle(track)}”: ${label}${more}`, { icon: 'tag' });
+    } catch (err) {
+      H.toast(`לא הצלחתי לשנות: ${err.message}`, { kind: 'bad' });
+    }
+  }
+
+  async function chooseVocal(track, value) {
+    closeTrackMenu();
+    try {
+      const res = await api.setTrackVocal(track.id, value);
+      applyTrack(track, res.track);
+      H.toast(value === true ? `„${H.trackTitle(track)}” סומן כווקאלי` : value === false
+        ? `„${H.trackTitle(track)}” סומן כשיר עם כלי נגינה` : 'הזיהוי חזר להיות אוטומטי', { icon: 'mic-vocal' });
+    } catch (err) {
+      H.toast(`לא הצלחתי לשמור: ${err.message}`, { kind: 'bad' });
+    }
+  }
+
+  function item(iconName, label, onclick, attrs = {}) {
+    return h('button', { type: 'button', role: 'menuitem', class: 'menu-item', onclick, ...attrs },
+      iconName ? icon(iconName, 'icon-sm') : null, h('span', {}, label));
+  }
+
+  function renderTrackMenu(track) {
+    const topics = (H.cachedTopics || []).length ? H.cachedTopics : Object.entries(H.topicLabels || {}).map(([key, label]) => ({ key, label }));
+    const vocalState = track.vocal === 'yes' ? 'yes' : track.vocal === 'no' ? 'no' : 'auto';
+    const heard = track.vocal === 'vocal' ? 'המנגן שמע בשיר שירה בלי כלי נגינה.'
+      : track.vocal === 'maybe' ? 'נשמע כמו שירה בלי כלים, אבל לא בטוח.' : '';
+    const topicButtons = topics.map((t) => h('button', {
+      type: 'button',
+      role: 'menuitemradio',
+      class: 'chip-choice',
+      'data-tint': H.tint(t.key),
+      'aria-checked': track.topic === t.key ? 'true' : 'false',
+      onclick: () => chooseTopic(track, t.key),
+    }, t.label));
+    H.clear(songMenu).append(
+      h('div', { class: 'menu-head' },
+        h('div', { class: 'menu-song' }, H.trackTitle(track)),
+        h('div', { class: 'menu-why' }, icon('info', 'icon-sm'), h('span', {}, topicWhy(track)))),
+      h('div', { class: 'menu-group' },
+        item('list-start', 'לנגן אחרי השיר הזה', () => { closeTrackMenu(); H.player.playNext(track); H.toast('יתנגן אחרי השיר הזה', { icon: 'list-start' }); }),
+        item('list-plus', 'להוסיף לסוף התור', () => { closeTrackMenu(); H.player.enqueue([track]); H.toast('נוסף לתור', { icon: 'list-plus' }); }),
+        track.path ? item('folder-open', 'להציג בתיקייה', () => { closeTrackMenu(); api.showInFolder(track.path); }) : null),
+      h('div', { class: 'menu-group' },
+        h('div', { class: 'menu-label' }, 'הנושא של השיר'),
+        h('div', { class: 'chip-grid', role: 'group', 'aria-label': 'נושא' }, topicButtons),
+        h('div', { class: 'menu-row' },
+          h('button', { type: 'button', role: 'menuitemradio', class: 'chip-choice', 'aria-checked': !track.topic && track.topic_chosen ? 'true' : 'false', onclick: () => chooseTopic(track, '') }, 'בלי נושא'),
+          track.topic_chosen ? h('button', { type: 'button', role: 'menuitem', class: 'chip-choice quiet', onclick: () => chooseTopic(track, null) }, icon('undo-2', 'icon-sm'), 'לחזור לנושא האוטומטי') : null)),
+      h('div', { class: 'menu-group' },
+        h('div', { class: 'menu-label' }, 'שירה בלי כלי נגינה'),
+        h('div', { class: 'segmented segmented-sm', role: 'group', 'aria-label': 'ווקאלי' },
+          [['yes', 'ווקאלי', true], ['no', 'יש כלים', false], ['auto', 'אוטומטי', null]].map(([key, label, value]) =>
+            h('button', { type: 'button', role: 'menuitemradio', 'aria-pressed': vocalState === key ? 'true' : 'false', 'aria-checked': vocalState === key ? 'true' : 'false', onclick: () => chooseVocal(track, value) }, label))),
+        heard ? h('p', { class: 'menu-note' }, icon('ear', 'icon-sm'), heard) : null),
+    );
+  }
+
+  /** Open the song menu next to a button/row, or at a point {x, y}. */
+  H.openTrackMenu = function openTrackMenu(track, where) {
+    if (!songMenu.hidden && menuTrack && menuTrack.id === track.id && !(where && 'x' in where)) { closeTrackMenu(); return; }
+    menuTrack = track;
+    menuReturn = where instanceof Element ? where : document.activeElement;
+    renderTrackMenu(track);
+    songMenu.hidden = false;
+    menuOpenedAt = performance.now();
+    menuViewport = `${window.innerWidth}x${window.innerHeight}`;
+    const w = songMenu.offsetWidth;
+    const hgt = songMenu.offsetHeight;
+    let x;
+    let y;
+    if (where instanceof Element) {
+      const r = where.getBoundingClientRect();
+      x = r.right - w;            // RTL: the menu's right edge under the button's
+      y = r.bottom + 6;
+      if (y + hgt > window.innerHeight - 8) y = Math.max(8, r.top - hgt - 6);
+    } else {
+      x = where.x - w;
+      y = where.y;
+      if (y + hgt > window.innerHeight - 8) y = Math.max(8, window.innerHeight - hgt - 8);
+    }
+    x = Math.min(Math.max(8, x), window.innerWidth - w - 8);
+    songMenu.style.setProperty('left', `${x}px`);
+    songMenu.style.setProperty('top', `${y}px`);
+    const first = songMenu.querySelector('button');
+    if (first) first.focus({ preventScroll: true });
+  };
+
+  songMenu.addEventListener('keydown', (e) => {
+    const items = H.$$('button', songMenu);
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const next = items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length];
+      if (next) next.focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeTrackMenu();
+    }
+  });
+  document.addEventListener('mousedown', (e) => { if (!songMenu.hidden && !songMenu.contains(e.target)) closeTrackMenu(); });
+  window.addEventListener('blur', closeTrackMenu);
+  window.addEventListener('resize', () => {
+    if (`${window.innerWidth}x${window.innerHeight}` !== menuViewport) closeTrackMenu();
+  });
+  // Scrolling the page closes the menu; scrolling inside the menu does not,
+  // nor the scroll that brought the row into view (scroll events arrive late).
+  document.addEventListener('scroll', (e) => {
+    if (!songMenu.contains(e.target) && performance.now() - menuOpenedAt > 250) closeTrackMenu();
+  }, true);
 
   // ------------------------------------------------------------ topic tiles
   H.topicTile = function topicTile(topic, opts = {}) {

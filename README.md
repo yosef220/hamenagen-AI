@@ -31,6 +31,12 @@
 
 **מסווג כל שיר לנושא.** קודם שם השיר (למשל „מנוחה ושמחה” הוא זמר שבת גם בלי המילה „שבת”), אחר כך מילון מתוחזק ושם התיקייה, ובסוף מודל שפה קטן שרץ על המחשב עצמו ומשווה את השיר לאוצר מילים של כל מועד — כך „אפיקומן” מגיע לפסח ו„פך שמן קטן” לחנוכה. המודל נבחר במדידה על שמות שירים בעברית מול המודלים החדשים של 2026, ומעדיף לשתוק על פני טעות. שיר יכול להשתייך ליותר מנושא אחד.
 
+**אינדקס הידע (חדש ב-1.1).** המנגן מכיר מאות שירים ופיוטים לפי מועד — מוויקיפדיה העברית ומהסידור וההגדה של ספריא — ואת אוצר המילים של כל מועד, כך ש„עבדים היינו” מגיע לפסח ו„אקדמות” לשבועות גם בלי מילת מפתח. שיר שאין עליו שום רמז לומד מהאלבום ומהתיקייה שלו.
+
+**מקשיב לשירים (חדש ב-1.1).** ברקע ובלי אינטרנט, המנגן מקשיב לשלושה קטעים קצרים מכל שיר ומזהה שירה בלי כלי נגינה — לימי הספירה ובין המצרים. השירים שזוהו מחכים לאישור שלך בעמוד „ווקאלי”.
+
+**מתקנים בלחיצה (חדש ב-1.1).** לחיצה ימנית על שיר (או ⋯) מראה למה הוא קיבל את הנושא שלו, ומאפשרת לבחור אחר, לסמן ווקאלי, לנגן אחריו או להציג בתיקייה. התיקון נשמר גם אחרי סריקה.
+
 **מכיר את הלוח.** בדף הבית התאריך העברי באותיות, המועד של היום וכפתור להשמעה — או ספירה לאחור למועד הבא. ערב שבת ומוצאי שבת, ראש השנה, יום כיפור, סוכות, חנוכה, פורים, פסח, ל״ג בעומר, שבועות, חודש אלול ועשרת ימי תשובה. בימי ספירת העומר („היום 12 לעומר”) ובין המצרים הוא מציע מוזיקה ווקאלית (אפשר לכבות), ובתשעה באב לא מציע כלום.
 
 **נגן שלם.** תור עם ערבוב וחזרה, לב לשירים אהובים, טיימר שינה שמנמיך בהדרגה, מילים מקובץ ‎.lrc או ‎.txt שליד השיר, כפתורי נגן בשורת המשימות, מקשי מדיה וחלונית המדיה של Windows.
@@ -48,6 +54,7 @@
 | ![בקשה: שעה של שירי שבת](docs/screenshots/request.png) | ![הספרייה](docs/screenshots/library.png) |
 | ![הרדיו](docs/screenshots/radio.png) | ![ההגדרות](docs/screenshots/settings.png) |
 | ![דף הבית בערכה הכהה](docs/screenshots/home-dark.png) | ![התור בערכה הכהה](docs/screenshots/queue-dark.png) |
+| ![תפריט השיר: למה הנושא, שינוי נושא, ווקאלי](docs/screenshots/song-menu.png) | ![שירים שזוהו מהשמע, לאישור](docs/screenshots/vocal-review.png) |
 
 ## פרטיות
 
@@ -57,17 +64,19 @@
 
 ```bash
 npm install                        # Electron, הגופנים והאייקונים (נשמרים מקומית)
-pip install -r requirements.txt    # תלויות הליבה (רשות: mutagen, rapidfuzz, yt-dlp, fastembed)
+pip install -r requirements.txt    # תלויות הליבה (רשות: mutagen, rapidfuzz, yt-dlp, onnxruntime, tokenizers, numpy, soundfile)
 npm start                          # מריץ את התוכנה; הנתונים בתיקייה data של המאגר
 ```
 
 - **בדיקות הליבה:** `cd backend && python -m pytest -q`
 - **בדיקת הממשק:** `python tests/ui/make_library.py /tmp/music` ואז `xvfb-run node tests/ui/shoot.js /tmp/music /tmp/shots` — מריץ את התוכנה האמיתית מול ספריית דוגמה, עובר על כל המסכים בשתי הערכות ושומר צילומים.
 - **הליבה משורת הפקודה:** `python -m hamenagen.cli today`, `... ask "שעה של שירי שבת"`, `... scan ~/Music`.
-- **אריזה ושחרור:** ראו [docs/PACKAGING.md](docs/PACKAGING.md). בקצרה: מעדכנים את הגרסה ב-`package.json` וב-`backend/hamenagen/__init__.py`, מוסיפים תגית `v<גרסה>`, וה-CI בונה את שלוש המהדורות, בודק אותן ומפרסם.
+- **אריזה ושחרור:** ראו [docs/PACKAGING.md](docs/PACKAGING.md). בקצרה: מעדכנים את הגרסה ב-`package.json` וב-`backend/hamenagen/__init__.py`, ממזגים ל-`main` ומריצים את התהליך „בדיקה, בנייה ושחרור” עם הסימון „לפרסם גרסה” (או מוסיפים תגית `v<גרסה>`). ה-CI בונה את שלוש המהדורות, בודק אותן ומפרסם.
 
 מבנה: `backend/hamenagen` — הליבה בפייתון (הבנת בקשות, סיווג, לוח עברי, ספרייה, רדיו, עדכונים); `electron/` — החלון והממשק; `tests/ui` — בדיקת הממשק; `scripts/` — אריזה ואייקונים. פרטים ב-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ושינויים ב-[CHANGELOG.md](CHANGELOG.md).
 
 ## רישיונות של רכיבים
 
-הגופנים Frank Ruhl Libre ו-IBM Plex Sans Hebrew — SIL Open Font License. האייקונים — Lucide (ISC). ניגון HLS — hls.js (Apache-2.0). הליבה משתמשת ב-yt-dlp (Unlicense), mutagen (GPL-2.0), rapidfuzz (MIT), onnxruntime (MIT) ו-tokenizers (Apache-2.0). מודל הסיווג: `intfloat/multilingual-e5-small` (MIT).
+הגופנים Frank Ruhl Libre ו-IBM Plex Sans Hebrew — SIL Open Font License. האייקונים — Lucide (ISC). ניגון HLS — hls.js (Apache-2.0). הליבה משתמשת ב-yt-dlp (Unlicense), mutagen (GPL-2.0), rapidfuzz (MIT), onnxruntime (MIT), tokenizers (Apache-2.0) ו-soundfile (BSD-3, עם libsndfile ב-LGPL-2.1). מודל הסיווג: `intfloat/multilingual-e5-small` (MIT). מודל זיהוי הווקאלי: CED-Tiny (Apache-2.0, בהמרה של sherpa-onnx).
+
+אינדקס הידע (`song_index.json`, `topic_lexicon.json`) נגזר מ[ויקיפדיה העברית](https://he.wikipedia.org) ומטקסטים של [ספריא](https://www.sefaria.org) ברישיונות פתוחים, ומופץ ברישיון CC BY-SA 4.0 — פרטים ב-[`LICENSE-DATA.md`](backend/hamenagen/data/LICENSE-DATA.md).

@@ -8,8 +8,10 @@
   const { h, icon, api } = H;
   const root = H.$('#view-results');
   let current = null; // the last response
+  let lastParams = {};
 
   async function show(params = {}) {
+    lastParams = params;
     H.clear(root).appendChild(h('div', { class: 'results-head' },
       h('div', { class: 'results-kicker' }, icon('loader-circle', 'icon-sm spin'), 'מחפש…')));
     let res;
@@ -39,6 +41,8 @@
         h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => { H.player.enqueue(res.tracks); H.toast(`${H.songs(total)} נוספו לתור`, { icon: 'list-music' }); } }, icon('list-music'), 'הוספה לתור')) : null);
 
     const parts = [head];
+    const topic = (res.intent && res.intent.topic) || params.topic;
+    if (topic === VOCAL) parts.push(reviewPanel());
     if (total) {
       parts.push(H.trackList(res.tracks));
     } else if (res.intent && res.intent.action === 'search_song') {
@@ -49,6 +53,66 @@
         h('button', { class: 'btn btn-outline', type: 'button', onclick: () => H.go('home') }, 'חזרה לבית')));
     }
     H.clear(root).append(...parts);
+  }
+
+  // ------------------------------------------------------------ vocal review
+  const VOCAL = 'ווקאלי';
+
+  /**
+   * Songs the detector heard as sung without instruments, waiting for the
+   * listener's word. Until confirmed they are not suggested in the Omer
+   * count or the Three Weeks (unless the listener allowed that in settings).
+   */
+  function reviewPanel() {
+    const panel = h('section', { class: 'review', 'aria-label': 'שירים שזוהו מהשמע', hidden: true });
+    api.vocalReview(300).then((r) => {
+      if (!r.tracks.length) return;
+      const list = h('div', { class: 'review-list', role: 'list' });
+      const left = h('span', { class: 'muted num' });
+      const ids = new Set(r.tracks.map((t) => t.id));
+      const count = () => { left.textContent = ids.size ? H.songs(ids.size) : ''; if (!ids.size) panel.hidden = true; };
+      const decide = async (tracks, value, rows) => {
+        try {
+          await api.confirmVocal(tracks.map((t) => t.id), value);
+          for (const t of tracks) ids.delete(t.id);
+          for (const row of rows) row.remove();
+          count();
+          H.toast(value ? `${H.songs(tracks.length)} נוספו לשירים הווקאליים` : `${H.songs(tracks.length)} סומנו כשירים עם כלים`, { icon: 'mic-vocal' });
+          if (value) show({ ...lastParams, autoplay: false });
+        } catch (err) {
+          H.toast(`לא הצלחתי לשמור: ${err.message}`, { kind: 'bad' });
+        }
+      };
+      const rows = r.tracks.map((t) => {
+        const row = h('div', { class: 'review-row', role: 'listitem', 'data-id': t.id },
+          H.cover(t),
+          h('div', { class: 'track-main' },
+            h('div', { class: 'track-title' }, H.trackTitle(t)),
+            h('div', { class: 'track-sub' }, [t.artist, t.album].filter(Boolean).join(' · '))),
+          h('span', { class: `badge${t.vocal === 'maybe' ? ' maybe' : ''}` }, t.vocal === 'maybe' ? 'אולי' : 'נשמע ווקאלי'),
+          h('div', { class: 'actions' },
+            h('button', { class: 'icon-btn', type: 'button', 'aria-label': `לשמוע את ${H.trackTitle(t)}`, onclick: () => H.player.playList([t], 0) }, icon('play', 'icon-sm')),
+            h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: () => decide([t], true, [row]) }, icon('check', 'icon-sm'), 'ווקאלי'),
+            h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => decide([t], false, [row]) }, 'יש כלים')));
+        list.appendChild(row);
+        return row;
+      });
+      const sure = r.tracks.filter((t) => t.vocal === 'vocal');
+      panel.append(
+        h('div', { class: 'review-head' },
+          h('div', {},
+            h('h2', {}, icon('ear'), 'זוהו מהשמע — כדאי לבדוק'),
+            h('p', {}, 'המנגן הקשיב לשירים ושמע בהם שירה בלי כלי נגינה. אפשר לשמוע ולאשר; רק שירים שאושרו מוצעים בימי הספירה ובין המצרים.')),
+          h('div', { class: 'results-actions' },
+            left,
+            sure.length ? h('button', { class: 'btn btn-outline btn-sm', type: 'button',
+              onclick: () => decide(sure, true, rows.filter((row) => sure.some((t) => t.id === row.dataset.id))) },
+            icon('check-check', 'icon-sm'), `לאשר את ${sure.length === 1 ? 'השיר הבטוח' : `${H.n(sure.length)} הבטוחים`}`) : null)),
+        list);
+      count();
+      panel.hidden = false;
+    }).catch(() => {});
+    return panel;
   }
 
   // ------------------------------------------------------------ online search

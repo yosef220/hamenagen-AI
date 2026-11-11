@@ -67,6 +67,14 @@ def bundled_models_dir() -> Path | None:
     return None
 
 
+def bundled_audio_models_dir() -> Path | None:
+    """The vocal-detection model shipped inside the app (every edition)."""
+    env = os.environ.get("HAMENAGEN_AUDIO_MODELS_DIR")
+    if env and Path(env).is_dir():
+        return Path(env)
+    return None
+
+
 def default_downloads_dir() -> Path:
     music = os.environ.get("HAMENAGEN_MUSIC_DIR")
     base = Path(music) if music else Path.home() / "Music"
@@ -104,6 +112,13 @@ class Settings:
     classify_by_lyrics: bool = True
     # Suggest a cappella music in the Omer count and the Three Weeks.
     vocal_suggestions: bool = True
+    # Listen to three short windows of every song and recognise singing with
+    # no instruments (vocal.py). Runs in the background, offline.
+    vocal_detection: bool = True
+    # Count songs the detector found as "ווקאלי" right away. Off: they wait in
+    # a list for the listener to confirm, and only confirmed songs are
+    # suggested in the Omer count and the Three Weeks.
+    vocal_auto_include: bool = False
     # Appearance: "system" | "light" | "dark", and the text size.
     theme: str = "system"
     text_size: str = "normal"

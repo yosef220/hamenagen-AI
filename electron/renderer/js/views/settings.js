@@ -108,7 +108,16 @@
     return h('span', { class: 'pill warn' }, 'לא מותקן');
   }
 
-  function ai(status) {
+  function knowledgeRow(info) {
+    const k = info && info.knowledge;
+    if (!k || !k.songs) return null;
+    const built = k.version ? ` · נבנה ב-${k.version.split('-').reverse().join('.')}` : '';
+    return row('אינדקס הידע',
+      `${H.n(k.songs)} שירים ופיוטים לפי מועד, ואוצר מילים ל-${H.n(k.topics)} מועדים מ-${H.n(k.sources)} מקורות — ויקיפדיה העברית וספריא${built}. נמצא בתוך התוכנה ועובד בלי אינטרנט.`,
+      h('span', { class: 'pill good' }, icon('book-open'), 'פעיל'));
+  }
+
+  function ai(status, info) {
     const st = status || {};
     const where = st.bundled ? 'המודל מגיע בתוך התוכנה (גרסה מלאה לאופליין).' : 'המודל ירד פעם אחת כשיש אינטרנט, ומאז עובד בלי רשת.';
     const install = st.enabled && !st.loaded && !st.available
@@ -120,6 +129,7 @@
       : null;
     return h('section', { class: 'set-group', id: 'set-ai' },
       h('h2', {}, 'בינה מלאכותית מקומית'),
+      knowledgeRow(info),
       row('מודל הסיווג', `${where} ${st.model ? `(${st.model.split('/').pop()})` : ''}`, h('div', { style: { display: 'flex', gap: '8px', 'align-items': 'center' } }, modelPill(st), install)),
       toggle('use_embeddings', 'סיווג חכם לשירים בלי מילת מפתח', 'כשהשם של שיר לא מגלה את הנושא, המודל משווה את המשמעות שלו לנושאים. כבוי = מילון בלבד.', () => render()),
       toggle('classify_by_lyrics', 'להיעזר בקובצי מילים', 'אם ליד שיר יש קובץ ‎.lrc או ‎.txt, גם המילים נלקחות בחשבון.'),
@@ -135,6 +145,42 @@
       toggle('vocal_suggestions', 'מוזיקה ווקאלית בימי הספירה ובין המצרים',
         'בימים האלה הלוח בדף הבית מציע שירים ווקאליים (בלי כלים) במקום ההצעה הרגילה. הספירה מוצגת בכל מקרה.',
         () => H.views.home && H.views.home.refresh && H.views.home.refresh()));
+  }
+
+  // ------------------------------------------------------------ listening for vocal songs
+  let vocalLine = null;
+
+  function vocalSummary(v) {
+    if (!v) return '';
+    if (!v.available) {
+      return !v.model_found ? 'רכיב הזיהוי לא נמצא בגרסה הזו של התוכנה.' : 'ספריית פענוח השמע חסרה בגרסה הזו.';
+    }
+    const parts = [`נבדקו ${H.n(v.analyzed)} מתוך ${H.songs(v.total)}`];
+    if (v.vocal || v.maybe) parts.push(`נשמעו ווקאליים: ${H.n(v.vocal)}${v.maybe ? `, ועוד ${H.n(v.maybe)} אולי` : ''}`);
+    if (v.unreadable) parts.push(`${H.n(v.unreadable)} בפורמט שלא נבדק (M4A, WMA)`);
+    return parts.join(' · ');
+  }
+
+  function listening(v) {
+    const st = v || {};
+    const run = h('button', { class: 'btn btn-outline btn-sm', type: 'button', disabled: !st.available || !H.settings.vocal_detection, onclick: async () => {
+      if (st.running) { await api.stopVocal().catch(() => {}); H.toast('הבדיקה תיעצר אחרי השיר הנוכחי', { icon: 'ear' }); return; }
+      const r = await api.analyzeVocal().catch((err) => ({ started: false, reason: err.message }));
+      H.toast(r.started ? 'הבדיקה רצה ברקע. אפשר להמשיך להאזין.' : 'אין כרגע שירים חדשים לבדוק', { icon: 'ear' });
+    } }, icon(st.running ? 'x' : 'ear', 'icon-sm'), st.running ? 'לעצור' : 'לבדוק עכשיו');
+    const review = st.to_review
+      ? h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => H.openTopic('ווקאלי') },
+        `${H.songs(st.to_review)} ממתינים לאישור`)
+      : null;
+    vocalLine = h('div', { class: 'set-help num' }, vocalSummary(st));
+    return h('section', { class: 'set-group', id: 'set-vocal' },
+      h('h2', {}, 'זיהוי שירים ווקאליים'),
+      toggle('vocal_detection', 'להקשיב לשירים ולזהות שירה בלי כלי נגינה',
+        'המנגן מקשיב לשלושה קטעים קצרים מכל שיר (כחמישית שנייה לשיר), ברקע ובלי אינטרנט. המודל קטן ונמצא בתוך התוכנה.',
+        () => render({ focus: 'vocal' })),
+      row('המצב', null, h('div', { style: { display: 'flex', gap: '8px', 'align-items': 'center' } }, review, run), { wide: vocalLine }),
+      toggle('vocal_auto_include', 'לצרף מיד שירים שזוהו בוודאות',
+        'כבוי: שירים שזוהו מחכים לאישור שלך בעמוד „ווקאלי”, ורק שירים שאושרו מוצעים בימי הספירה ובין המצרים. הזיהוי אוטומטי ויכול לטעות — בעיקר בשירה עם ליווי חלש מאוד.'));
   }
 
   function online(info) {
@@ -217,16 +263,17 @@
   }
 
   async function render(params = {}) {
-    const [settings, status, overview, info, shell] = await Promise.all([
+    const [settings, status, overview, info, shell, vocal] = await Promise.all([
       api.getSettings(), api.classifierStatus().catch(() => null), api.overview().catch(() => null),
-      api.appInfo().catch(() => null), api.shellInfo(),
+      api.appInfo().catch(() => null), api.shellInfo(), api.vocalStatus().catch(() => null),
     ]);
     H.settings = settings;
     H.appInfo = info;
     H.clear(root).append(
       h('header', { class: 'page-head' }, h('h1', {}, 'הגדרות')),
       h('div', { class: 'settings' },
-        appearance(), library(overview), ai(status), suggestions(), online(info), updates(info), about(info, shell)));
+        appearance(), library(overview), ai(status, info), suggestions(), listening(vocal), online(info), updates(info),
+        about(info, shell)));
     if (params.focus) {
       const target = H.$(`#set-${params.focus}`);
       if (target) target.scrollIntoView({ block: 'start' });
@@ -237,6 +284,10 @@
     modelState = msg.status === 'done' || msg.status === 'error' ? null : msg.status;
     if (!root.hidden) render();
   });
+  api.on('vocal_progress', (msg) => {
+    if (!root.hidden && vocalLine) vocalLine.textContent = `מקשיב… ${H.n(msg.done)} מתוך ${H.n(msg.total)} שירים חדשים`;
+  });
+  api.on('vocal_done', () => { if (!root.hidden) render({ focus: null }); });
 
   H.views = H.views || {};
   H.views.settings = { show: render };

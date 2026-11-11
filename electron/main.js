@@ -60,15 +60,16 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 // Chromium's own storage goes in a sub-folder with an ASCII path.
 app.setPath('userData', path.join(DATA_DIR, 'app'));
 
-function bundledModelsDir() {
-  const dir = path.join(process.resourcesPath || '', 'models');
+function bundledResource(name) {
+  const dir = path.join(process.resourcesPath || '', name);
   return app.isPackaged && fs.existsSync(dir) ? dir : '';
 }
 
 const bridge = new BackendBridge({
   env: {
     HAMENAGEN_DATA_DIR: DATA_DIR,
-    HAMENAGEN_MODELS_DIR: bundledModelsDir(),
+    HAMENAGEN_MODELS_DIR: bundledResource('models'),
+    HAMENAGEN_AUDIO_MODELS_DIR: bundledResource('audio-models'),
     HAMENAGEN_MUSIC_DIR: safePath('music'),
     HAMENAGEN_EDITION: EDITION,
   },
@@ -220,6 +221,8 @@ const BACKEND_METHODS = new Set([
   'get_settings', 'update_settings',
   'radio_list', 'check_updates', 'apply_update', 'offline_pack_status', 'install_offline_pack',
   'online_available', 'online_search', 'online_download',
+  'set_track_topic', 'set_track_vocal', 'confirm_vocal',
+  'vocal_status', 'vocal_review', 'analyze_vocal_async', 'stop_vocal',
 ]);
 
 ipcMain.handle('backend', async (_evt, method, params) => {

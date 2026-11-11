@@ -65,6 +65,13 @@ contextBridge.exposeInMainWorld('hamenagen', {
   onlineAvailable: () => core('online_available'),
   onlineSearch: (query, limit) => core('online_search', { query, limit }),
   onlineDownload: (result, downloadId) => core('online_download', { result, download_id: downloadId }),
+  setTrackTopic: (id, topic) => core('set_track_topic', { id, topic }),
+  setTrackVocal: (id, value) => core('set_track_vocal', { id, value }),
+  confirmVocal: (ids, value) => core('confirm_vocal', { ids, value }),
+  vocalStatus: () => core('vocal_status'),
+  vocalReview: (limit) => core('vocal_review', { limit }),
+  analyzeVocal: () => core('analyze_vocal_async'),
+  stopVocal: () => core('stop_vocal'),
 
   // The operating system.
   shellInfo: () => ipcRenderer.invoke('app:info'),

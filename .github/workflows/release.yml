@@ -42,7 +42,7 @@ jobs:
       - name: Core tests
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest mutagen rapidfuzz numpy
+          python -m pip install pytest mutagen rapidfuzz numpy soundfile
           cd backend && python -m pytest -q
 
       - name: Install npm packages
@@ -93,6 +93,13 @@ jobs:
       - name: Embedded Python with the core's libraries
         run: npm run prepare:win-python
 
+      - name: The vocal-detection model (every edition)
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+        run: build/win-python/python.exe backend/scripts/prepare_audio_model.py --out build/audio-models
+
       - name: Stamp the build
         shell: pwsh
         run: |
@@ -121,7 +128,9 @@ jobs:
           PYTHONIOENCODING: 'utf-8'
         run: |
           $res = "dist/win-unpacked/resources"
-          foreach ($p in @("$res/python/python.exe", "$res/backend/hamenagen/rpc.py", "$res/backend/hamenagen/data/radio_seed.json", "dist/win-unpacked/Hamenagen.exe")) {
+          foreach ($p in @("$res/python/python.exe", "$res/backend/hamenagen/rpc.py", "$res/backend/hamenagen/data/radio_seed.json",
+                           "$res/backend/hamenagen/data/song_index.json", "$res/backend/hamenagen/data/topic_lexicon.json",
+                           "$res/audio-models/ced-tiny/model.int8.onnx", "dist/win-unpacked/Hamenagen.exe")) {
             if (-not (Test-Path $p)) { throw "missing from the package: $p" }
           }
           $env:HAMENAGEN_BACKEND_DIR = (Resolve-Path "$res/backend").Path
@@ -137,6 +146,22 @@ jobs:
           $out | ForEach-Object { if ($_.Length -gt 300) { $_.Substring(0, 300) } else { $_ } } | Write-Host
           if (-not ($out -match '"pong": true')) { throw "the packaged core did not answer" }
           if (-not ($out -match '"id": 3, "ok": true')) { throw "the packaged core failed a request" }
+
+      - name: Check the knowledge index and the vocal detector in the package
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+        run: |
+          $res = "dist/win-unpacked/resources"
+          $env:HAMENAGEN_BACKEND_DIR = (Resolve-Path "$res/backend").Path
+          $env:AUDIO_MODELS = (Resolve-Path "$res/audio-models").Path
+          # A known piyut (מעוז צור → חנוכה) and a descriptive title (נרות דולקים → חנוכה), Hebrew as escapes.
+          & "$res/python/python.exe" -c "import os, sys; sys.path.insert(0, os.environ['HAMENAGEN_BACKEND_DIR']); from hamenagen.knowledge import SongIndex, TopicLexicon; h = SongIndex.load().lookup('\u05de\u05e2\u05d5\u05d6 \u05e6\u05d5\u05e8'); print('index:', h); assert h and h.topics[0] == '\u05d7\u05e0\u05d5\u05db\u05d4'; r = TopicLexicon.load().classify('\u05e0\u05e8\u05d5\u05ea \u05d3\u05d5\u05dc\u05e7\u05d9\u05dd'); print('lexicon:', r); assert r.topic == '\u05d7\u05e0\u05d5\u05db\u05d4'"
+          if ($LASTEXITCODE -ne 0) { throw "the knowledge index does not work in the package" }
+          # Listen to a 50-second tone: three windows decoded by soundfile and tagged by the model.
+          & "$res/python/python.exe" -c "import os, sys, wave, struct, math; sys.path.insert(0, os.environ['HAMENAGEN_BACKEND_DIR']); from hamenagen.vocal import VocalDetector; d = VocalDetector([os.environ['AUDIO_MODELS']]); assert d.available(), d.status(); p = os.path.join(os.environ['RUNNER_TEMP'], 'tone.wav'); w = wave.open(p, 'wb'); w.setnchannels(1); w.setsampwidth(2); w.setframerate(22050); w.writeframes(b''.join(struct.pack('<h', int(8000 * math.sin(2 * math.pi * 440 * i / 22050))) for i in range(22050 * 50))); w.close(); r = d.analyze(p); print('vocal check:', r.verdict, [x.as_list() for x in r.windows], r.error); assert r.verdict in ('instruments', 'maybe', 'vocal') and len(r.windows) == 3"
+          if ($LASTEXITCODE -ne 0) { throw "the vocal detector does not work in the package" }
 
       - name: Check the bundled model works with no network (offline edition)
         if: matrix.edition == 'offline'

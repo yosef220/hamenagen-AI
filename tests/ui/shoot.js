@@ -13,6 +13,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { _electron: electron } = require('playwright');
 
 const root = path.join(__dirname, '..', '..');
@@ -80,6 +81,9 @@ async function waitForLibrary(page) {
 async function run() {
   fs.mkdirSync(out, { recursive: true });
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hamenagen-ui-'));
+  // What the vocal detector would have heard (the harness has no audio model).
+  execFileSync(process.env.HAMENAGEN_PYTHON || 'python3', [path.join(__dirname, 'seed_vocal.py'), path.resolve(music), dataDir],
+    { stdio: 'inherit' });
 
   for (const theme of themes) {
     const { app, page } = await launch(dataDir, theme);
@@ -118,9 +122,35 @@ async function run() {
       await page.waitForSelector('#view-library .track');
       await shot(page, `03-library${suffix}`);
 
+      // The song menu: why a song has its topic (a piyut from the song index)…
+      await page.locator('#view-library .track', { hasText: 'בר יוחאי' }).first().click({ button: 'right' });
+      await page.waitForSelector('#track-menu:not([hidden]) .chip-choice');
+      const known = await page.textContent('#track-menu .menu-why');
+      if (!/אינדקס השירים/.test(known)) errors.push(`song menu for a known piyut says: ${known}`);
+      await shot(page, `10-song-menu${suffix}`);
+      // …and choosing another topic for a song nothing could place.
+      await page.locator('#view-library .track', { hasText: 'ניגון געגועים' }).first().click({ button: 'right' });
+      await page.waitForSelector('#track-menu:not([hidden]) .chip-choice');
+      await page.locator('#track-menu .chip-choice', { hasText: 'אמונה' }).first().click();
+      await page.waitForFunction(() => {
+        const r = Array.from(document.querySelectorAll('#view-library .track')).find((x) => x.textContent.includes('ניגון געגועים'));
+        return r && /אמונה/.test(r.querySelector('.track-topic').textContent);
+      }, null, { timeout: 10000 });
+      await page.locator('#view-library .track', { hasText: 'ניגון געגועים' }).first().click({ button: 'right' });
+      await page.waitForSelector('#track-menu:not([hidden])');
+      const why = await page.textContent('#track-menu .menu-why');
+      if (!/בחרת/.test(why)) errors.push(`song menu after a correction says: ${why}`);
+      await page.locator('#track-menu .chip-choice', { hasText: 'לחזור לנושא האוטומטי' }).click();
+      await page.waitForTimeout(400);
+
       await page.evaluate(() => H.go('topics'));
       await page.waitForSelector('#view-topics .tile');
       await shot(page, `04-topics${suffix}`);
+
+      // Songs heard as vocal, waiting for the listener.
+      await page.evaluate(() => H.openTopic('ווקאלי'));
+      await page.waitForSelector('#view-results .review:not([hidden]) .review-row', { timeout: 15000 });
+      await shot(page, `11-vocal-review${suffix}`);
 
       await page.evaluate(() => H.go('radio'));
       await page.waitForSelector('#view-radio .station, #view-radio .empty-state', { timeout: 30000 });
@@ -129,6 +159,8 @@ async function run() {
       await page.evaluate(() => H.go('settings'));
       await page.waitForSelector('#set-appearance');
       await shot(page, `06-settings${suffix}`);
+      await page.evaluate(() => document.querySelector('#set-vocal').scrollIntoView({ block: 'start' }));
+      await shot(page, `12-settings-vocal${suffix}`);
 
       await page.evaluate(() => H.openDrawer('queue'));
       await page.waitForSelector('#drawer .track');

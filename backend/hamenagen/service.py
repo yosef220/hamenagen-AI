@@ -13,6 +13,7 @@ import os
 import platform
 import random
 import sys
+from collections import Counter
 from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
@@ -24,7 +25,7 @@ from . import topics as topics_mod
 from .classifier import EmbeddingBackend, HybridClassifier
 from .fetcher import OnlineFetcher, ProgressHook, SearchResult
 from .fuzzy import MatchCandidate, search as fuzzy_search
-from .hebrew_calendar import detect_occasion, from_gregorian, today_info
+from .hebrew_calendar import VOCAL_TOPIC, detect_occasion, from_gregorian, today_info
 from .index_db import AVERAGE_SONG_SECONDS, MusicIndex, encode_tags
 from .intent import Action, Intent
 from .models import Track
@@ -38,9 +39,16 @@ from .scanner import (
     scan_file,
     track_id_for,
 )
-from .settings import Settings, bundled_models_dir, default_data_dir, default_downloads_dir
+from .settings import (
+    Settings,
+    bundled_audio_models_dir,
+    bundled_models_dir,
+    default_data_dir,
+    default_downloads_dir,
+)
 from .text_normalize import normalize
 from .updater import Updater, current_ytdlp_version
+from .vocal import MODEL_NAME as VOCAL_MODEL, VocalDetector
 
 ScanProgress = Callable[[dict], None]
 
@@ -80,6 +88,11 @@ class PlayerService:
             cache_path=self.data_dir / "radio_cache.json",
         )
         self.updater = Updater(self.settings.update_manifest_url, self.data_dir, edition=self.edition)
+        # Listening for a cappella songs: the model ships in every edition;
+        # a dev run can put it in data/models (prepare_audio_model.py).
+        self.vocal = VocalDetector([bundled_audio_models_dir() or "", self.models_dir])
+        self.vocal_running = False
+        self.vocal_stop = False
         self.scanning = False
         # First-run offline install: pick up any *.pack sitting next to the app.
         try:
@@ -120,6 +133,10 @@ class PlayerService:
         self.settings.save(self.settings_path)
         if {"use_embeddings", "embedding_model", "embedding_threshold"} & set(changed):
             self.classifier.embedding = self._build_backend()
+        if "vocal_detection" in changed and not self.settings.vocal_detection:
+            self.vocal_stop = True
+        if {"vocal_detection", "vocal_auto_include"} & set(changed):
+            self._apply_vocal_verdicts()
         if "update_manifest_url" in changed:
             self.updater.manifest_url = self.settings.update_manifest_url
         if "radio_list_url" in changed:
@@ -157,6 +174,8 @@ class PlayerService:
         started = datetime.now()
         try:
             known = idx.file_state()
+            overrides = idx.overrides()
+            analyses = idx.analyses()
             seen: set[str] = set()
             added = updated = files = 0
             for path, st in iter_media_files(use_roots, include_video=self.settings.include_video):
@@ -175,7 +194,7 @@ class PlayerService:
                             track.title, track.artist = old.title or track.title, old.artist or track.artist
                             track.source, track.release_date = old.source, old.release_date
                             track.download_date = old.download_date or track.download_date
-                    self._classify_track(track)
+                    self._classify_track(track, override=overrides.get(tid), analysis=analyses.get(tid))
                     idx.upsert(track, commit=False)
                     if previous:
                         updated += 1
@@ -187,6 +206,7 @@ class PlayerService:
                     on_progress({"files": files, "added": added, "updated": updated})
             idx.commit()
             removed = self._remove_missing(idx, known, seen, use_roots if partial else None)
+            propagated = self._propagate(idx)
             finished = datetime.now()
             idx.set_meta("last_scan_at", finished.isoformat(timespec="seconds"))
             return {
@@ -195,6 +215,7 @@ class PlayerService:
                 "added": added,
                 "updated": updated,
                 "removed": removed,
+                "propagated": propagated,
                 "total": idx.count(),
                 "seconds": round((finished - started).total_seconds(), 1),
             }
@@ -237,7 +258,10 @@ class PlayerService:
                 names.append(name)
         return " ".join(names)
 
-    def _classify_track(self, track: Track) -> Track:
+    def _classify_track(self, track: Track, *, override: dict | None = None,
+                        analysis: dict | None = None) -> Track:
+        """Classify a song, then apply what the listener decided about it and
+        (when allowed) what the vocal detector heard."""
         lyrics = ""
         if self.settings.classify_by_lyrics and track.path:
             lyrics = read_sidecar_lyrics(track.path)
@@ -250,10 +274,121 @@ class PlayerService:
             lyrics=lyrics,
             use_embeddings=self.settings.use_embeddings,
         )
-        track.topic = cls.topic
-        track.topic_source = cls.source
-        track.tags = encode_tags(cls.tags)
+        topic, source, note = cls.topic, cls.source, cls.note
+        tags = list(cls.tags)
+        if override and override.get("has_topic"):
+            topic = override.get("topic") or None
+            source, note = "user", "בחרת בנושא הזה"
+        # Vocal: the listener's word first; otherwise what the detector heard,
+        # if the listener let detected songs in without checking them.
+        vocal = override.get("vocal") if override else None
+        detected = (vocal is None and bool(analysis) and analysis.get("verdict") == "vocal"
+                    and self.settings.vocal_detection and self.settings.vocal_auto_include)
+        if vocal == 0:
+            tags = [t for t in tags if t != VOCAL_TOPIC]
+            if topic == VOCAL_TOPIC:
+                topic, source, note = (tags.pop(0), source, note) if tags else (None, "none", "")
+        elif vocal == 1 or detected:
+            if topic is None:
+                topic = VOCAL_TOPIC
+                source = "user" if vocal == 1 else "audio"
+                note = "סימנת שהשיר ווקאלי" if vocal == 1 else "זוהה מהשמע: שירה בלי כלי נגינה"
+            elif topic != VOCAL_TOPIC and VOCAL_TOPIC not in tags:
+                tags.append(VOCAL_TOPIC)
+        track.topic = topic
+        track.topic_source = source
+        track.topic_note = note if topic else ""
+        track.tags = encode_tags(t for t in tags if t != topic)
         return track
+
+    # Album and folder propagation: a song nothing else could place takes the
+    # topic most of its album (or folder) share, when at least this many
+    # songs there are placed and this share of them agree.
+    _PROPAGATE_MIN_SONGS = 3
+    _PROPAGATE_SHARE = 0.6
+
+    def _propagate(self, idx: MusicIndex) -> int:
+        """Give unplaced songs the topic of their album or folder. Returns
+        how many songs changed. Re-run after every scan and correction."""
+        tracks = idx.all_tracks()
+        inherited = {"album", "folder"}
+        albums: dict[tuple[str, str], list[Track]] = {}
+        folders: dict[str, list[Track]] = {}
+        for t in tracks:
+            if t.album and normalize(t.album):
+                albums.setdefault((normalize(t.album), normalize(t.artist or "")), []).append(t)
+            if t.path:
+                folders.setdefault(os.path.normcase(str(Path(t.path).parent)), []).append(t)
+
+        def majority(group: list[Track]) -> str | None:
+            placed = [t.topic for t in group
+                      if t.topic and t.topic_source not in inherited and t.topic != VOCAL_TOPIC]
+            if len(placed) < self._PROPAGATE_MIN_SONGS:
+                return None
+            topic, n = Counter(placed).most_common(1)[0]
+            return topic if n >= self._PROPAGATE_MIN_SONGS and n / len(placed) >= self._PROPAGATE_SHARE else None
+
+        album_topic = {k: majority(v) for k, v in albums.items()}
+        folder_topic = {k: majority(v) for k, v in folders.items()}
+        changed = 0
+        for t in tracks:
+            if t.topic_source == "user" or (t.topic and t.topic_source not in inherited):
+                continue  # placed by its own merits, or by the listener
+            new, source, note = None, "none", ""
+            key = (normalize(t.album), normalize(t.artist or "")) if t.album else None
+            if key and album_topic.get(key):
+                new, source = album_topic[key], "album"
+                note = f"רוב השירים באלבום „{t.album}” הם {topics_mod.TOPIC_LABELS.get(new, new)}"
+            elif t.path:
+                folder = os.path.normcase(str(Path(t.path).parent))
+                if folder_topic.get(folder):
+                    new, source = folder_topic[folder], "folder"
+                    note = (f"רוב השירים בתיקייה „{Path(t.path).parent.name}” הם "
+                            f"{topics_mod.TOPIC_LABELS.get(new, new)}")
+            if (new, source) != (t.topic, t.topic_source if t.topic else "none"):
+                idx.set_topic(t.id, new, source, None, note, commit=False)
+                changed += 1
+        if changed:
+            idx.commit()
+        return changed
+
+    # -- the listener's corrections ----------------------------------------------
+    def set_track_topic(self, track_id: str, topic: str | None) -> dict:
+        """``topic``: a topic key, "" for "no topic", or None to go back to the
+        automatic topic."""
+        if topic is None:
+            self.index.set_override(track_id, has_topic=0, topic=None)
+        else:
+            self.index.set_override(track_id, has_topic=1, topic=topic or None)
+        return self._reclassify_one(track_id)
+
+    def set_track_vocal(self, track_id: str, value: bool | None) -> dict:
+        """True: the song is vocal; False: it has instruments; None: decide automatically."""
+        self.index.set_override(track_id, vocal=None if value is None else (1 if value else 0))
+        return self._reclassify_one(track_id)
+
+    def confirm_vocal(self, track_ids: list[str], value: bool) -> dict:
+        for tid in track_ids:
+            self.index.set_override(tid, vocal=1 if value else 0)
+        tracks = self.index.get_many(list(track_ids))
+        overrides = self.index.overrides_for([t.id for t in tracks])
+        analyses = self.index.analyses_for([t.id for t in tracks])
+        for t in tracks:
+            self._classify_track(t, override=overrides.get(t.id), analysis=analyses.get(t.id))
+            self.index.set_topic(t.id, t.topic, t.topic_source, t.tags, t.topic_note, commit=False)
+        self.index.commit()
+        return {"ok": True, "count": len(tracks), "propagated": self._propagate(self.index)}
+
+    def _reclassify_one(self, track_id: str) -> dict:
+        track = self.index.get(track_id)
+        if track is None:
+            return {"ok": False, "track": None}
+        self._classify_track(track, override=self.index.get_override(track_id),
+                             analysis=self.index.analyses_for([track_id]).get(track_id))
+        self.index.set_topic(track.id, track.topic, track.topic_source, track.tags, track.topic_note)
+        propagated = self._propagate(self.index)
+        fresh = self.index.get(track_id) or track
+        return {"ok": True, "track": self._tracks_payload([fresh])[0], "propagated": propagated}
 
     # -- AI classifier management (spec §8.2) -----------------------------
     def classifier_status(self) -> dict:
@@ -287,15 +422,123 @@ class PlayerService:
             self.classifier.embedding = self._build_backend()
         changed = 0
         tracks = self.index.all_tracks()
+        overrides = self.index.overrides()
+        analyses = self.index.analyses()
         for n, track in enumerate(tracks, 1):
-            before = (track.topic, track.tags)
-            self._classify_track(track)
-            if (track.topic, track.tags) != before:
-                self.index.set_topic(track.id, track.topic, track.topic_source, track.tags)
+            before = (track.topic, track.tags, track.topic_note)
+            self._classify_track(track, override=overrides.get(track.id), analysis=analyses.get(track.id))
+            if (track.topic, track.tags, track.topic_note) != before:
+                self.index.set_topic(track.id, track.topic, track.topic_source, track.tags, track.topic_note,
+                                     commit=False)
                 changed += 1
             if on_progress and n % 100 == 0:
+                self.index.commit()
                 on_progress({"done": n, "total": len(tracks), "changed": changed})
+        self.index.commit()
+        changed += self._propagate(self.index)
         return {"total": len(tracks), "changed": changed, **self.classifier_status()}
+
+    # -- listening for a cappella songs -------------------------------------
+    def vocal_status(self) -> dict:
+        counts = self.index.analysis_counts()
+        total = sum(1 for t in self.index.all_tracks() if not t.is_video)
+        analyzed = sum(counts.values())
+        return {
+            "enabled": self.settings.vocal_detection,
+            "auto_include": self.settings.vocal_auto_include,
+            **self.vocal.status(),
+            "running": self.vocal_running,
+            "total": total,
+            "analyzed": min(analyzed, total),
+            "vocal": counts.get("vocal", 0),
+            "maybe": counts.get("maybe", 0),
+            "instruments": counts.get("instruments", 0),
+            "unreadable": counts.get("unreadable", 0),
+            "to_review": len(self.vocal_review(limit=1000)["tracks"]),
+        }
+
+    def _needs_listening(self, idx: MusicIndex) -> list[Track]:
+        done = idx.analyses()
+        out = []
+        for t in idx.all_tracks():
+            if t.is_video or not t.path:
+                continue
+            a = done.get(t.id)
+            if a is None or a.get("model") != VOCAL_MODEL or (a.get("mtime"), a.get("size")) != (t.mtime, t.size):
+                out.append(t)
+        return out
+
+    def analyze_vocal(self, on_progress: ScanProgress | None = None) -> dict:
+        """Listen to every song not yet heard (or changed since). Runs on its
+        own connection, a song at a time, and stops when asked."""
+        if not self.settings.vocal_detection:
+            return {"ok": False, "reason": "disabled", **self.vocal.status()}
+        if not self.vocal.available():
+            return {"ok": False, "reason": "unavailable", **self.vocal.status()}
+        self.vocal_running, self.vocal_stop = True, False
+        idx = MusicIndex(self.db_path)
+        found = done = 0
+        try:
+            todo = self._needs_listening(idx)
+            overrides = idx.overrides()
+            for n, track in enumerate(todo, 1):
+                if self.vocal_stop:
+                    break
+                result = self.vocal.analyze(track.path)
+                row = {
+                    "model": VOCAL_MODEL, "verdict": result.verdict, "acapella": round(result.acapella, 4),
+                    "instrument": round(result.instrument, 4),
+                    "windows": json.dumps([w.as_list() for w in result.windows]),
+                    "mtime": track.mtime, "size": track.size,
+                    "analyzed_at": datetime.now().isoformat(timespec="seconds"),
+                }
+                idx.save_analysis(track.id, row, commit=False)
+                done += 1
+                if result.verdict == "vocal":
+                    found += 1
+                    self._classify_track(track, override=overrides.get(track.id), analysis=row)
+                    idx.set_topic(track.id, track.topic, track.topic_source, track.tags, track.topic_note,
+                                  commit=False)
+                if n % 10 == 0 or n == len(todo):
+                    idx.commit()
+                    if on_progress:
+                        on_progress({"done": n, "total": len(todo), "found": found})
+            idx.commit()
+            return {"ok": True, "analyzed": done, "found": found, "stopped": self.vocal_stop,
+                    "left": len(todo) - done}
+        finally:
+            idx.close()
+            self.vocal_running = False
+
+    def _apply_vocal_verdicts(self) -> int:
+        """Re-apply what was heard after the vocal settings changed."""
+        analyses = self.index.analyses()
+        if not analyses:
+            return 0
+        tracks = self.index.get_many([tid for tid, a in analyses.items() if a.get("verdict") == "vocal"])
+        overrides = self.index.overrides_for([t.id for t in tracks])
+        changed = 0
+        for t in tracks:
+            before = (t.topic, t.tags)
+            self._classify_track(t, override=overrides.get(t.id), analysis=analyses.get(t.id))
+            if (t.topic, t.tags) != before:
+                self.index.set_topic(t.id, t.topic, t.topic_source, t.tags, t.topic_note, commit=False)
+                changed += 1
+        self.index.commit()
+        return changed
+
+    def vocal_review(self, limit: int = 300) -> dict:
+        """Songs heard as vocal (or maybe) that the listener has not checked,
+        leaving out songs whose names already say they are vocal."""
+        out = []
+        for t in self.index.vocal_candidates(limit * 2):
+            text = " ".join(p for p in (t.title, t.album, t.filename) if p)
+            if VOCAL_TOPIC in self.classifier.keyword_topics(text):
+                continue
+            out.append(t)
+            if len(out) >= limit:
+                break
+        return {"tracks": self._tracks_payload(out), "count": len(out)}
 
     # -- online completion (spec §11) -------------------------------------
     def online_available(self) -> bool:
@@ -333,7 +576,8 @@ class PlayerService:
         track.download_date = datetime.now().isoformat()
         self._classify_track(track)
         self.index.upsert(track)
-        return {"ok": True, "message": outcome.message, "track": self._track_dict(track), "path": outcome.path}
+        return {"ok": True, "message": outcome.message, "track": self._tracks_payload([track])[0],
+                "path": outcome.path}
 
     def _candidates(self) -> list[MatchCandidate]:
         return [
@@ -344,17 +588,28 @@ class PlayerService:
         ]
 
     # -- shaping tracks for the UI -------------------------------------------
-    def _track_dict(self, track: Track, favorites: set[str] | None = None) -> dict:
+    def _track_dict(self, track: Track, favorites: set[str] | None = None,
+                    override: dict | None = None, analysis: dict | None = None) -> dict:
         d = track.to_dict()
         d["tags"] = track.tag_list
         d["favorite"] = track.id in (favorites if favorites is not None else self.index.favorite_ids())
         d.pop("mtime", None)
         d.pop("size", None)
+        # What the listener decided and what the detector heard, for the menu
+        # and the "found by listening" marks.
+        vocal = override.get("vocal") if override else None
+        d["vocal"] = ("yes" if vocal == 1 else "no" if vocal == 0
+                      else (analysis or {}).get("verdict") if (analysis or {}).get("verdict") in ("vocal", "maybe")
+                      else None)
+        d["topic_chosen"] = bool(override and override.get("has_topic"))
         return d
 
     def _tracks_payload(self, tracks: list[Track]) -> list[dict]:
         favs = self.index.favorite_ids()
-        return [self._track_dict(t, favs) for t in tracks]
+        ids = [t.id for t in tracks]
+        overrides = self.index.overrides_for(ids)
+        analyses = self.index.analyses_for(ids)
+        return [self._track_dict(t, favs, overrides.get(t.id), analyses.get(t.id)) for t in tracks]
 
     # -- the main request path --------------------------------------------
     def handle_request(self, text: str) -> dict:
@@ -553,9 +808,19 @@ class PlayerService:
         return result
 
     # -- about ---------------------------------------------------------------
+    def knowledge_status(self) -> dict:
+        lexicon, index = self.classifier.topic_lexicon, self.classifier.song_index
+        return {
+            "songs": len(index) if index else 0,
+            "topics": len(lexicon.topics) if lexicon else 0,
+            "sources": getattr(lexicon, "sources", 0),
+            "version": getattr(lexicon, "version", "") or getattr(index, "version", ""),
+        }
+
     def app_info(self) -> dict:
         model = self.classifier_status()
         return {
+            "knowledge": self.knowledge_status(),
             "version": __version__,
             "edition": self.edition,
             "data_dir": str(self.data_dir),

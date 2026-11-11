@@ -13,6 +13,7 @@ import pytest
 np = pytest.importorskip("numpy")
 
 from hamenagen.classifier import MODELS, Classification, EmbeddingBackend, HybridClassifier
+from hamenagen.knowledge import SongIndex, TopicLexicon
 
 
 def test_real_backend_status_without_model(tmp_path):
@@ -90,11 +91,21 @@ class FakeBackend:
 
 
 def test_hybrid_falls_through_to_embeddings():
-    clf = HybridClassifier(embedding_backend=FakeBackend())
-    # No curated keyword/title hit, but the embedding backend catches it.
+    # No curated keyword/title hit and no known vocabulary: the model decides.
+    clf = HybridClassifier(embedding_backend=FakeBackend(), lexicon=TopicLexicon({}), song_index=SongIndex([]))
     c = clf.classify(title="שיר ללא מילת מפתח", lyrics="קולות של רחמים ומחילה")
     assert c.topic == "אלול"
     assert c.source == "embedding"
+
+
+def test_the_model_is_trusted_only_when_the_vocabulary_agrees():
+    lexicon = TopicLexicon({"אלול": {"רחמימ": 0.05}, "פסח": {"קולות": 0.04}, "שבת": {"שיר": 0.01}},
+                           min_score=0.5, min_margin=0.5)  # the lexicon itself never decides here
+    clf = HybridClassifier(embedding_backend=FakeBackend(), lexicon=lexicon, song_index=SongIndex([]))
+    # The words lean to Elul and Pesach; the model says Elul: accepted.
+    assert clf.classify(title="רחמים קולות", lyrics="מחילה").topic == "אלול"
+    # The words lean to Pesach and Shabbat only; the model's Elul is not trusted.
+    assert clf.classify(title="קולות שיר", lyrics="מחילה").topic is None
 
 
 def test_embeddings_skipped_when_disabled():
