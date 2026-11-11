@@ -297,7 +297,8 @@ function ensureDesktopShortcut() {
     const shortcut = path.join(app.getPath('desktop'), 'המנגן.lnk');
     let current = null;
     try { current = shell.readShortcutLink(shortcut); } catch { /* none yet */ }
-    if (!current || current.target !== process.execPath) {
+    const same = (a, b) => path.normalize(a || '').toLowerCase() === path.normalize(b || '').toLowerCase();
+    if (!current || !same(current.target, process.execPath)) {
       // Create it, or point it here again after the folder was moved.
       shell.writeShortcutLink(shortcut, current ? 'replace' : 'create', {
         target: process.execPath,
