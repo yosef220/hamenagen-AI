@@ -57,14 +57,14 @@
 
 ```bash
 npm install                        # Electron, הגופנים והאייקונים (נשמרים מקומית)
-pip install -r requirements.txt    # תלויות הליבה (רשות: mutagen, rapidfuzz, yt-dlp, fastembed)
+pip install -r requirements.txt    # תלויות הליבה (רשות: mutagen, rapidfuzz, yt-dlp, onnxruntime, tokenizers, numpy)
 npm start                          # מריץ את התוכנה; הנתונים בתיקייה data של המאגר
 ```
 
 - **בדיקות הליבה:** `cd backend && python -m pytest -q`
 - **בדיקת הממשק:** `python tests/ui/make_library.py /tmp/music` ואז `xvfb-run node tests/ui/shoot.js /tmp/music /tmp/shots` — מריץ את התוכנה האמיתית מול ספריית דוגמה, עובר על כל המסכים בשתי הערכות ושומר צילומים.
 - **הליבה משורת הפקודה:** `python -m hamenagen.cli today`, `... ask "שעה של שירי שבת"`, `... scan ~/Music`.
-- **אריזה ושחרור:** ראו [docs/PACKAGING.md](docs/PACKAGING.md). בקצרה: מעדכנים את הגרסה ב-`package.json` וב-`backend/hamenagen/__init__.py`, מוסיפים תגית `v<גרסה>`, וה-CI בונה את שלוש המהדורות, בודק אותן ומפרסם.
+- **אריזה ושחרור:** ראו [docs/PACKAGING.md](docs/PACKAGING.md). בקצרה: מעדכנים את הגרסה ב-`package.json` וב-`backend/hamenagen/__init__.py`, ממזגים ל-`main` ומריצים את התהליך „בדיקה, בנייה ושחרור” עם הסימון „לפרסם גרסה” (או מוסיפים תגית `v<גרסה>`). ה-CI בונה את שלוש המהדורות, בודק אותן ומפרסם.
 
 מבנה: `backend/hamenagen` — הליבה בפייתון (הבנת בקשות, סיווג, לוח עברי, ספרייה, רדיו, עדכונים); `electron/` — החלון והממשק; `tests/ui` — בדיקת הממשק; `scripts/` — אריזה ואייקונים. פרטים ב-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ושינויים ב-[CHANGELOG.md](CHANGELOG.md).
 
