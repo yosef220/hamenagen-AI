@@ -2,9 +2,11 @@
 
 ## שלוש המהדורות
 
+כל המהדורות כוללות את אינדקס הידע ואת מודל זיהוי הווקאלי (6MB, `resources/audio-models`).
+
 | מהדורה | קובץ | מה בפנים |
 | --- | --- | --- |
-| ניידת | `Hamenagen-<v>-Windows.zip` | התוכנה + Python מוטמע + ספריות הליבה. המודל יורד פעם אחת. הנתונים ב-`data` שליד התוכנה. |
+| ניידת | `Hamenagen-<v>-Windows.zip` | התוכנה + Python מוטמע + ספריות הליבה. מודל הסיווג יורד פעם אחת. הנתונים ב-`data` שליד התוכנה. |
 | אופליין | `Hamenagen-<v>-Windows-Offline.zip` | כמו הניידת, ובנוסף מודל הסיווג ב-`resources/models`. |
 | התקנה | `Hamenagen-<v>-Setup.zip` (ובתוכו `Setup.exe`) | התקנה למשתמש הנוכחי, בלי הרשאות מנהל: קיצורי דרך, תפריט התחל, הסרה. הנתונים ב-`%APPDATA%\Hamenagen`. |
 
@@ -31,6 +33,7 @@
 ```powershell
 npm ci
 npm run prepare:win-python          # Python 3.11 מוטמע + ספריות הליבה ב-build\win-python
+build\win-python\python.exe backend\scripts\prepare_audio_model.py --out build\audio-models
 npm run dist                        # dist\Hamenagen-<v>-Windows.zip
 
 # גרסת אופליין:
@@ -42,6 +45,18 @@ $env:HAMENAGEN_EDITION = "setup"; npm run dist
 ```
 
 הפייתון המוטמע של Windows מתעלם מ-`PYTHONPATH`, ולכן `backend_bridge.js` מפעיל את הליבה עם `-c` שמוסיף את תיקיית הליבה ל-`sys.path` בעצמו.
+
+## אינדקס הידע
+
+`data/song_index.json` ו-`data/topic_lexicon.json` נבנים פעם אחת ונשמרים במאגר, כך שהבנייה של התוכנה לא תלויה ברשת:
+
+```bash
+python backend/scripts/build_knowledge.py          # מוריד בנימוס (ומטמין ב-build/knowledge-cache) ובונה
+python backend/scripts/build_knowledge.py --offline  # בנייה מחדש מהמטמון בלבד
+python backend/scripts/eval_knowledge.py --grid      # מדידה, וחיפוש ספים על מבחן הכיול
+```
+
+רשימת הערכים, הקטגוריות והטקסטים לכל מועד נמצאת בראש הסקריפט. מספריא נלקחות רק גרסאות ברישיון פתוח, והמקור והרישיון של כל טקסט נרשמים בקובץ.
 
 ## האייקון
 

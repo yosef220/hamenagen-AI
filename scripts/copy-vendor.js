@@ -83,7 +83,8 @@ const ICONS = [
   'external-link', 'trash-2', 'type', 'info', 'history', 'scroll-text', 'timer', 'audio-lines',
   'music-2', 'calendar-days', 'wifi-off', 'circle-play', 'mic-vocal', 'arrow-down-up', 'arrow-down',
   'arrow-up', 'plus', 'list-ordered', 'signal', 'hard-drive-download', 'package', 'circle-check',
-  'circle-alert', 'keyboard', 'sliders-horizontal',
+  'circle-alert', 'keyboard', 'sliders-horizontal', 'ellipsis', 'list-plus', 'list-start', 'tag', 'ear',
+  'book-open', 'check-check', 'undo-2',
 ];
 const symbols = [];
 for (const name of ICONS) {

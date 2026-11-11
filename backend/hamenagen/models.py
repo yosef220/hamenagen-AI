@@ -28,6 +28,7 @@ class Track:
     release_date: str | None = None   # ISO 8601 — original publication date
     added_at: str = field(default_factory=lambda: datetime.now().isoformat())
     tags: str = ""                  # further topics, stored as "|a|b|"
+    topic_note: str = ""            # why the song got its topic, for the listener
     mtime: float | None = None      # file modification time at the last scan
     size: int | None = None         # file size in bytes at the last scan
 

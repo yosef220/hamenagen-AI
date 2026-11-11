@@ -21,3 +21,8 @@ yt-dlp>=2024.1.0
 onnxruntime>=1.20
 tokenizers>=0.20
 numpy>=1.26
+
+# Listening for a cappella songs (vocal.py): reads three short windows of each
+# song (MP3, FLAC, WAV, OGG) with libsndfile; the 6 MB model ships in every
+# edition. Without it the feature is simply not offered.
+soundfile>=0.12

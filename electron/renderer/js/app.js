@@ -146,6 +146,25 @@
     }
   });
 
+  // ------------------------------------------------------------ listening for vocal songs
+  api.on('vocal_progress', (msg) => {
+    const el = H.$('#rail-vocal');
+    el.replaceChildren(icon('ear'), `מקשיב לשירים · ${H.n(msg.done)} מתוך ${H.n(msg.total)}`);
+    el.title = 'המנגן מזהה שירים ווקאליים (בלי כלי נגינה). רץ ברקע ובלי אינטרנט.';
+  });
+
+  api.on('vocal_done', (msg) => {
+    const el = H.$('#rail-vocal');
+    el.replaceChildren();
+    if (msg.error || !msg.ok) return;
+    if (msg.found) {
+      H.toast(`המנגן הקשיב לשירים וזיהה ${H.songs(msg.found)} בלי כלי נגינה`, {
+        icon: 'ear', ms: 9000, action: { label: 'לבדוק', fn: () => H.openTopic('ווקאלי') },
+      });
+      if (['home', 'topics', 'library'].includes(currentView) && views[currentView].refresh) views[currentView].refresh();
+    }
+  });
+
   // ------------------------------------------------------------ app updates
   async function checkAppUpdate() {
     const settings = H.settings || {};

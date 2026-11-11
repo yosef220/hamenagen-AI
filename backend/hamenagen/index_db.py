@@ -53,6 +53,26 @@ CREATE TABLE IF NOT EXISTS meta (
     key    TEXT PRIMARY KEY,
     value  TEXT
 );
+-- What the listener decided about a song; never recalculated.
+CREATE TABLE IF NOT EXISTS overrides (
+    track_id   TEXT PRIMARY KEY,
+    has_topic  INTEGER DEFAULT 0,   -- 1: the listener chose the main topic
+    topic      TEXT,                -- that topic ('' or NULL = no topic)
+    vocal      INTEGER,             -- 1 vocal, 0 not vocal, NULL not decided
+    updated_at TEXT
+);
+-- What the vocal detector heard in a song (see vocal.py).
+CREATE TABLE IF NOT EXISTS audio_analysis (
+    track_id    TEXT PRIMARY KEY,
+    model       TEXT,
+    verdict     TEXT,               -- vocal | maybe | instruments | unreadable
+    acapella    REAL,               -- mean "A capella" probability over the windows
+    instrument  REAL,               -- highest specific-instrument probability
+    windows     TEXT,               -- JSON: per window [a capella, instrument, chant, beatbox]
+    mtime       REAL,
+    size        INTEGER,
+    analyzed_at TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_tracks_topic         ON tracks(topic);
 CREATE INDEX IF NOT EXISTS idx_tracks_download_date ON tracks(download_date);
 CREATE INDEX IF NOT EXISTS idx_tracks_release_date  ON tracks(release_date);
@@ -65,12 +85,13 @@ _MIGRATIONS = {
     "tags": "TEXT DEFAULT ''",
     "mtime": "REAL",
     "size": "INTEGER",
+    "topic_note": "TEXT DEFAULT ''",
 }
 
 _COLUMNS = [
     "id", "path", "title", "artist", "album", "filename", "duration",
     "is_video", "source", "topic", "topic_source", "download_date",
-    "release_date", "added_at", "tags", "mtime", "size",
+    "release_date", "added_at", "tags", "mtime", "size", "topic_note",
 ]
 
 # Sort keys the library table may ask for → SQL ORDER BY expressions. Empty
@@ -184,19 +205,100 @@ class MusicIndex:
             self._conn.commit()
         return len(ids)
 
-    def set_topic(self, track_id: str, topic: str | None, source: str, tags: str | None = None) -> None:
+    def set_topic(self, track_id: str, topic: str | None, source: str, tags: str | None = None,
+                  note: str | None = None, *, commit: bool = True) -> None:
+        sets, params = ["topic=?", "topic_source=?"], [topic, source]
+        if tags is not None:
+            sets.append("tags=?")
+            params.append(tags)
+        if note is not None:
+            sets.append("topic_note=?")
+            params.append(note)
         with self._lock:
-            if tags is None:
-                self._conn.execute(
-                    "UPDATE tracks SET topic=?, topic_source=? WHERE id=?",
-                    (topic, source, track_id),
-                )
+            self._conn.execute(f"UPDATE tracks SET {', '.join(sets)} WHERE id=?", (*params, track_id))
+            if commit:
+                self._conn.commit()
+
+    # -- the listener's own decisions -------------------------------------------
+    def overrides(self) -> dict[str, dict]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM overrides").fetchall()
+        return {r["track_id"]: dict(r) for r in rows}
+
+    def get_override(self, track_id: str) -> dict | None:
+        with self._lock:
+            r = self._conn.execute("SELECT * FROM overrides WHERE track_id=?", (track_id,)).fetchone()
+        return dict(r) if r else None
+
+    def set_override(self, track_id: str, **values) -> dict:
+        """Set ``has_topic``/``topic`` and/or ``vocal`` for a song. A row with
+        nothing left to say is removed."""
+        current = self.get_override(track_id) or {"track_id": track_id, "has_topic": 0, "topic": None, "vocal": None}
+        current.update({k: v for k, v in values.items() if k in ("has_topic", "topic", "vocal")})
+        with self._lock:
+            if not current.get("has_topic") and current.get("vocal") is None:
+                self._conn.execute("DELETE FROM overrides WHERE track_id=?", (track_id,))
             else:
                 self._conn.execute(
-                    "UPDATE tracks SET topic=?, topic_source=?, tags=? WHERE id=?",
-                    (topic, source, tags, track_id),
+                    "INSERT INTO overrides (track_id, has_topic, topic, vocal, updated_at) VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(track_id) DO UPDATE SET has_topic=excluded.has_topic, topic=excluded.topic, "
+                    "vocal=excluded.vocal, updated_at=excluded.updated_at",
+                    (track_id, 1 if current.get("has_topic") else 0, current.get("topic"), current.get("vocal"),
+                     datetime.now().isoformat(timespec="seconds")),
                 )
             self._conn.commit()
+        return current
+
+    # -- audio analysis ------------------------------------------------------------
+    def analyses(self) -> dict[str, dict]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM audio_analysis").fetchall()
+        return {r["track_id"]: dict(r) for r in rows}
+
+    def save_analysis(self, track_id: str, row: dict, *, commit: bool = True) -> None:
+        cols = ["model", "verdict", "acapella", "instrument", "windows", "mtime", "size", "analyzed_at"]
+        with self._lock:
+            self._conn.execute(
+                f"INSERT INTO audio_analysis (track_id, {', '.join(cols)}) VALUES (?{', ?' * len(cols)}) "
+                f"ON CONFLICT(track_id) DO UPDATE SET {', '.join(f'{c}=excluded.{c}' for c in cols)}",
+                (track_id, *[row.get(c) for c in cols]),
+            )
+            if commit:
+                self._conn.commit()
+
+    def _rows_by_id(self, table: str, track_ids: list[str]) -> dict[str, dict]:
+        out: dict[str, dict] = {}
+        with self._lock:
+            for i in range(0, len(track_ids), 500):
+                chunk = track_ids[i:i + 500]
+                marks = ",".join("?" for _ in chunk)
+                for r in self._conn.execute(f"SELECT * FROM {table} WHERE track_id IN ({marks})", chunk):
+                    out[r["track_id"]] = dict(r)
+        return out
+
+    def overrides_for(self, track_ids: list[str]) -> dict[str, dict]:
+        return self._rows_by_id("overrides", track_ids) if track_ids else {}
+
+    def analyses_for(self, track_ids: list[str]) -> dict[str, dict]:
+        return self._rows_by_id("audio_analysis", track_ids) if track_ids else {}
+
+    def vocal_candidates(self, limit: int = 500) -> list[Track]:
+        """Songs the detector heard as vocal (or maybe vocal) that the
+        listener has not decided about yet, the surest first."""
+        return self._query(
+            "SELECT t.* FROM tracks t JOIN audio_analysis a ON a.track_id = t.id "
+            "LEFT JOIN overrides o ON o.track_id = t.id "
+            "WHERE a.verdict IN ('vocal', 'maybe') AND o.vocal IS NULL "
+            "ORDER BY (a.verdict = 'vocal') DESC, a.acapella DESC LIMIT ?",
+            (limit,),
+        )
+
+    def analysis_counts(self) -> dict[str, int]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT verdict, COUNT(*) AS n FROM audio_analysis WHERE track_id IN (SELECT id FROM tracks) "
+                "GROUP BY verdict").fetchall()
+        return {r["verdict"]: r["n"] for r in rows}
 
     # -- reads -------------------------------------------------------------
     def _rows_to_tracks(self, rows: Iterable[sqlite3.Row]) -> list[Track]:

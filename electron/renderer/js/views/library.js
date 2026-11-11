@@ -21,6 +21,7 @@
     { key: 'topic', label: 'נושא' },
     { key: 'duration', label: 'משך', end: true },
     { key: null, label: '' },
+    { key: null, label: '' },
   ];
 
   function query(offset) {

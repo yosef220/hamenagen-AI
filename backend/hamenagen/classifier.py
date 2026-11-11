@@ -4,14 +4,21 @@ Order of resolution, from most to least confident:
 
 1. **Curated song-title override** — exact known titles (e.g. "מנוחה ושמחה"
    → שבת) even when the title carries no keyword.
-2. **Curated keyword match** — a strong topic keyword appears as a token in
+2. **Song index** — known songs and piyutim by occasion, from Hebrew
+   Wikipedia and Sefaria ("יה ריבון", "עבדים היינו"), with other spellings
+   and titles that only start with a known name. See :mod:`.knowledge`.
+3. **Curated keyword match** — a strong topic keyword appears as a token in
    the song's combined text.
-3. **Local embedding model (optional)** — for songs the curated layer does
-   not cover, a small local multilingual embedding model compares the song
-   text with typical phrases of every topic and picks the closest one when
-   it is close enough and clearly ahead. This layer is *optional*: if the
-   model is not installed the classifier simply skips it, preserving
-   offline-first behaviour. See :class:`EmbeddingBackend`.
+4. **Topic lexicon** — the words of the title (and, with less weight, of the
+   album and folder) scored against the vocabulary of every occasion, mined
+   from Wikipedia articles and the liturgy; taken only when one occasion is
+   clearly ahead. See :mod:`.knowledge`.
+5. **Local embedding model (optional)** — a small local multilingual
+   embedding model compares the song text with typical phrases of every
+   topic and picks the closest one when it is close enough and clearly
+   ahead. This layer is *optional*: if the model is not installed the
+   classifier simply skips it, preserving offline-first behaviour. See
+   :class:`EmbeddingBackend`.
 
 The classifier returns a :class:`Classification` with the topic (or ``None``)
 and the layer that produced it, which is useful both for debugging and for
@@ -30,15 +37,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import topics as topics_mod
+from .knowledge import SongIndex, TopicLexicon
 from .text_normalize import contains_phrase, normalize
 
 
 @dataclass(frozen=True)
 class Classification:
     topic: str | None
-    source: str          # "title" | "keyword" | "artist" | "embedding" | "none"
+    source: str          # "title" | "index" | "keyword" | "artist" | "lexicon" | "embedding" | "none"
     confidence: float    # 0..1
     tags: tuple[str, ...] = ()  # further topics the song also belongs to
+    note: str = ""       # why, in a few Hebrew words, for the listener
 
 
 # The model the embedding layer uses, chosen by backend/scripts/benchmark_models.py
@@ -263,8 +272,15 @@ class EmbeddingBackend:
 
     # -- classifying -----------------------------------------------------------
     def topic_scores(self, text: str) -> dict[str, float]:
-        """Similarity of ``text`` to the closest typical phrase of each topic."""
-        if (not self.available and not self.load()) or self._matrix is None or not text.strip():
+        """Similarity of ``text`` to the closest typical phrase of each topic.
+
+        Classifying never downloads the model and never waits for a download
+        in progress (that would freeze whatever asked — a scan, a correction):
+        the install job fetches it, and the library is reclassified after."""
+        if self._session is None:
+            if self._lock.locked() or not self._cache_has_model() or not self.load():
+                return {}
+        if self._matrix is None or not text.strip():
             return {}
         np = self._np
         sims = self._matrix @ self._embed([text])[0]
@@ -282,14 +298,39 @@ class EmbeddingBackend:
         ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
         (topic, best), second = ranked[0], (ranked[1][1] if len(ranked) > 1 else -1.0)
         if best >= threshold and best - second >= self.margin:
-            return Classification(topic, "embedding", round(best, 4))
+            return Classification(topic, "embedding", round(best, 4), note="מודל השפה המקומי")
         return None
 
 
+_DEFAULT_KNOWLEDGE: tuple[TopicLexicon, SongIndex] | None = None
+_KNOWLEDGE_LOCK = threading.Lock()
+
+
+def default_knowledge() -> tuple[TopicLexicon, SongIndex]:
+    """The bundled lexicon and song index, read once per process."""
+    global _DEFAULT_KNOWLEDGE
+    with _KNOWLEDGE_LOCK:
+        if _DEFAULT_KNOWLEDGE is None:
+            _DEFAULT_KNOWLEDGE = (TopicLexicon.load(), SongIndex.load())
+        return _DEFAULT_KNOWLEDGE
+
+
 class HybridClassifier:
-    def __init__(self, embedding_backend: EmbeddingBackend | None = None):
+    def __init__(
+        self,
+        embedding_backend: EmbeddingBackend | None = None,
+        *,
+        lexicon: TopicLexicon | None = None,
+        song_index: SongIndex | None = None,
+    ):
         # The embedding backend is optional and never eagerly loaded.
         self.embedding = embedding_backend
+        if lexicon is None or song_index is None:
+            default_lexicon, default_index = default_knowledge()
+            lexicon = default_lexicon if lexicon is None else lexicon
+            song_index = default_index if song_index is None else song_index
+        self.topic_lexicon = lexicon
+        self.song_index = song_index
         self.refresh_lexicon()
 
     def refresh_lexicon(self) -> None:
@@ -300,19 +341,29 @@ class HybridClassifier:
             (topic, [normalize(kw) for kw in kws if normalize(kw)])
             for topic, kws in topics_mod.TOPIC_KEYWORDS.items()
         ]
+        self._keyword_text = {
+            topic: [kw for kw in kws if normalize(kw)] for topic, kws in topics_mod.TOPIC_KEYWORDS.items()
+        }
 
-    def keyword_topics(self, text: str) -> list[str]:
-        """Every topic whose keywords appear in ``text``, in precedence order.
+    def keyword_matches(self, text: str) -> list[tuple[str, str]]:
+        """``(topic, keyword)`` for every topic whose keywords appear in
+        ``text``, in precedence order.
 
         Keywords match whole words of the normalized text (so "שבתות" does not
         hit "שבת"), allowing a Hebrew prefix: "לשבת" and "בחנוכה" do hit.
         """
         norm = normalize(text)
-        hits: list[str] = []
+        hits: list[tuple[str, str]] = []
         for topic, keywords in self._keywords:
-            if any(contains_phrase(norm, nkw) for nkw in keywords):
-                hits.append(topic)
+            for i, nkw in enumerate(keywords):
+                if contains_phrase(norm, nkw):
+                    hits.append((topic, self._keyword_text[topic][i]))
+                    break
         return hits
+
+    def keyword_topics(self, text: str) -> list[str]:
+        """Every topic whose keywords appear in ``text``, in precedence order."""
+        return [topic for topic, _ in self.keyword_matches(text)]
 
     def classify(
         self,
@@ -325,24 +376,48 @@ class HybridClassifier:
         use_embeddings: bool = True,
     ) -> Classification:
         combined = " ".join(p for p in (title, artist, album, filename, lyrics) if p)
-        keyword_hits = self.keyword_topics(combined)
+        matches = self.keyword_matches(combined)
+        keyword_hits = [t for t, _ in matches]
+
+        def with_tags(topic: str, source: str, confidence: float, note: str, extra=()) -> Classification:
+            tags: list[str] = []
+            for t in (*extra, *keyword_hits):
+                if t != topic and t not in tags:
+                    tags.append(t)
+            return Classification(topic, source, confidence, tuple(tags), note)
 
         # Layer 1: curated exact title override.
         title_topic = self._titles.get(normalize(title))
         if title_topic:
-            tags = tuple(t for t in keyword_hits if t != title_topic)
-            return Classification(title_topic, "title", 1.0, tags)
+            return with_tags(title_topic, "title", 1.0, "שיר מוכר מהרשימה של המנגן")
 
-        # Layer 2: curated keyword match; further matches become tags.
-        if keyword_hits:
-            return Classification(keyword_hits[0], "keyword", 0.9, tuple(keyword_hits[1:]))
+        # Layer 2: a known song or piyut (Wikipedia, Sefaria).
+        hit = self.song_index.lookup(title, filename) if self.song_index else None
+        if hit is not None:
+            where = {"he.wikipedia": "ויקיפדיה", "sefaria": "ספריא"}.get(hit.source, "אינדקס")
+            note = f"אינדקס השירים: „{hit.title}” ({where})"
+            return with_tags(hit.topics[0], "index", 0.95 if hit.exact else 0.85, note, hit.topics[1:])
 
-        # Layer 3: artist default (weak).
+        # Layer 3: curated keyword match; further matches become tags.
+        if matches:
+            return Classification(keyword_hits[0], "keyword", 0.9, tuple(keyword_hits[1:]),
+                                  f"המילה „{matches[0][1]}”")
+
+        # Layer 4: artist default (weak).
         artist_topic = self._artists.get(normalize(artist))
         if artist_topic:
-            return Classification(artist_topic, "artist", 0.5)
+            return Classification(artist_topic, "artist", 0.5, note=f"הזמר {artist}")
 
-        # Layer 4: optional local embeddings.
+        # Layer 5: the vocabulary of each occasion.
+        if self.topic_lexicon:
+            main_text = title or (Path(filename).stem if filename else "")
+            lex = self.topic_lexicon.classify(main_text, album)
+            if lex.topic is not None:
+                words = "”, „".join(lex.words)
+                note = f"אוצר המילים של המועד: „{words}”" if words else "אוצר המילים של המועד"
+                return Classification(lex.topic, "lexicon", 0.7, note=note)
+
+        # Layer 6: optional local embeddings.
         if use_embeddings and self.embedding is not None:
             result = self.embedding.classify(combined)
             if result is not None:

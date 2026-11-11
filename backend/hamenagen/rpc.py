@@ -33,7 +33,7 @@ from .service import PlayerService
 # Methods answered on the worker pool rather than inline.
 _SLOW = {
     "online_search", "online_download", "radio_list", "check_updates", "apply_update",
-    "install_offline_pack", "rescan", "reclassify",
+    "install_offline_pack", "rescan", "reclassify", "vocal_status",
 }
 
 
@@ -151,8 +151,43 @@ class RpcServer:
                 return self.service.rescan(roots, on_progress=lambda p: self._emit("scan_progress", p))
             finally:
                 self.service.scanning = False
+                # New songs are listened to for singing without instruments.
+                self.rpc_analyze_vocal_async({})
 
         return self._start_job("scan", work, "scan_done")
+
+    # -- the listener's corrections ------------------------------------------
+    def rpc_set_track_topic(self, params):
+        return self.service.set_track_topic(params.get("id", ""), params.get("topic"))
+
+    def rpc_set_track_vocal(self, params):
+        return self.service.set_track_vocal(params.get("id", ""), params.get("value"))
+
+    def rpc_confirm_vocal(self, params):
+        return self.service.confirm_vocal(list(params.get("ids") or []), bool(params.get("value", True)))
+
+    # -- listening for a cappella songs ------------------------------------------
+    def rpc_vocal_status(self, params):
+        return self.service.vocal_status()
+
+    def rpc_vocal_review(self, params):
+        return self.service.vocal_review(int(params.get("limit", 300)))
+
+    def rpc_analyze_vocal_async(self, params):
+        """Listen to the songs not heard yet, on a background thread.
+        Emits ``vocal_progress`` and ``vocal_done``."""
+        status = self.service.vocal.status()
+        if not self.service.settings.vocal_detection or not status.get("available"):
+            return {"started": False, "reason": "disabled" if status.get("available") else "unavailable"}
+
+        def work():
+            return self.service.analyze_vocal(on_progress=lambda p: self._emit("vocal_progress", p))
+
+        return self._start_job("vocal", work, "vocal_done")
+
+    def rpc_stop_vocal(self, params):
+        self.service.vocal_stop = True
+        return {"stopping": self.service.vocal_running}
 
     # -- the AI model ------------------------------------------------------
     def rpc_classifier_status(self, params):

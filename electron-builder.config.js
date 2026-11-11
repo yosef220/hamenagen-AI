@@ -10,9 +10,14 @@
  *                                                 inside (build/models)
  *   setup    — Hamenagen-<v>-Setup.exe            a per-user installer
  *
+ * Every edition carries the small vocal-detection model (build/audio-models,
+ * 6 MB, from backend/scripts/prepare_audio_model.py) when it was prepared.
+ *
  * The edition is written into the packaged package.json (hamenagenEdition);
  * electron/main.js reads it to decide where the data folder lives.
  */
+
+const fs = require('fs');
 
 const edition = process.env.HAMENAGEN_EDITION || 'portable';
 if (!['portable', 'offline', 'setup'].includes(edition)) {
@@ -74,6 +79,9 @@ const config = {
   },
 };
 
+if (fs.existsSync('build/audio-models')) {
+  config.extraResources.push({ from: 'build/audio-models', to: 'audio-models', filter: ['**/*'] });
+}
 if (edition === 'offline') {
   config.extraResources.push({ from: 'build/models', to: 'models', filter: ['**/*'] });
   config.win.artifactName = 'Hamenagen-${version}-Windows-Offline.${ext}';

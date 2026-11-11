@@ -16,6 +16,7 @@
     'listTracks', 'topics', 'rescan', 'classifierStatus', 'installModel', 'reclassify',
     'getSettings', 'updateSettings', 'radioList', 'checkUpdates', 'applyUpdate',
     'offlinePackStatus', 'installOfflinePack', 'onlineAvailable', 'onlineSearch', 'onlineDownload',
+    'setTrackTopic', 'setTrackVocal', 'confirmVocal', 'vocalStatus', 'vocalReview', 'analyzeVocal', 'stopVocal',
   ];
   const SHELL = [
     'shellInfo', 'setTheme', 'openExternal', 'showInFolder', 'openFolder', 'chooseFolder', 'playerState',
