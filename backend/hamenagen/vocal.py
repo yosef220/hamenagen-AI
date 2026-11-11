@@ -245,8 +245,10 @@ class VocalDetector:
                 mono = data.mean(axis=1) if data.ndim == 2 else data
                 x = self._resample(np.asarray(mono, dtype=np.float32), sr)
                 n = int(WINDOW_SECONDS * SAMPLE_RATE)
-                x = np.pad(x, (0, max(0, n - len(x))))[:n]
-                out.append(x)
+                if len(x) > n:  # a short song read whole: its middle ten seconds
+                    start_at = (len(x) - n) // 2
+                    x = x[start_at:start_at + n]
+                out.append(np.pad(x, (0, max(0, n - len(x)))))
         return out
 
     def score_window(self, x) -> WindowScores:

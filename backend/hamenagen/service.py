@@ -808,9 +808,19 @@ class PlayerService:
         return result
 
     # -- about ---------------------------------------------------------------
+    def knowledge_status(self) -> dict:
+        lexicon, index = self.classifier.topic_lexicon, self.classifier.song_index
+        return {
+            "songs": len(index) if index else 0,
+            "topics": len(lexicon.topics) if lexicon else 0,
+            "sources": getattr(lexicon, "sources", 0),
+            "version": getattr(lexicon, "version", "") or getattr(index, "version", ""),
+        }
+
     def app_info(self) -> dict:
         model = self.classifier_status()
         return {
+            "knowledge": self.knowledge_status(),
             "version": __version__,
             "edition": self.edition,
             "data_dir": str(self.data_dir),

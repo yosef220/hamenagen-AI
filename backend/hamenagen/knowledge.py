@@ -128,7 +128,8 @@ class IndexHit:
 class SongIndex:
     """Known songs and piyutim by occasion."""
 
-    def __init__(self, entries: list[dict]):
+    def __init__(self, entries: list[dict], *, version: str = ""):
+        self.version = version
         self._by_key: dict[str, dict] = {}
         for e in entries:
             topics = [t for t in e.get("topics", []) if t]
@@ -153,7 +154,7 @@ class SongIndex:
     def load(cls, path: str | Path = SONG_INDEX_FILE) -> "SongIndex":
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
-            return cls(data.get("entries", []))
+            return cls(data.get("entries", []), version=data.get("version", ""))
         except Exception:
             return cls([])
 
@@ -223,10 +224,12 @@ class TopicLexicon:
     """Scores a text against the vocabulary of every topic."""
 
     def __init__(self, topics: dict[str, dict[str, float]], *, min_score: float = LEXICON_MIN_SCORE,
-                 min_margin: float = LEXICON_MIN_MARGIN):
+                 min_margin: float = LEXICON_MIN_MARGIN, version: str = "", sources: int = 0):
         self.topics = topics
         self.min_score = min_score
         self.min_margin = min_margin
+        self.version = version
+        self.sources = sources
 
     def __bool__(self) -> bool:
         return bool(self.topics)
@@ -235,7 +238,8 @@ class TopicLexicon:
     def load(cls, path: str | Path = LEXICON_FILE, **kw) -> "TopicLexicon":
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
-            return cls(data.get("topics", {}), **kw)
+            return cls(data.get("topics", {}), version=data.get("version", ""),
+                       sources=len(data.get("sources", [])), **kw)
         except Exception:
             return cls({}, **kw)
 

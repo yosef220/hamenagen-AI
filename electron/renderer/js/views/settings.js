@@ -108,7 +108,16 @@
     return h('span', { class: 'pill warn' }, 'לא מותקן');
   }
 
-  function ai(status) {
+  function knowledgeRow(info) {
+    const k = info && info.knowledge;
+    if (!k || !k.songs) return null;
+    const built = k.version ? ` · נבנה ב-${k.version.split('-').reverse().join('.')}` : '';
+    return row('אינדקס הידע',
+      `${H.n(k.songs)} שירים ופיוטים לפי מועד, ואוצר מילים ל-${H.n(k.topics)} מועדים מ-${H.n(k.sources)} מקורות — ויקיפדיה העברית וספריא${built}. נמצא בתוך התוכנה ועובד בלי אינטרנט.`,
+      h('span', { class: 'pill good' }, icon('book-open'), 'פעיל'));
+  }
+
+  function ai(status, info) {
     const st = status || {};
     const where = st.bundled ? 'המודל מגיע בתוך התוכנה (גרסה מלאה לאופליין).' : 'המודל ירד פעם אחת כשיש אינטרנט, ומאז עובד בלי רשת.';
     const install = st.enabled && !st.loaded && !st.available
@@ -120,6 +129,7 @@
       : null;
     return h('section', { class: 'set-group', id: 'set-ai' },
       h('h2', {}, 'בינה מלאכותית מקומית'),
+      knowledgeRow(info),
       row('מודל הסיווג', `${where} ${st.model ? `(${st.model.split('/').pop()})` : ''}`, h('div', { style: { display: 'flex', gap: '8px', 'align-items': 'center' } }, modelPill(st), install)),
       toggle('use_embeddings', 'סיווג חכם לשירים בלי מילת מפתח', 'כשהשם של שיר לא מגלה את הנושא, המודל משווה את המשמעות שלו לנושאים. כבוי = מילון בלבד.', () => render()),
       toggle('classify_by_lyrics', 'להיעזר בקובצי מילים', 'אם ליד שיר יש קובץ ‎.lrc או ‎.txt, גם המילים נלקחות בחשבון.'),
@@ -262,7 +272,7 @@
     H.clear(root).append(
       h('header', { class: 'page-head' }, h('h1', {}, 'הגדרות')),
       h('div', { class: 'settings' },
-        appearance(), library(overview), ai(status), suggestions(), listening(vocal), online(info), updates(info),
+        appearance(), library(overview), ai(status, info), suggestions(), listening(vocal), online(info), updates(info),
         about(info, shell)));
     if (params.focus) {
       const target = H.$(`#set-${params.focus}`);
