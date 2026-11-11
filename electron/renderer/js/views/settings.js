@@ -201,7 +201,8 @@
   function about(info, shell) {
     const kv = h('dl', { class: 'kv' });
     const add = (k, v) => kv.append(h('dt', {}, k), h('dd', {}, v));
-    add('גרסה', `${shell.version} · ${shell.editionLabel}`);
+    const build = window.__BUILD__ && window.__BUILD__.build !== 'dev' ? ` · ${window.__BUILD__.build}` : '';
+    add('גרסה', `${shell.version} · ${shell.editionLabel}${build}`);
     if (info) {
       add('תיקיית הנתונים', h('span', { class: 'ltr' }, info.data_dir));
       add('מודל הסיווג', h('span', { class: 'ltr' }, info.models_dir));

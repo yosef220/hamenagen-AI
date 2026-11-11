@@ -1,8 +1,3 @@
-// Build identity for the app-update check. CI overwrites this file at build
-// time with the real commit SHA; the default below marks a local/dev build.
-window.__BUILD__ = {
-  version: '0.1.0',
-  build: 'dev',
-  zip_url:
-    'https://github.com/yosef220/hamenagen-AI/releases/download/portable-latest/hamenagen-0.1.0.zip',
-};
+// Build identity, shown in Settings → About. CI overwrites this file with the
+// real commit and edition; the default marks a local/dev build.
+window.__BUILD__ = { version: '1.0.0', build: 'dev', edition: 'dev' };

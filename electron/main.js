@@ -19,6 +19,8 @@ const { BackendBridge } = require('./backend_bridge');
 
 const pkg = require('../package.json');
 
+const APP_ID = 'org.community.hamenagen';
+
 // --- edition and folders ----------------------------------------------------
 // "portable" (ZIP), "offline" (ZIP with the AI model inside), "setup" (installer).
 const EDITION = app.isPackaged ? (pkg.hamenagenEdition || 'portable') : 'dev';
@@ -303,7 +305,7 @@ function ensureDesktopShortcut() {
         icon: process.execPath,
         iconIndex: 0,
         description: 'המנגן — נגן מוזיקה קהילתי חכם',
-        appUserModelId: pkg.build.appId,
+        appUserModelId: APP_ID,
       });
     }
   } catch (err) {
@@ -312,7 +314,7 @@ function ensureDesktopShortcut() {
 }
 
 app.whenReady().then(() => {
-  if (process.platform === 'win32') app.setAppUserModelId(pkg.build.appId);
+  if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
   bridge.start();
   ensureDesktopShortcut();
   createWindow();
