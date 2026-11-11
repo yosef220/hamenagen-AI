@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Pre-download the local ONNX embedding model into the app's models cache.
+"""Download the local embedding model into a models folder.
 
-Run this once on a machine WITH internet to populate the model, so it can be
-bundled with the app / offline pack for fully-offline classification
-(spec §6, §8.2). Uses fastembed (onnxruntime) — light, no PyTorch.
+Run once on a machine WITH internet to fill the folder that ships inside the
+offline edition (resources/models), or to pre-seed a data folder:
 
-Usage:
-    python scripts/prepare_model.py [--model NAME] [--out DIR]
+    python scripts/prepare_model.py --out build/models
 
-Requires:
-    pip install fastembed
+The model and its pinned revision come from hamenagen.classifier.MODELS; the
+app reads the same folder layout, so what this writes is what it loads.
 """
 
 from __future__ import annotations
@@ -26,44 +24,34 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from hamenagen.classifier import DEFAULT_MODEL, MODELS, EmbeddingBackend, download_model  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Pre-download the embedding model")
-    parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument(
-        "--out",
-        default=str(Path(__file__).resolve().parents[2] / "data" / "models"),
-        help="cache folder to download the model into",
-    )
+    parser = argparse.ArgumentParser(description="Download the embedding model")
+    parser.add_argument("--model", default=DEFAULT_MODEL, choices=sorted(MODELS))
+    parser.add_argument("--out", default=str(Path(__file__).resolve().parents[2] / "data" / "models"))
     args = parser.parse_args(argv)
-
-    try:
-        from fastembed import TextEmbedding
-    except ImportError:
-        print("fastembed is not installed. Run: pip install fastembed", file=sys.stderr)
-        return 2
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    last = {"pct": -1}
 
-    model_name = args.model
-    try:
-        supported = {m["model"] for m in TextEmbedding.list_supported_models()}
-    except Exception:
-        supported = set()
-    if supported and model_name not in supported:
-        # Fall back to a supported multilingual model so the build never breaks
-        # on an exact-id mismatch across fastembed versions.
-        alt = next((m for m in supported if "multilingual" in m.lower()), None)
-        if alt:
-            print(f"'{model_name}' not supported by this fastembed; using '{alt}'.")
-            model_name = alt
+    def progress(p: dict) -> None:
+        pct = int(p["downloaded"] * 100 / p["total"]) if p.get("total") else 0
+        if pct // 10 != last["pct"] // 10:
+            last["pct"] = pct
+            print(f"  {p['file']}: {pct}%", flush=True)
 
-    print(f"Downloading model '{model_name}' into {out} ...")
-    model = TextEmbedding(model_name=model_name, cache_dir=str(out))
-    list(model.embed(["שיר לשבת", "נרות חנוכה"]))  # warm up / complete the cache
+    print(f"Downloading {args.model} into {out} ...")
+    download_model(args.model, out, on_progress=progress)
+    backend = EmbeddingBackend(args.model, cache_dir=str(out), allow_download=False)
+    if not backend.load():
+        print(f"The model did not load: {backend.load_error}", file=sys.stderr)
+        return 1
+    print("Check:", backend.classify("סופגניות ונרות", threshold=0.0))
     print("Done. The model is ready for offline use.")
     return 0
 

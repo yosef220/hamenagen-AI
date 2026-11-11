@@ -173,3 +173,32 @@ def test_rpc_loop_answers_and_emits(tmp_path):
     assert by_id[4]["ok"] is False
     assert by_id[5]["result"]["version"]
     service.close()
+
+
+def test_folder_names_hint_the_topic(tmp_path):
+    music = tmp_path / "music"
+    _library(music / "חתונות", ["תזמורת - ריקוד הפתיחה.mp3"])
+    _library(music / "שבת" / "זמירות", ["מקהלה - ניגון ערב.mp3"])
+    _library(music, ["אמן - שיר רגיל.mp3"])
+    service = PlayerService(data_dir=tmp_path / "data")
+    service.settings.use_embeddings = False
+    service.classifier.embedding = None
+    service.rescan([str(music)])
+    topics = {t.title: t.topic for t in service.index.all_tracks()}
+    assert topics["ריקוד הפתיחה"] == "חתונה"
+    assert topics["ניגון ערב"] == "שבת"
+    assert topics["שיר רגיל"] is None
+    service.close()
+
+
+def test_settings_from_0_1_move_to_the_new_model(tmp_path):
+    from hamenagen.settings import DEFAULT_MODEL, Settings
+
+    old = tmp_path / "settings.json"
+    old.write_text(json.dumps({
+        "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        "embedding_threshold": 0.5,
+    }), encoding="utf-8")
+    s = Settings.load(old)
+    assert s.embedding_model == DEFAULT_MODEL
+    assert s.embedding_threshold == 0.91

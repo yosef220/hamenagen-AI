@@ -22,7 +22,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 DEFAULT_UPDATE_MANIFEST = "https://github.com/yosef220/hamenagen-AI/releases/latest/download/update.json"
-DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+DEFAULT_MODEL = "intfloat/multilingual-e5-small"
+# Models of earlier versions; settings that still name one move to the default.
+_RETIRED_MODELS = {"sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"}
 
 THEMES = ("system", "light", "dark")
 TEXT_SIZES = ("normal", "large", "xlarge")
@@ -92,11 +94,12 @@ class Settings:
     # Enable the optional local embedding classifier layer.
     use_embeddings: bool = True
     # Which local embedding model to use (spec §8.2 layer 3, §19.3).
-    # A light multilingual ONNX model run via fastembed (no PyTorch), shipped in
-    # the offline edition or downloaded once on first run, then used offline.
+    # A small multilingual ONNX model run with ONNX Runtime (no PyTorch), shipped
+    # in the offline edition or downloaded once on first run, then offline.
     embedding_model: str = DEFAULT_MODEL
-    # Cosine-similarity threshold above which an embedding topic is accepted.
-    embedding_threshold: float = 0.5
+    # Similarity to a topic's closest typical phrase needed to accept it
+    # (calibrated for the default model; see backend/scripts/benchmark_models.py).
+    embedding_threshold: float = 0.91
     # Also feed song lyrics (from a sibling .lrc/.txt file) to the classifier.
     classify_by_lyrics: bool = True
     # Suggest a cappella music in the Omer count and the Three Weeks.
@@ -123,6 +126,10 @@ class Settings:
         # 0.1 shipped an empty manifest URL; point old settings at releases.
         if not s.update_manifest_url:
             s.update_manifest_url = DEFAULT_UPDATE_MANIFEST
+        # 0.1 used another model with another scale of similarity.
+        if s.embedding_model in _RETIRED_MODELS:
+            s.embedding_model = DEFAULT_MODEL
+            s.embedding_threshold = 0.91
         return s.sanitized()
 
     def sanitized(self) -> "Settings":

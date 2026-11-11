@@ -125,7 +125,8 @@
   api.on('model_install', (msg) => {
     const el = H.$('#rail-model');
     if (msg.status === 'downloading') {
-      el.replaceChildren(icon('loader-circle', 'spin'), 'מוריד את מודל הסיווג (פעם אחת)');
+      const pct = typeof msg.percent === 'number' ? ` · ${Math.floor(msg.percent)}%` : '';
+      el.replaceChildren(icon('loader-circle', 'spin'), `מוריד את מודל הסיווג (פעם אחת)${pct}`);
     } else if (msg.status === 'loading') {
       el.replaceChildren(icon('loader-circle', 'spin'), 'טוען את מודל הסיווג');
     } else if (msg.status === 'done') {

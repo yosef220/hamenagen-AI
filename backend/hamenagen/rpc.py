@@ -173,6 +173,12 @@ class RpcServer:
 
         def work():
             self._emit("model_install", {"status": "loading" if status.get("cached") else "downloading"})
+            backend = self.service.classifier.embedding
+            if backend is not None:
+                def progress(p: dict) -> None:
+                    pct = round(p["downloaded"] * 100 / p["total"], 1) if p.get("total") else None
+                    self._emit("model_install", {"status": "downloading", "percent": pct, "file": p.get("file")})
+                backend.on_download = progress
             result = self.service.install_model()
             return {"status": "done" if result.get("ok") else "error", **result}
 

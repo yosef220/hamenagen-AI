@@ -8,10 +8,10 @@ Order of resolution, from most to least confident:
    the song's combined text.
 3. **Local embedding model (optional)** — for songs the curated layer does
    not cover, a small local multilingual embedding model compares the song
-   text against a prototype sentence per topic and picks the closest one
-   above a similarity threshold. This layer is *optional*: if the model is
-   not installed the classifier simply skips it, preserving offline-first
-   behaviour. See :class:`EmbeddingBackend`.
+   text with typical phrases of every topic and picks the closest one when
+   it is close enough and clearly ahead. This layer is *optional*: if the
+   model is not installed the classifier simply skips it, preserving
+   offline-first behaviour. See :class:`EmbeddingBackend`.
 
 The classifier returns a :class:`Classification` with the topic (or ``None``)
 and the layer that produced it, which is useful both for debugging and for
@@ -20,7 +20,14 @@ deciding how much to trust the result.
 
 from __future__ import annotations
 
+import json
+import os
+import threading
+import time
+import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from . import topics as topics_mod
 from .text_normalize import contains_phrase, normalize
@@ -34,132 +41,248 @@ class Classification:
     tags: tuple[str, ...] = ()  # further topics the song also belongs to
 
 
-class EmbeddingBackend:
-    """Optional local-embedding topic backend (light ONNX via fastembed).
+# The model the embedding layer uses, chosen by backend/scripts/benchmark_models.py
+# on Hebrew song titles that no lexicon keyword catches (November 2026):
+# multilingual-e5-small with typical phrases per topic beat the 0.1 model
+# (paraphrase-multilingual-MiniLM-L12-v2) and the newest small models of 2026.
+# Pinned to one revision so every install embeds exactly the same way.
+MODELS: dict[str, dict] = {
+    "intfloat/multilingual-e5-small": {
+        "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+        "files": ["onnx/model.onnx", "tokenizer.json"],
+        "prefix": "query: ",
+        "pooling": "mean",
+        "threshold": 0.91,   # similarity to the closest typical phrase
+        "margin": 0.01,      # ahead of the second-best topic by at least this
+    },
+}
+DEFAULT_MODEL = "intfloat/multilingual-e5-small"
+_HF = "https://huggingface.co/{model}/resolve/{revision}/{file}"
+_EXEMPLARS_FILE = Path(__file__).with_name("data") / "topic_exemplars.json"
 
-    Loads a small multilingual ONNX model lazily (no PyTorch), downloading it
-    once on first run with a network and using it offline thereafter. If
-    fastembed or the model is unavailable, :attr:`available` stays ``False``
+DownloadHook = Callable[[dict], None]
+
+
+def load_exemplars() -> dict[str, list[str]]:
+    """Typical phrases per topic (see data/topic_exemplars.json)."""
+    try:
+        return json.loads(_EXEMPLARS_FILE.read_text(encoding="utf-8"))["topics"]
+    except Exception:
+        return {}
+
+
+def model_folder(cache_dir: str | Path, model_name: str) -> Path:
+    return Path(cache_dir) / model_name.replace("/", "--")
+
+
+def download_model(
+    model_name: str,
+    cache_dir: str | Path,
+    *,
+    on_progress: DownloadHook | None = None,
+    timeout: float = 30.0,
+) -> Path:
+    """Fetch the model's files once into ``cache_dir`` (resumable, atomic).
+
+    Used on first run when online, and by scripts/prepare_model.py to put the
+    model inside the offline edition.
+    """
+    spec = MODELS[model_name]
+    folder = model_folder(cache_dir, model_name)
+    files = spec["files"]
+    for n, name in enumerate(files, 1):
+        target = folder / name
+        if target.exists() and target.stat().st_size > 0:
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        url = _HF.format(model=model_name, revision=spec["revision"], file=name)
+        partial = target.with_suffix(target.suffix + ".part")
+        have = partial.stat().st_size if partial.exists() else 0
+        req = urllib.request.Request(url, headers={"User-Agent": "hamenagen"})
+        if have:
+            req.add_header("Range", f"bytes={have}-")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - fixed host
+            if have and resp.status != 206:
+                have = 0  # the server ignored the range: start over
+            total = int(resp.headers.get("Content-Length") or 0) + have
+            mode = "ab" if have else "wb"
+            done = have
+            last = 0.0
+            with open(partial, mode) as out:
+                while True:
+                    chunk = resp.read(1 << 20)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    done += len(chunk)
+                    if on_progress and time.time() - last > 0.5:
+                        last = time.time()
+                        on_progress({"file": name, "index": n, "files": len(files),
+                                     "downloaded": done, "total": total})
+        partial.replace(target)
+    (folder / "model.json").write_text(
+        json.dumps({"model": model_name, "revision": spec["revision"]}), encoding="utf-8"
+    )
+    return folder
+
+
+class EmbeddingBackend:
+    """Optional local-embedding topic backend (ONNX Runtime, no PyTorch).
+
+    The model is a small multilingual sentence-embedding model. A song's text
+    is compared with *typical phrases* of every topic (symbols, customs,
+    people, liturgy — data/topic_exemplars.json) and the closest phrase
+    decides, when it is close enough and clearly ahead of the next topic.
+    That reaches titles such as "פך שמן קטן" or "אפיקומן" that carry no
+    lexicon keyword.
+
+    The files come with the offline edition, or download once on first run
+    with a network (pinned revision); afterwards everything runs offline. If
+    ONNX Runtime or the files are missing, :attr:`available` stays ``False``
     and :meth:`classify` returns ``None`` — the hybrid classifier then falls
     through to the curated lexicon, so nothing breaks offline.
     """
 
-    #: A short natural-language "prototype" per topic. Similarity is measured
-    #: against these rather than against the bare topic word.
-    PROTOTYPES: dict[str, str] = {
-        "שבת": "שיר לשבת קודש, זמירות שבת, מנוחה, קבלת שבת",
-        "ראש השנה": "שיר לראש השנה, תקיעת שופר, שנה טובה ומתוקה, יום הדין",
-        "יום כיפור": "שיר ליום הכיפורים, תפילת נעילה, סליחה ומחילה",
-        "חנוכה": "שיר לחנוכה, נרות, מכבים, נס פך השמן",
-        "אלול": "שיר לחודש אלול, סליחות, תשובה, התעוררות רוחנית",
-        "סוכות": "שיר לחג הסוכות, סוכה, ארבעת המינים, שמחת בית השואבה",
-        "פסח": "שיר לחג הפסח, יציאת מצרים, הגדה, ליל הסדר",
-        "פורים": "שיר לפורים, מגילת אסתר, משתה ושמחה",
-        "שבועות": "שיר לחג השבועות, מתן תורה",
-        "ל״ג בעומר": "שיר לל״ג בעומר, רבי שמעון בר יוחאי, מירון והדלקה",
-        "חתונה": "שיר לחתונה ולשמחות, חתן וכלה, ריקודים",
-        "ירושלים": "שיר על ירושלים עיר הקודש והכותל",
-        "אמונה": "שיר על אמונה וביטחון בהשם ותפילה",
-    }
-
     def __init__(
         self,
-        model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        model_name: str = DEFAULT_MODEL,
         *,
-        threshold: float = 0.5,
+        threshold: float | None = None,
         cache_dir: str | None = None,
+        allow_download: bool = True,
     ):
-        import threading
-
         self.model_name = model_name
-        self.threshold = threshold
+        spec = MODELS.get(model_name, {})
+        self.threshold = spec.get("threshold", 0.9) if threshold is None else threshold
+        self.margin = spec.get("margin", 0.0)
+        self.prefix = spec.get("prefix", "")
         self.cache_dir = cache_dir
-        self._model = None
-        self._proto = None          # (topics, dim) L2-normalised prototype matrix
-        self._proto_keys: list[str] = []
+        self.allow_download = allow_download
+        self._session = None
+        self._tokenizer = None
+        self._inputs: set[str] = set()
         self._np = None
-        self._lock = threading.Lock()  # serialize the (one-time) model download
+        self._matrix = None          # (phrases, dim) normalised exemplar vectors
+        self._phrase_topic: list[int] = []
+        self._topics: list[str] = []
+        self._lock = threading.Lock()
         self.available = False
         self.load_error: str | None = None
+        self.on_download: DownloadHook | None = None
+
+    # -- files -------------------------------------------------------------
+    def _folder(self) -> Path | None:
+        return model_folder(self.cache_dir, self.model_name) if self.cache_dir else None
 
     def _cache_has_model(self) -> bool:
-        if not self.cache_dir:
+        folder = self._folder()
+        spec = MODELS.get(self.model_name)
+        if folder is None or spec is None:
             return False
-        try:
-            from pathlib import Path as _P
+        return all((folder / f).exists() for f in spec["files"])
 
-            return any(_P(self.cache_dir).glob("models--*")) or any(
-                _P(self.cache_dir).rglob("*.onnx")
-            )
-        except Exception:
-            return False
-
-    def _prefix(self, text: str) -> str:
-        # paraphrase-MiniLM needs no instruction prefix (unlike the e5 family).
-        return text
-
+    # -- loading -----------------------------------------------------------
     def load(self) -> bool:
-        """Load the local ONNX embedding model, downloading it once if needed.
-
-        Uses fastembed (onnxruntime) — light (~50MB of libs) and no PyTorch.
-        The first call with a network connection downloads a small model
-        (~120MB) into ``cache_dir``; afterwards it runs fully offline.
-        """
-        if self._model is not None:
+        """Load the model (downloading it once if needed and allowed)."""
+        if self._session is not None:
             return True
         with self._lock:  # another thread may have loaded it while we waited
-            if self._model is not None:
+            if self._session is not None:
                 return True
-            try:  # pragma: no cover - depends on optional dependency + download
-                import os
-
-                if self._cache_has_model():
-                    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-
+            try:
+                if self.model_name not in MODELS:
+                    raise ValueError(f"unknown model: {self.model_name}")
+                if not self.cache_dir:
+                    raise ValueError("no folder for the model")
+                if not self._cache_has_model():
+                    if not self.allow_download:
+                        raise FileNotFoundError("the model is not installed")
+                    download_model(self.model_name, self.cache_dir, on_progress=self.on_download)
                 import numpy as np
-                from fastembed import TextEmbedding  # type: ignore
+                import onnxruntime as ort  # type: ignore
+                from tokenizers import Tokenizer  # type: ignore
 
+                folder = self._folder()
+                options = ort.SessionOptions()
+                options.intra_op_num_threads = max(1, min(4, (os.cpu_count() or 2) // 2))
+                session = ort.InferenceSession(
+                    str(folder / "onnx" / "model.onnx"), options, providers=["CPUExecutionProvider"]
+                )
+                tokenizer = Tokenizer.from_file(str(folder / "tokenizer.json"))
+                tokenizer.enable_truncation(256)
                 self._np = np
-                model = TextEmbedding(model_name=self.model_name, cache_dir=self.cache_dir)
-                keys = list(self.PROTOTYPES)
-                vecs = np.array(list(model.embed([self._prefix(self.PROTOTYPES[k]) for k in keys])))
-                norms = np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-9
-                self._proto = vecs / norms
-                self._proto_keys = keys
-                self._model = model
+                self._session = session
+                self._tokenizer = tokenizer
+                self._inputs = {i.name for i in session.get_inputs()}
+                self._build_exemplars()
                 self.available = True
                 self.load_error = None
                 return True
-            except Exception as exc:  # package or model unavailable / offline
+            except Exception as exc:  # package, files or network unavailable
+                self._session = None
                 self.load_error = str(exc)
                 self.available = False
                 return False
+
+    def _embed(self, texts: list[str]):
+        np = self._np
+        out = []
+        for text in texts:
+            enc = self._tokenizer.encode(self.prefix + text)
+            ids = np.array([enc.ids], dtype=np.int64)
+            mask = np.array([enc.attention_mask], dtype=np.int64)
+            feed = {"input_ids": ids, "attention_mask": mask, "token_type_ids": np.zeros_like(ids)}
+            feed = {k: v for k, v in feed.items() if k in self._inputs}
+            hidden = self._session.run(None, feed)[0][0]
+            weights = mask[0][:, None].astype(np.float32)
+            vec = (hidden * weights).sum(0) / max(float(weights.sum()), 1.0)
+            out.append(vec / (np.linalg.norm(vec) + 1e-9))
+        return np.array(out, dtype=np.float32)
+
+    def _build_exemplars(self) -> None:
+        exemplars = load_exemplars()
+        phrases, owner = [], []
+        self._topics = list(exemplars)
+        for t_index, topic in enumerate(self._topics):
+            for phrase in exemplars[topic]:
+                phrases.append(phrase)
+                owner.append(t_index)
+        self._matrix = self._embed(phrases) if phrases else None
+        self._phrase_topic = owner
 
     def status(self) -> dict:
         """Report the embedding layer state without forcing a download."""
         return {
             "model": self.model_name,
-            "engine": "onnx/fastembed",
-            "loaded": self._model is not None,
+            "engine": "onnxruntime",
+            "loaded": self._session is not None,
             "available": self.available,
             "cached": self._cache_has_model(),
             "error": self.load_error,
         }
 
+    # -- classifying -----------------------------------------------------------
+    def topic_scores(self, text: str) -> dict[str, float]:
+        """Similarity of ``text`` to the closest typical phrase of each topic."""
+        if (not self.available and not self.load()) or self._matrix is None or not text.strip():
+            return {}
+        np = self._np
+        sims = self._matrix @ self._embed([text])[0]
+        scores = np.full(len(self._topics), -1.0)
+        for phrase_index, t_index in enumerate(self._phrase_topic):
+            if sims[phrase_index] > scores[t_index]:
+                scores[t_index] = sims[phrase_index]
+        return {topic: float(scores[i]) for i, topic in enumerate(self._topics)}
+
     def classify(self, text: str, *, threshold: float | None = None) -> Classification | None:
         threshold = self.threshold if threshold is None else threshold
-        if not self.available and not self.load():
+        scores = self.topic_scores(text)
+        if not scores:
             return None
-        if not text.strip():  # pragma: no cover
-            return None
-        np = self._np
-        q = np.array(list(self._model.embed([self._prefix(text)]))[0])  # type: ignore[union-attr]
-        q = q / (np.linalg.norm(q) + 1e-9)
-        sims = self._proto @ q  # cosine similarity against every prototype
-        idx = int(np.argmax(sims))
-        best = float(sims[idx])
-        if best >= threshold:
-            return Classification(self._proto_keys[idx], "embedding", round(best, 4))
+        ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        (topic, best), second = ranked[0], (ranked[1][1] if len(ranked) > 1 else -1.0)
+        if best >= threshold and best - second >= self.margin:
+            return Classification(topic, "embedding", round(best, 4))
         return None
 
 

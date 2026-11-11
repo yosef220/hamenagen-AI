@@ -215,14 +215,37 @@ class PlayerService:
             gone -= keep
         return idx.delete_ids(gone) if gone else 0
 
+    # Folder names that say nothing about a song's topic.
+    _GENERIC_FOLDERS = {normalize(name) for name in (
+        "music", "my music", "מוזיקה", "המוזיקה שלי", "שירים", "downloads", "הורדות", "desktop",
+        "שולחן העבודה", "documents", "מסמכים", "users", "audio", "mp3", "new folder", "תיקייה חדשה",
+        "hamenagen", "המנגן", "data", "media", "songs",
+    )}
+
+    def _folder_hint(self, path: str) -> str:
+        """The names of the song's two nearest folders — people file music in
+        folders such as "שבת" or "חתונות", which says a lot about a song."""
+        names = []
+        home = os.path.normcase(str(Path.home()))
+        for parent in list(Path(path).parents)[:2]:
+            here = os.path.normcase(str(parent))
+            # Stop at the home folder (its name is the user's name) and above.
+            if home.startswith(here) or parent.parent.name.lower() in ("users", "home"):
+                break
+            name = parent.name.strip()
+            if name and normalize(name) not in self._GENERIC_FOLDERS and not name.endswith(":"):
+                names.append(name)
+        return " ".join(names)
+
     def _classify_track(self, track: Track) -> Track:
         lyrics = ""
         if self.settings.classify_by_lyrics and track.path:
             lyrics = read_sidecar_lyrics(track.path)
+        folder = self._folder_hint(track.path) if track.path else ""
         cls = self.classifier.classify(
             title=track.title,
             artist=track.artist,
-            album=track.album,
+            album=" ".join(p for p in (track.album, folder) if p),
             filename=track.filename,
             lyrics=lyrics,
             use_embeddings=self.settings.use_embeddings,
