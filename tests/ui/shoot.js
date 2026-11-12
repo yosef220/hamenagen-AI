@@ -439,10 +439,21 @@ async function run() {
       if (voiceArgs.length) {
         await page.evaluate(() => H.go('home'));
         await page.waitForSelector('.mic-btn');
+        await page.evaluate(() => {
+          window.__vlog = [];
+          const t0 = performance.now();
+          const log = (k) => (e) => window.__vlog.push(`${k}@${Math.round(performance.now() - t0)}:${e.text || e.state || ''}`);
+          H.api.on('voice-partial', log('partial'));
+          H.api.on('voice-state', log('state'));
+        });
         await page.click('.mic-btn');
         await page.waitForFunction(() => H.voice.state === 'listening', null, { timeout: 10000 })
           .catch(() => errors.push('the microphone did not start listening'));
-        await page.waitForTimeout(900);
+        // The words appear while speaking (live text), before the pause ends it.
+        await page.waitForFunction(() => H.voice.state === 'listening' && /ירושלים/.test(document.querySelector('#ask-input').value),
+          null, { timeout: 8000 })
+          .catch(async () => errors.push(`no live text while listening: ${await page.evaluate(() => window.__vlog.join(' '))}`));
+        await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
         await page.screenshot({ path: path.join(out, `28-voice-listening${suffix}.png`) });
         await page.waitForFunction(() => H.currentView() === 'results' && /ירושלים/.test(document.querySelector('.results-title')?.textContent || ''),
           null, { timeout: 20000 })

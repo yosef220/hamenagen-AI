@@ -98,6 +98,7 @@
     askChips);
   // What was said goes into the request line, as if it was typed.
   api.on('voice-heard', ({ text }) => { askInput.value = text; });
+  api.on('voice-partial', ({ text }) => { askInput.value = text; });
   api.on('voice-state', ({ state }) => {
     if (state === 'listening') askInput.value = '';
     askInput.placeholder = state === 'listening' ? 'מקשיב… אפשר לדבר עכשיו'

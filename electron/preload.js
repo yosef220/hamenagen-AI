@@ -97,6 +97,7 @@ contextBridge.exposeInMainWorld('hamenagen', {
   setTrackDisliked: (id, on) => core('set_track_disliked', { id, on }),
   artistGroups: () => core('artist_groups'),
   voiceStatus: () => core('voice_status'),
+  voicePrepare: () => core('voice_prepare'),
   voiceRecognize: (pcm, rate) => core('voice_recognize', { pcm, rate }),
   installVoice: () => core('install_voice_async'),
   setArtistChoice: (key, choice) => core('set_artist_choice', { key, ...choice }),

@@ -35,7 +35,7 @@ from .service import PlayerService
 _SLOW = {
     "online_search", "online_download", "online_link", "radio_list", "check_updates", "apply_update",
     "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
-    "online_set", "listen_prepare", "station", "voice_recognize",
+    "online_set", "listen_prepare", "station", "voice_recognize", "voice_prepare",
 }
 
 
@@ -287,6 +287,10 @@ class RpcServer:
     # -- requests by voice (1.4) -------------------------------------------
     def rpc_voice_status(self, params):
         return self.service.voice_status()
+
+    def rpc_voice_prepare(self, params):
+        """Load the speech model while the listener starts talking."""
+        return {"loaded": self.service.voice.load()}
 
     def rpc_voice_recognize(self, params):
         return self.service.voice_recognize(params.get("pcm", ""), int(params.get("rate") or 16000))

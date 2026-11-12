@@ -38,7 +38,10 @@
   // ------------------------------------------------------------ the model
   async function ensureModel() {
     const st = await api.voiceStatus();
-    if (st.available) return true;
+    if (st.available) {
+      if (!st.loaded) api.voicePrepare().catch(() => {});   // loads while the listener speaks
+      return true;
+    }
     // The editions without the model download it once (73 MB), on request.
     return new Promise((resolve) => {
       const offer = h('div', { class: 'voice-offer', role: 'dialog', 'aria-label': 'הורדת זיהוי הדיבור' },
@@ -88,21 +91,17 @@
     return btoa(out);
   }
 
-  async function toPcm(blob) {
-    const ctx = new AudioContext({ sampleRate: RATE });
-    try {
-      const audio = await ctx.decodeAudioData(await blob.arrayBuffer());
-      const mono = new Float32Array(audio.length);
-      for (let c = 0; c < audio.numberOfChannels; c += 1) {
-        const ch = audio.getChannelData(c);
-        for (let i = 0; i < ch.length; i += 1) mono[i] += ch[i] / audio.numberOfChannels;
-      }
-      const pcm = new Int16Array(mono.length);
-      for (let i = 0; i < mono.length; i += 1) pcm[i] = Math.max(-1, Math.min(1, mono[i])) * 32767;
-      return { pcm, rate: audio.sampleRate };
-    } finally {
-      ctx.close().catch(() => {});
+  // The take so far, as 16-bit samples.
+  function toPcm(parts) {
+    let n = 0;
+    for (const a of parts) n += a.length;
+    const pcm = new Int16Array(n);
+    let o = 0;
+    for (const a of parts) {
+      for (let i = 0; i < a.length; i += 1) pcm[o + i] = Math.max(-1, Math.min(1, a[i])) * 32767;
+      o += a.length;
     }
+    return pcm;
   }
 
   async function listen() {
@@ -116,26 +115,36 @@
       setState('idle');
       return;
     }
-    const meterCtx = new AudioContext();
-    const analyser = meterCtx.createAnalyser();
+    // The sound itself, at 16 kHz (the browser resamples the microphone), so
+    // nothing has to be encoded and decoded again.
+    const ctx = new AudioContext({ sampleRate: RATE });
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
-    meterCtx.createMediaStreamSource(stream).connect(analyser);
+    const tap = ctx.createScriptProcessor(4096, 1, 1);
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    const parts = [];
+    let recording = true;
+    tap.onaudioprocess = (e) => { if (recording) parts.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
+    source.connect(analyser);
+    source.connect(tap);
+    tap.connect(mute);
+    mute.connect(ctx.destination);
     const buf = new Float32Array(analyser.fftSize);
-    const recorder = new MediaRecorder(stream);
-    const chunks = [];
-    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
 
     const started = performance.now();
     let floor = null;
     let heard = false;
     let lastLoud = started;
     let cancelled = false;
-    const finished = new Promise((resolve) => { recorder.onstop = resolve; });
+    let done;
+    const finished = new Promise((resolve) => { done = resolve; });
 
     const stop = (cancel = false) => {
       cancelled = cancelled || cancel;
       clearInterval(timer);
-      if (recorder.state !== 'inactive') recorder.stop();
+      if (recording) { recording = false; done(); }
     };
     session = { stop };
     const timer = setInterval(() => {
@@ -152,14 +161,28 @@
       else if (!heard && now - started > NOTHING_MS) stop(true);
     }, 50);
 
+    // Live text: what was heard so far, every second while speaking (the
+    // recognizer takes a fraction of a second, so the whole take is sent).
+    let partialBusy = false;
+    const partial = setInterval(async () => {
+      if (!heard || partialBusy || !recording || !parts.length) return;
+      partialBusy = true;
+      try {
+        const res = await api.voiceRecognize(toBase64(toPcm(parts)), ctx.sampleRate);
+        if (V.state === 'listening' && recording && res.ok && res.request) api.emit('voice-partial', { text: res.request });
+      } catch { /* the final pass will tell */ }
+      partialBusy = false;
+    }, 700);
+
     H.player.duck(true);
-    recorder.start(250);
     setState('listening');
     await finished;
+    clearInterval(partial);
     session = null;
     H.player.duck(false);
     for (const t of stream.getTracks()) t.stop();
-    meterCtx.close().catch(() => {});
+    tap.onaudioprocess = null;
+    ctx.close().catch(() => {});
 
     if (cancelled || !heard) {
       setState('idle');
@@ -168,8 +191,7 @@
     }
     setState('thinking');
     try {
-      const { pcm, rate } = await toPcm(new Blob(chunks, { type: recorder.mimeType }));
-      const res = await api.voiceRecognize(toBase64(pcm), rate);
+      const res = await api.voiceRecognize(toBase64(toPcm(parts)), ctx.sampleRate);
       setState('idle');
       if (!res.ok) {
         H.toast(res.message || 'הזיהוי לא הצליח', { kind: 'bad' });
@@ -179,7 +201,7 @@
         H.toast('לא הצלחתי להבין את הבקשה. אפשר לנסות שוב.', { icon: 'mic-off' });
         return;
       }
-      if (V.command(res.request)) return;
+      if (V.command(res.request)) { api.emit('voice-partial', { text: '' }); return; }
       api.emit('voice-heard', { text: res.request });
       H.ask(res.request);
     } catch (err) {

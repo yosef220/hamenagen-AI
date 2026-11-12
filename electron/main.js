@@ -324,7 +324,7 @@ const BACKEND_METHODS = new Set([
   'complete_details_async', 'stop_complete_details',
   'vocal_status', 'vocal_review', 'analyze_vocal_async', 'stop_vocal',
   'set_track_speech', 'set_track_disliked', 'station', 'artist_groups', 'set_artist_choice',
-  'voice_status', 'voice_recognize', 'install_voice_async',
+  'voice_status', 'voice_prepare', 'voice_recognize', 'install_voice_async',
 ]);
 
 ipcMain.handle('backend', async (_evt, method, params) => {
