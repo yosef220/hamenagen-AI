@@ -11,10 +11,11 @@
  */
 
 const {
-  app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, screen, shell,
+  app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, screen, shell,
 } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { BackendBridge } = require('./backend_bridge');
 
 const pkg = require('../package.json');
@@ -70,6 +71,7 @@ const bridge = new BackendBridge({
     HAMENAGEN_DATA_DIR: DATA_DIR,
     HAMENAGEN_MODELS_DIR: bundledResource('models'),
     HAMENAGEN_AUDIO_MODELS_DIR: bundledResource('audio-models'),
+    HAMENAGEN_FFMPEG_DIR: bundledResource('ffmpeg'),
     HAMENAGEN_MUSIC_DIR: safePath('music'),
     HAMENAGEN_EDITION: EDITION,
   },
@@ -78,6 +80,71 @@ const bridge = new BackendBridge({
 
 function safePath(name) {
   try { return app.getPath(name); } catch { return ''; }
+}
+
+// --- album covers ------------------------------------------------------------------
+// The core keeps each cover once, by its content, in data/covers/src. The
+// window asks for cover://<key>; the first time, a small copy (320 px JPEG)
+// is made here with nativeImage and the original is dropped, so a library of
+// a thousand albums stays a few MB.
+const COVERS_DIR = path.join(DATA_DIR, 'covers');
+const COVER_SIZE = 320;
+const COVER_KEY = /^[0-9a-f]{12,40}$/;
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'cover', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
+
+function coverSource(key) {
+  const dir = path.join(COVERS_DIR, 'src');
+  for (const ext of ['jpg', 'png', 'jpeg', 'webp', 'gif', 'bmp']) {
+    const file = path.join(dir, `${key}.${ext}`);
+    if (fs.existsSync(file)) return file;
+  }
+  return '';
+}
+
+/** The file to show for a cover: the small copy, made now if needed. */
+function coverFile(key) {
+  const small = path.join(COVERS_DIR, `${key}.jpg`);
+  if (fs.existsSync(small)) return small;
+  const src = coverSource(key);
+  if (!src) return '';
+  if (!/\.(jpe?g|png)$/i.test(src)) return src; // shown as it is (Chromium reads it)
+  try {
+    const img = nativeImage.createFromPath(src);
+    if (img.isEmpty()) return src;
+    const { width, height } = img.getSize();
+    const scale = Math.min(1, COVER_SIZE / Math.max(width, height));
+    const out = scale < 1
+      ? img.resize({ width: Math.round(width * scale), height: Math.round(height * scale), quality: 'good' })
+      : img;
+    const tmp = `${small}.part`;
+    fs.writeFileSync(tmp, out.toJPEG(85));
+    fs.renameSync(tmp, small);
+    fs.unlinkSync(src);
+    return small;
+  } catch {
+    return src;
+  }
+}
+
+let compacting = false;
+/** After a scan or a download: make the small copies of new covers in the
+ * background, a few at a time, so the folder does not keep originals. */
+function compactCovers() {
+  if (compacting) return;
+  let names = [];
+  try { names = fs.readdirSync(path.join(COVERS_DIR, 'src')); } catch { return; }
+  const keys = [...new Set(names.map((n) => n.split('.')[0]).filter((k) => COVER_KEY.test(k)))];
+  if (!keys.length) return;
+  compacting = true;
+  const step = () => {
+    for (let i = 0; i < 8 && keys.length; i += 1) coverFile(keys.shift());
+    if (keys.length) setTimeout(step, 30);
+    else compacting = false;
+  };
+  setTimeout(step, 1500);
 }
 
 // --- one window only ------------------------------------------------------------
@@ -209,6 +276,7 @@ function debounce(fn, ms) {
 
 // Backend events (progress, ready …) go to the window.
 bridge.onEvent((msg) => {
+  if (msg && (msg.event === 'scan_done' || msg.event === 'download_batch_done')) compactCovers();
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('backend:event', msg);
 });
 
@@ -220,7 +288,8 @@ const BACKEND_METHODS = new Set([
   'classifier_status', 'install_model_async', 'reclassify_async',
   'get_settings', 'update_settings',
   'radio_list', 'check_updates', 'apply_update', 'offline_pack_status', 'install_offline_pack',
-  'online_available', 'online_search', 'online_download',
+  'online_available', 'online_search', 'online_download', 'online_link',
+  'download_batch_async', 'stop_downloads', 'lookup_details', 'apply_details',
   'set_track_topic', 'set_track_vocal', 'confirm_vocal',
   'vocal_status', 'vocal_review', 'analyze_vocal_async', 'stop_vocal',
 ]);
@@ -263,6 +332,14 @@ ipcMain.handle('app:openExternal', async (_evt, url) => {
     return { ok: true };
   }
   return { ok: false, error: 'invalid url' };
+});
+
+// A YouTube link the listener copied (in the browser, when the network blocks
+// searching from the app). Only such a link is handed to the window.
+ipcMain.handle('app:clipboardLink', () => {
+  const text = (clipboard.readText() || '').trim();
+  const m = text.match(/https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be)\/[^\s<>"']+/i);
+  return m ? m[0] : '';
 });
 
 ipcMain.handle('app:showItemInFolder', (_evt, filePath) => {
@@ -319,6 +396,13 @@ function ensureDesktopShortcut() {
 
 app.whenReady().then(() => {
   if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
+  protocol.handle('cover', (request) => {
+    let key = '';
+    try { key = new URL(request.url).hostname; } catch { /* bad url */ }
+    const file = COVER_KEY.test(key) ? coverFile(key) : '';
+    if (!file) return new Response(null, { status: 404 });
+    return net.fetch(pathToFileURL(file).toString());
+  });
   bridge.start();
   ensureDesktopShortcut();
   createWindow();

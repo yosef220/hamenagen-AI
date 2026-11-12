@@ -160,8 +160,18 @@ class Updater:
         }
 
     # -- apply actions -----------------------------------------------------
+    # Set by the service: the download engine's own updater (ytdlp_runner),
+    # which puts the newest yt-dlp in the data folder without pip.
+    engine_updater = None
+
     def apply_ytdlp(self) -> dict:
-        """Self-update yt-dlp via pip (spec §11/§14 — must stay current)."""
+        """Self-update yt-dlp (spec §11/§14 — must stay current)."""
+        if self.engine_updater is not None:
+            result = self.engine_updater()
+            if result.get("ok"):
+                version = result.get("version", "")
+                result.setdefault("message", f"מנוע ההורדה מעודכן (גרסה {version})" if version else "מנוע ההורדה מעודכן")
+            return result
         try:  # pragma: no cover - network + environment dependent
             proc = subprocess.run(
                 [sys.executable, "-m", "pip", "install", "-U", "yt-dlp"],

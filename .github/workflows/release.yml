@@ -100,6 +100,24 @@ jobs:
           PYTHONIOENCODING: 'utf-8'
         run: build/win-python/python.exe backend/scripts/prepare_audio_model.py --out build/audio-models
 
+      - name: ffmpeg for MP3 downloads with the cover inside (every edition)
+        shell: pwsh
+        run: |
+          # An LGPL build; only ffmpeg.exe is kept (yt-dlp needs neither ffprobe nor ffplay).
+          $url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip'
+          curl.exe -L --fail --retry 5 --retry-delay 10 -o ffmpeg.zip $url
+          if ($LASTEXITCODE -ne 0 -or (Get-Item ffmpeg.zip).Length -lt 10MB) { throw "ffmpeg could not be downloaded" }
+          7z x ffmpeg.zip -offmpeg_tmp | Out-Null
+          New-Item -ItemType Directory -Force build/ffmpeg | Out-Null
+          $exe = Get-ChildItem -Recurse -Path ffmpeg_tmp -Filter ffmpeg.exe | Select-Object -First 1
+          Copy-Item $exe.FullName build/ffmpeg/ffmpeg.exe
+          $license = Get-ChildItem -Recurse -Path ffmpeg_tmp -Filter 'LICENSE*' | Select-Object -First 1
+          if ($license) { Copy-Item $license.FullName build/ffmpeg/LICENSE.txt }
+          "ffmpeg (LGPL build by BtbN/FFmpeg-Builds): https://github.com/BtbN/FFmpeg-Builds — source: https://ffmpeg.org/download.html" |
+            Set-Content -Encoding utf8 build/ffmpeg/README.txt
+          & build/ffmpeg/ffmpeg.exe -hide_banner -version | Select-Object -First 1
+          "{0:N1} MB" -f ((Get-Item build/ffmpeg/ffmpeg.exe).Length / 1MB)
+
       - name: Stamp the build
         shell: pwsh
         run: |
@@ -162,6 +180,23 @@ jobs:
           # Listen to a 50-second tone: three windows decoded by soundfile and tagged by the model.
           & "$res/python/python.exe" -c "import os, sys, wave, struct, math; sys.path.insert(0, os.environ['HAMENAGEN_BACKEND_DIR']); from hamenagen.vocal import VocalDetector; d = VocalDetector([os.environ['AUDIO_MODELS']]); assert d.available(), d.status(); p = os.path.join(os.environ['RUNNER_TEMP'], 'tone.wav'); w = wave.open(p, 'wb'); w.setnchannels(1); w.setsampwidth(2); w.setframerate(22050); w.writeframes(b''.join(struct.pack('<h', int(8000 * math.sin(2 * math.pi * 440 * i / 22050))) for i in range(22050 * 50))); w.close(); r = d.analyze(p); print('vocal check:', r.verdict, [x.as_list() for x in r.windows], r.error); assert r.verdict in ('instruments', 'maybe', 'vocal') and len(r.windows) == 3"
           if ($LASTEXITCODE -ne 0) { throw "the vocal detector does not work in the package" }
+
+      - name: Check the download engine in the package (yt-dlp process, truststore, ffmpeg)
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+        run: |
+          $res = "dist/win-unpacked/resources"
+          if (-not (Test-Path "$res/ffmpeg/ffmpeg.exe")) { throw "ffmpeg is missing from the package" }
+          $env:PYTHONPATH = (Resolve-Path "$res/backend").Path
+          # The engine process starts, with yt-dlp and the Windows certificate store (no network needed).
+          $ver = & "$res/python/python.exe" -m hamenagen.ytdlp_child --version
+          if ($LASTEXITCODE -ne 0 -or -not $ver) { throw "the yt-dlp process does not start" }
+          "yt-dlp $ver"
+          & "$res/python/python.exe" -c "import truststore, sys; sys.path.insert(0, r'$res/backend'); from hamenagen.fetcher import find_ffmpeg; f = find_ffmpeg(r'$res/ffmpeg'); print('ffmpeg:', f); assert f.endswith('ffmpeg.exe')"
+          if ($LASTEXITCODE -ne 0) { throw "the packaged core cannot find ffmpeg or truststore" }
+          & "$res/ffmpeg/ffmpeg.exe" -hide_banner -version | Select-Object -First 1
 
       - name: Check the bundled model works with no network (offline edition)
         if: matrix.edition == 'offline'

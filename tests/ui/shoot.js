@@ -54,6 +54,8 @@ async function launch(dataDir, theme) {
       HAMENAGEN_DATA_DIR: dataDir,
       HAMENAGEN_TODAY: today,
       HAMENAGEN_QUIET: '1',
+      // YouTube and song details from memory (backend/hamenagen/demo_online.py).
+      HAMENAGEN_DEMO_ONLINE: '1',
     },
   });
   const page = await app.firstWindow();
@@ -120,6 +122,10 @@ async function run() {
 
       await page.evaluate(() => H.go('library'));
       await page.waitForSelector('#view-library .track');
+      // Covers come from the files through cover:// (made small by the main process).
+      await page.waitForFunction(() => Array.from(document.querySelectorAll('#view-library .cover img'))
+        .some((img) => img.complete && img.naturalWidth > 0), null, { timeout: 15000 })
+        .catch(() => errors.push('no album cover was shown in the library'));
       await shot(page, `03-library${suffix}`);
 
       // The song menu: why a song has its topic (a piyut from the song index)…
@@ -172,6 +178,32 @@ async function run() {
       await page.waitForSelector('#view-results .online');
       await page.waitForTimeout(2500);
       await shot(page, `08-not-found${suffix}`);
+
+      // A singer who is not on the computer: YouTube songs and the channel.
+      await page.evaluate(() => H.ask('אלי הרצליך'));
+      await page.waitForSelector('#view-results .channel-card', { timeout: 15000 });
+      const local = await page.$$('#view-results .tracks .track');
+      if (local.length) errors.push(`a singer who is not on the computer brought ${local.length} local songs`);
+      await shot(page, `13-singer-online${suffix}`);
+      await page.locator('#view-results .channel-card button').click();
+      await page.waitForSelector('#view-results .picker .pick');
+      await page.evaluate(() => document.querySelector('#view-results .picker').scrollIntoView({ block: 'start' }));
+      await shot(page, `14-channel-picker${suffix}`);
+
+      // The network blocks searching (NetFree): say so, search in the browser, paste.
+      await page.evaluate(() => H.ask('שיר שהרשת חוסמת'));
+      await page.waitForSelector('#view-results .notice', { timeout: 15000 });
+      await shot(page, `15-netfree${suffix}`);
+
+      // Details and a cover from the web, chosen by the listener.
+      await page.evaluate(() => H.go('library'));
+      await page.waitForSelector('#view-library .track');
+      await page.locator('#view-library .track', { hasText: 'סביבון' }).first().click({ button: 'right' });
+      await page.waitForSelector('#track-menu:not([hidden])');
+      await page.locator('#track-menu .menu-item', { hasText: 'פרטים ותמונה' }).click();
+      await page.waitForSelector('dialog.dialog[open] .cand', { timeout: 15000 });
+      await shot(page, `16-details${suffix}`);
+      await page.evaluate(() => document.querySelector('dialog.dialog').close());
 
       await page.evaluate(() => H.go('downloads'));
       await page.waitForTimeout(300);

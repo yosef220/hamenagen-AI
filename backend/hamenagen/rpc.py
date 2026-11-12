@@ -27,14 +27,33 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from .fetcher import SearchResult
+from . import network
+from .fetcher import SearchResult, clean_video_title
 from .service import PlayerService
 
 # Methods answered on the worker pool rather than inline.
 _SLOW = {
-    "online_search", "online_download", "radio_list", "check_updates", "apply_update",
-    "install_offline_pack", "rescan", "reclassify", "vocal_status",
+    "online_search", "online_download", "online_link", "radio_list", "check_updates", "apply_update",
+    "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
 }
+
+
+def _shown(r: SearchResult, **extra) -> dict:
+    """A result for the interface, with a clean name to show
+    ("אלי הרצליך - המלאך" rather than the whole video title)."""
+    artist, song = clean_video_title(r.title, r.channel or r.uploader)
+    shown = f"{artist} - {song}" if artist and song and artist != (r.channel or r.uploader) else song
+    return dict(r.__dict__, display=shown or r.title, **extra)
+
+
+def _result_from(r: dict) -> SearchResult:
+    """A search result as the interface sends it back."""
+    return SearchResult(
+        source=r.get("source", "youtube"), id=r.get("id", ""), title=r.get("title", ""), url=r.get("url", ""),
+        uploader=r.get("uploader", ""), duration=r.get("duration"), upload_date=r.get("upload_date"),
+        channel=r.get("channel", ""), channel_id=r.get("channel_id", ""), channel_url=r.get("channel_url", ""),
+        thumbnail=r.get("thumbnail", ""),
+    )
 
 
 class RpcServer:
@@ -265,23 +284,47 @@ class RpcServer:
         return {
             "ok": outcome.ok,
             "message": outcome.message,
+            "code": getattr(outcome, "code", ""),
+            "blocked": bool(getattr(outcome, "blocked", False)),
             "available": self.fetcher.available(),
             "search_url": self.fetcher.search_url(query),
-            "results": [r.__dict__ for r in outcome.results],
+            "results": [_shown(r) for r in outcome.results],
             "auto_selected": outcome.result.__dict__ if outcome.result else None,
         }
 
+    def rpc_online_link(self, params):
+        """What a pasted link is (a song, a playlist, a channel) and its songs."""
+        outcome = self.fetcher.link_info(params.get("url", ""), limit=int(params.get("limit", 300)))
+        have = self.service.index.video_ids()
+        return {
+            "ok": outcome.ok, "message": outcome.message, "code": outcome.code, "blocked": outcome.blocked,
+            "kind": outcome.kind, "title": outcome.title, "artist": outcome.artist,
+            "results": [_shown(r, in_library=r.id in have) for r in outcome.results],
+        }
+
+    def rpc_download_batch_async(self, params):
+        """Download several songs one after another; events report each one."""
+        items = [_result_from(r) for r in params.get("items") or [] if r.get("url")]
+        batch_id = params.get("batch_id", "batch")
+
+        def work():
+            return dict(self.service.download_many(
+                items, on_event=lambda e: self._emit("download_batch", {"batch_id": batch_id, **e})), batch_id=batch_id)
+
+        return self._start_job("downloads", work, "download_batch_done")
+
+    def rpc_stop_downloads(self, params):
+        return self.service.stop_downloads()
+
+    def rpc_lookup_details(self, params):
+        return self.service.lookup_details(params.get("id", ""))
+
+    def rpc_apply_details(self, params):
+        return self.service.apply_details(params.get("id", ""), params.get("candidate") or {},
+                                          propagate=params.get("propagate", True) is not False)
+
     def rpc_online_download(self, params):
-        r = params.get("result") or {}
-        result = SearchResult(
-            source=r.get("source", "youtube"),
-            id=r.get("id", ""),
-            title=r.get("title", ""),
-            url=r.get("url", ""),
-            uploader=r.get("uploader", ""),
-            duration=r.get("duration"),
-            upload_date=r.get("upload_date"),
-        )
+        result = _result_from(params.get("result") or {})
         download_id = params.get("download_id", result.id)
 
         def on_progress(info: dict) -> None:
@@ -293,6 +336,8 @@ class RpcServer:
             "message": outcome["message"],
             "path": outcome.get("path"),
             "track": outcome.get("track"),
+            "code": outcome.get("code", ""),
+            "blocked": bool(outcome.get("blocked")),
         }
 
     # -- loop --------------------------------------------------------------
@@ -327,6 +372,9 @@ def main() -> None:
             stream.reconfigure(encoding="utf-8")
         except Exception:
             pass
+    # Verify HTTPS with Windows' certificate store, where a filter that
+    # inspects TLS (NetFree) keeps its root certificate.
+    network.use_system_trust()
     RpcServer().serve()
 
 

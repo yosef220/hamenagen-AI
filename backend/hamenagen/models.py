@@ -31,6 +31,7 @@ class Track:
     topic_note: str = ""            # why the song got its topic, for the listener
     mtime: float | None = None      # file modification time at the last scan
     size: int | None = None         # file size in bytes at the last scan
+    cover: str = ""                 # key of the cover picture in data/covers ("" = none)
 
     @property
     def tag_list(self) -> list[str]:

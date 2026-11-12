@@ -75,6 +75,14 @@ def bundled_audio_models_dir() -> Path | None:
     return None
 
 
+def bundled_ffmpeg_dir() -> Path | None:
+    """ffmpeg shipped inside the app, for MP3 downloads with covers."""
+    env = os.environ.get("HAMENAGEN_FFMPEG_DIR")
+    if env and Path(env).is_dir():
+        return Path(env)
+    return None
+
+
 def default_downloads_dir() -> Path:
     music = os.environ.get("HAMENAGEN_MUSIC_DIR")
     base = Path(music) if music else Path.home() / "Music"

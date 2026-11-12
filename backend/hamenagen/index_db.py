@@ -73,6 +73,20 @@ CREATE TABLE IF NOT EXISTS audio_analysis (
     size        INTEGER,
     analyzed_at TEXT
 );
+-- Details the listener chose from the web for a song (title, artist, album,
+-- year, cover). Kept apart from the file's own tags, which are never changed,
+-- and laid over them on every scan.
+CREATE TABLE IF NOT EXISTS details (
+    track_id   TEXT PRIMARY KEY,
+    title      TEXT,
+    artist     TEXT,
+    album      TEXT,
+    year       TEXT,
+    cover      TEXT,
+    source     TEXT,
+    source_url TEXT,
+    updated_at TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_tracks_topic         ON tracks(topic);
 CREATE INDEX IF NOT EXISTS idx_tracks_download_date ON tracks(download_date);
 CREATE INDEX IF NOT EXISTS idx_tracks_release_date  ON tracks(release_date);
@@ -86,12 +100,13 @@ _MIGRATIONS = {
     "mtime": "REAL",
     "size": "INTEGER",
     "topic_note": "TEXT DEFAULT ''",
+    "cover": "TEXT DEFAULT ''",
 }
 
 _COLUMNS = [
     "id", "path", "title", "artist", "album", "filename", "duration",
     "is_video", "source", "topic", "topic_source", "download_date",
-    "release_date", "added_at", "tags", "mtime", "size", "topic_note",
+    "release_date", "added_at", "tags", "mtime", "size", "topic_note", "cover",
 ]
 
 # Sort keys the library table may ask for → SQL ORDER BY expressions. Empty
@@ -218,6 +233,49 @@ class MusicIndex:
             self._conn.execute(f"UPDATE tracks SET {', '.join(sets)} WHERE id=?", (*params, track_id))
             if commit:
                 self._conn.commit()
+
+    # -- details chosen from the web ----------------------------------------------
+    def details(self) -> dict[str, dict]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM details").fetchall()
+        return {r["track_id"]: dict(r) for r in rows}
+
+    def set_details(self, track_id: str, values: dict, *, commit: bool = True) -> None:
+        keys = ("title", "artist", "album", "year", "cover", "source", "source_url")
+        row = {k: (values.get(k) or "") for k in keys}
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO details (track_id, title, artist, album, year, cover, source, source_url, updated_at) "
+                "VALUES (:track_id, :title, :artist, :album, :year, :cover, :source, :source_url, :updated_at) "
+                "ON CONFLICT(track_id) DO UPDATE SET title=excluded.title, artist=excluded.artist, "
+                "album=excluded.album, year=excluded.year, cover=excluded.cover, source=excluded.source, "
+                "source_url=excluded.source_url, updated_at=excluded.updated_at",
+                {"track_id": track_id, **row, "updated_at": datetime.now().isoformat(timespec="seconds")},
+            )
+            if commit:
+                self._conn.commit()
+
+    def set_cover(self, track_id: str, cover: str, *, commit: bool = True) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE tracks SET cover=? WHERE id=?", (cover, track_id))
+            if commit:
+                self._conn.commit()
+
+    def tracks_in_folder(self, folder: str) -> list[Track]:
+        """Songs whose file sits directly in ``folder``."""
+        prefix = folder.rstrip("/\\")
+        rows = self._query("SELECT * FROM tracks WHERE path LIKE ? ESCAPE '!'",
+                           (prefix.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%",))
+        return [t for t in rows if str(Path(t.path).parent) == prefix]
+
+    def video_ids(self) -> set[str]:
+        """YouTube ids of songs downloaded into the library ("… [id].mp3")."""
+        import re
+
+        pattern = re.compile(r"\[([A-Za-z0-9_-]{11})\]\.[A-Za-z0-9]+$")
+        with self._lock:
+            rows = self._conn.execute("SELECT path FROM tracks").fetchall()
+        return {m.group(1) for r in rows if (m := pattern.search(r["path"] or ""))}
 
     # -- the listener's own decisions -------------------------------------------
     def overrides(self) -> dict[str, dict]:

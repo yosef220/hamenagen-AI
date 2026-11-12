@@ -12,7 +12,14 @@ mutagen>=1.47
 rapidfuzz>=3.6
 
 # Online source plugin (YouTube). Must be kept up to date (spec §11, §14).
+# Runs as its own process (ytdlp_runner); a newer copy can be put in the data
+# folder by the app itself.
 yt-dlp>=2024.1.0
+
+# Verify HTTPS with Windows' certificate store, where a filter that inspects
+# TLS (NetFree) keeps its root certificate — so downloads, updates and song
+# details work behind it with the check still on.
+truststore>=0.10
 
 # Local topic-embedding model (spec §8.2 layer 3): multilingual-e5-small run
 # with ONNX Runtime — no PyTorch. The offline edition ships the model; other
