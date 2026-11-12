@@ -22,16 +22,18 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$plan = Get-Content -LiteralPath $Plan -Raw -Encoding UTF8 | ConvertFrom-Json
-$log = Join-Path $plan.work 'apply.log'
+# Not "$plan": PowerShell names ignore case, so that would be the [string]
+# parameter -Plan, and the object would turn back into text.
+$job = Get-Content -LiteralPath $Plan -Raw -Encoding UTF8 | ConvertFrom-Json
+$log = Join-Path $job.work 'apply.log'
 
 function Log([string]$text) {
   try { Add-Content -LiteralPath $log -Value ("{0:s} {1}" -f (Get-Date), $text) -Encoding UTF8 } catch { }
 }
 
 function Write-Result([bool]$ok, [string]$errorText) {
-  $result = @{ ok = $ok; version = $plan.version; error = $errorText; at = (Get-Date).ToString('s') }
-  [IO.File]::WriteAllText($plan.result, ($result | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))
+  $result = @{ ok = $ok; version = $job.version; error = $errorText; at = (Get-Date).ToString('s') }
+  [IO.File]::WriteAllText($job.result, ($result | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))
 }
 
 function Move-WithRetry([string]$from, [string]$to) {
@@ -46,12 +48,12 @@ function Move-WithRetry([string]$from, [string]$to) {
   throw "cannot move $from"
 }
 
-Log "update to $($plan.version): waiting for the player to close"
+Log "update to $($job.version): waiting for the player to close"
 if ($WaitPid -gt 0) {
   try { Wait-Process -Id $WaitPid -Timeout 90 -ErrorAction SilentlyContinue } catch { }
 }
 # Anything still running from the program's folder (the core, ffmpeg, yt-dlp).
-$root = [IO.Path]::GetFullPath($plan.root).TrimEnd('\') + '\'
+$root = [IO.Path]::GetFullPath($job.root).TrimEnd('\') + '\'
 $deadline = (Get-Date).AddSeconds(90)
 while ((Get-Date) -lt $deadline) {
   $busy = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
@@ -60,7 +62,7 @@ while ((Get-Date) -lt $deadline) {
   Start-Sleep -Milliseconds 500
 }
 
-$backup = Join-Path $plan.work 'backup'
+$backup = Join-Path $job.work 'backup'
 if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force -Path $backup | Out-Null
 $done = New-Object System.Collections.ArrayList   # @(target, backup or $null) in the order done
@@ -69,8 +71,8 @@ $ok = $false
 $message = ''
 
 try {
-  foreach ($part in $plan.parts) {
-    $base = if ($part.kind -eq 'root') { $plan.root } else { $plan.resources }
+  foreach ($part in $job.parts) {
+    $base = if ($part.kind -eq 'root') { $job.root } else { $job.resources }
     Log "part $($part.name)"
     foreach ($entry in @($part.old)) {
       $target = Join-Path $base $entry
@@ -97,7 +99,7 @@ try {
       if ($FailAfter -ge 0 -and $moves -ge $FailAfter) { throw "failing on purpose (test)" }
     }
   }
-  Copy-Item -LiteralPath $plan.parts_json -Destination (Join-Path $plan.resources 'parts.json') -Force
+  Copy-Item -LiteralPath $job.parts_json -Destination (Join-Path $job.resources 'parts.json') -Force
   $ok = $true
   Log "done"
 } catch {
@@ -126,7 +128,7 @@ if ($ok) {
       $item = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue
       if ($item -and $item.InstallLocation -and
           ([IO.Path]::GetFullPath($item.InstallLocation).TrimEnd('\') + '\') -ieq $root) {
-        Set-ItemProperty -LiteralPath $_.PSPath -Name DisplayVersion -Value $plan.version
+        Set-ItemProperty -LiteralPath $_.PSPath -Name DisplayVersion -Value $job.version
       }
     }
   } catch { }
