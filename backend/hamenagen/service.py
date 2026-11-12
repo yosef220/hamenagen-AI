@@ -29,6 +29,7 @@ from .fetcher import OnlineFetcher, ProgressHook, SearchResult, find_ffmpeg
 from .fuzzy import MatchCandidate, near_matches, search as fuzzy_search
 from .hebrew_calendar import VOCAL_TOPIC, detect_occasion, from_gregorian, today_info
 from .zmanim import ZmanimService
+from .smart_update import SmartUpdater
 from . import sets as sets_mod
 from .index_db import AVERAGE_SONG_SECONDS, MusicIndex, encode_tags
 from .intent import Action, Intent
@@ -111,6 +112,9 @@ class PlayerService:
             cache_path=self.data_dir / "radio_cache.json",
         )
         self.updater = Updater(self.settings.update_manifest_url, self.data_dir, edition=self.edition)
+        # Updates that download only the parts of the app that changed.
+        self.smart = SmartUpdater(self.data_dir)
+        self._release: dict | None = None
         self.updater.engine_updater = self.runner.update_engine
         # Listening for a cappella songs: the model ships in every edition;
         # a dev run can put it in data/models (prepare_audio_model.py).
@@ -120,6 +124,7 @@ class PlayerService:
         self.zmanim = ZmanimService(self.data_dir / "zmanim.json", sources=[] if offline else None)
         self._configure_zmanim()
         self.vocal_running = False
+        self.details_stop = False
         self.vocal_stop = False
         self.scanning = False
         # First-run offline install: pick up any *.pack sitting next to the app.
@@ -711,6 +716,55 @@ class PlayerService:
         return {"ok": True}
 
     # -- details and covers from the web (asked for, one song at a time) ---------
+    def complete_details(self, on_progress=None, *, pause: float = 4.0, fetch=None) -> dict:
+        """Details and a cover for every song that lacks a cover or a singer,
+        from the web, filled in only for a sure match (metadata.sure_match);
+        the rest waits for "פרטים ותמונה מהרשת" in the song's menu. Never
+        changes the files. Slow on purpose: the service allows about twenty
+        requests a minute. A song looked up once is not looked up again."""
+        import time as _time
+
+        self.details_stop = False
+        tried = self.index.details()
+        todo = [t for t in self.index.all_tracks()
+                if not t.is_video and not t.dup_of and (not t.cover or not t.artist) and t.id not in tried
+                and t.duration]
+        found = done = 0
+        error = ""
+        for t in todo:
+            if self.details_stop:
+                break
+            title = t.title if not is_placeholder_title(t.title) else Path(t.filename).stem
+            if os.environ.get("HAMENAGEN_DEMO_ONLINE") and fetch is None:
+                from .demo_online import demo_details
+
+                candidates, error = demo_details(title), ""
+            else:
+                kwargs = {"fetch": fetch} if fetch else {}
+                candidates, error = metadata_mod.search(title, t.artist, t.duration, **kwargs)
+            if error in ("blocked", "network"):
+                break
+            error = ""
+            sure = next((c for c in candidates if metadata_mod.sure_match(c, title, t.artist, t.duration)), None)
+            if sure is not None:
+                self.apply_details(t.id, sure.to_dict(), propagate=True)
+                found += 1
+            else:
+                self.index.set_details(t.id, {"source": "looked-up"})   # remember: nothing sure
+            done += 1
+            if on_progress:
+                on_progress({"done": done, "total": len(todo), "found": found})
+            if pause:
+                _time.sleep(pause)
+        message = {"blocked": "החיפוש חסום ברשת הזו (נטפרי או סינון דומה).",
+                   "network": "אין כרגע חיבור לרשת."}.get(error, "")
+        return {"ok": not error, "done": done, "found": found, "total": len(todo),
+                "stopped": self.details_stop, "message": message}
+
+    def stop_complete_details(self) -> dict:
+        self.details_stop = True
+        return {"ok": True}
+
     def lookup_details(self, track_id: str) -> dict:
         track = self.index.get(track_id)
         if track is None:
@@ -1275,7 +1329,29 @@ class PlayerService:
     def check_updates(self, *, manual: bool = False) -> dict:
         if not manual and not self.settings.auto_update:
             return {"online": False, "reason": "auto-update disabled", "updates": [], "app": None}
-        return self.updater.check()
+        result = self.updater.check()
+        app = result.get("app")
+        if app:
+            self._release = dict(app)
+            app["smart"] = self.smart.plan(self._release)
+            app.pop("parts", None)   # long; the interface needs only the plan
+        return result
+
+    def app_update_download(self, on_progress=None) -> dict:
+        """Download the changed parts of the newest release (after a check)."""
+        if not self._release:
+            self.check_updates(manual=True)
+        if not self._release:
+            return {"ok": False, "message": "אין כרגע חיבור לבדיקת עדכונים."}
+        return self.smart.download(dict(self._release), on_progress)
+
+    def app_update_cancel(self) -> dict:
+        self.smart.cancel.set()
+        return {"ok": True}
+
+    def app_update_result(self) -> dict:
+        """What the last smart update did, once, after the app came back."""
+        return {"result": self.smart.result()}
 
     def apply_update(self, component: str, *, url: str | None = None, version: str = "") -> dict:
         result = self.updater.apply(component, url=url, version=version)

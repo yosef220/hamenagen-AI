@@ -141,6 +141,8 @@ class Updater:
             "page": entry.get("page") or url,
             "notes": entry.get("notes", ""),
             "published": entry.get("published", ""),
+            # The parts of this edition, for the smart update (smart_update.py).
+            "parts": (entry.get("parts") or {}).get(self.edition),
         }
 
     def check(self) -> dict:

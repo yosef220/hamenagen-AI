@@ -48,11 +48,14 @@ if ($pth) {
 # Bootstrap pip.
 $getpip = Join-Path $OutDir "get-pip.py"
 Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $getpip
-& "$OutDir/python.exe" $getpip --no-warn-script-location
+# A fixed pip, so the embedded Python is the same in every build.
+& "$OutDir/python.exe" $getpip --no-warn-script-location --no-setuptools --no-wheel "pip==26.2.2"
 
 # Install the core's libraries (the AI model itself is fetched separately:
 # backend/scripts/prepare_model.py, for the offline edition).
-& "$OutDir/python.exe" -m pip install --no-warn-script-location --no-compile -r requirements.txt
+# Exact versions (requirements-lock.txt): the same files in every build, so the
+# smart update sends this part only when a version really changed.
+& "$OutDir/python.exe" -m pip install --no-warn-script-location --no-compile --no-deps -r requirements-lock.txt
 if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 
 # Trim what the app never uses at runtime: pip itself stays (yt-dlp updates

@@ -12,6 +12,16 @@
 
   async function show(params = {}) {
     lastParams = params;
+    if (params.link) {
+      const holder = h('div', { class: 'link-result' });
+      H.clear(root).append(
+        h('header', { class: 'results-head' },
+          h('div', { class: 'results-kicker' }, 'מהחיפוש בגוגל'),
+          h('h1', { class: 'results-title' }, 'קישור מיוטיוב')),
+        h('section', { class: 'online' }, holder));
+      openLink(params.link, holder);
+      return;
+    }
     H.clear(root).appendChild(h('div', { class: 'results-head' },
       h('div', { class: 'results-kicker' }, icon('loader-circle', 'icon-sm spin'), 'מחפש…')));
     let res;
@@ -137,7 +147,25 @@
   }
 
   // ------------------------------------------------------------ YouTube
-  const searchUrl = (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+  // Searching where the network blocks the app from searching YouTube: Google,
+  // with "יוטיוב" added, in a window inside the player; a click on a YouTube
+  // result comes back here as a link (electron/main.js).
+  let linkHolder = null;
+  H.searchWeb = function searchWeb(query, holder) {
+    linkHolder = holder || null;
+    api.searchWeb(query);
+  };
+  api.on('search-link', ({ url }) => {
+    if (linkHolder && linkHolder.isConnected) {
+      openLink(url, linkHolder);
+      linkHolder.scrollIntoView({ block: 'nearest' });
+    } else {
+      H.go('results', { link: url });
+    }
+  });
+  const searchButton = (query, holder, primary) => h('button', {
+    class: `btn ${primary ? 'btn-primary btn-sm' : 'btn-quiet'}`, type: 'button', onclick: () => H.searchWeb(query, holder),
+  }, icon('search', primary ? 'icon-sm' : ''), `לחפש „${query}” בגוגל`);
   const LONG = 15 * 60; // a show or a medley evening, not a song
   const SHORT = 60;     // a teaser
 
@@ -314,9 +342,8 @@
         status.replaceChildren(h('div', { class: 'notice' }, icon('shield-alert'),
           h('div', {},
             h('strong', {}, 'החיפוש ביוטיוב חסום ברשת שלך (נטפרי או סינון דומה).'),
-            h('p', {}, 'אפשר לחפש בדפדפן, להעתיק קישור לשיר, לפלייליסט או לערוץ ולהדביק אותו כאן.'),
-            h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: () => api.openExternal(r.search_url) },
-              icon('external-link', 'icon-sm'), `לחפש „${(r.queries || [])[0] || o.label}” בדפדפן`))));
+            h('p', {}, 'אפשר לחפש בגוגל כאן בתוך המנגן וללחוץ על התוצאה מיוטיוב, או להדביק קישור לשיר, לפלייליסט או לערוץ.'),
+            searchButton((r.queries || [])[0] || o.label, linkResult, true))));
         paste.classList.add('prominent');
         return;
       }
@@ -343,8 +370,7 @@
     const status = h('p', { class: 'muted' }, icon('loader-circle', 'icon-sm spin'), 'מחפש ביוטיוב…');
     const channelSlot = h('div', {});
     const linkResult = h('div', { class: 'link-result' });
-    const browserBtn = h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => api.openExternal(searchUrl(query)) },
-      icon('external-link'), 'לחפש בדפדפן');
+    const browserBtn = searchButton(query, linkResult, false);
     const paste = pasteBox(linkResult);
     const panel = h('section', { class: 'online', 'aria-label': 'יוטיוב' },
       h('div', { class: 'online-head' }, icon('search'), h('h3', {}, `ביוטיוב: ${query}`)),
@@ -352,7 +378,7 @@
 
     api.onlineSearch(query, 8).then((r) => {
       if (!r.available) {
-        status.replaceChildren('רכיב ההורדה לא מותקן בגרסה הזו, אז אפשר רק לחפש בדפדפן.');
+        status.replaceChildren('רכיב ההורדה לא מותקן בגרסה הזו, אז אפשר רק לחפש בגוגל.');
         return;
       }
       if (r.blocked || r.code === 'netfree') {
@@ -361,9 +387,8 @@
         status.replaceChildren(h('div', { class: 'notice' }, icon('shield-alert'),
           h('div', {},
             h('strong', {}, 'החיפוש ביוטיוב חסום ברשת שלך (נטפרי או סינון דומה).'),
-            h('p', {}, 'זו הגדרה של הרשת, והמנגן לא עוקף אותה. אפשר לחפש בדפדפן, להעתיק את הקישור לשיר או לערוץ ולהדביק אותו כאן. ההורדה עצמה עובדת לשירים שהרשת מתירה.'),
-            h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: () => api.openExternal(r.search_url || searchUrl(query)) },
-              icon('external-link', 'icon-sm'), `לחפש „${query}” בדפדפן`))));
+            h('p', {}, 'זו הגדרה של הרשת, והמנגן לא עוקף אותה. אפשר לחפש בגוגל כאן בתוך המנגן וללחוץ על התוצאה מיוטיוב, או להדביק קישור לשיר או לערוץ. ההורדה עצמה עובדת לשירים שהרשת מתירה.'),
+            searchButton(query, linkResult, true))));
         paste.classList.add('prominent');
         return;
       }

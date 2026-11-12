@@ -156,6 +156,24 @@ def search(title: str, artist: str = "", duration: float | None = None, *, limit
     return found[:limit], error if not found else ""
 
 
+def sure_match(candidate: Candidate, title: str, artist: str = "", duration: float | None = None) -> bool:
+    """A match good enough to fill in without asking: the same name, the same
+    singer (when the song names one, in the same script) and a length within
+    three seconds. Anything less waits for the listener's choice."""
+    from .text_normalize import normalize
+
+    if not duration or not candidate.duration or abs(candidate.duration - duration) > 3:
+        return False
+    if normalize(candidate.title) != normalize(title) and _similar(candidate.title, title) < 0.95:
+        return False
+    if artist:
+        if has_hebrew(artist) != has_hebrew(candidate.artist):
+            return False
+        if normalize(candidate.artist) != normalize(artist) and _similar(candidate.artist, artist) < 0.85:
+            return False
+    return True
+
+
 def fetch_image(url: str, timeout: float = 15) -> bytes | None:
     """Download a cover picture (JPEG or PNG), or None."""
     if not url or not url.startswith("https://"):

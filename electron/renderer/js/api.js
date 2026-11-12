@@ -18,12 +18,13 @@
     'offlinePackStatus', 'installOfflinePack', 'onlineAvailable', 'onlineSearch', 'onlineDownload',
     'setTrackTopic', 'setTrackVocal', 'confirmVocal', 'vocalStatus', 'vocalReview', 'analyzeVocal', 'stopVocal',
     'onlineLink', 'downloadBatch', 'stopDownloads', 'lookupDetails', 'applyDetails',
+    'appUpdateDownload', 'appUpdateCancel', 'appUpdateResult', 'completeDetails', 'stopCompleteDetails',
     'shabbatStatus', 'playlists', 'playlistGet', 'playlistCreate', 'playlistRename', 'playlistDelete',
     'playlistAdd', 'playlistSetOrder', 'trackCopies', 'onlineSet', 'listenPrepare',
   ];
   const SHELL = [
     'shellInfo', 'setTheme', 'openExternal', 'showInFolder', 'openFolder', 'chooseFolder', 'playerState',
-    'clipboardLink',
+    'clipboardLink', 'searchWeb', 'applyAppUpdate',
   ];
 
   const api = {};
@@ -52,6 +53,7 @@
   bridge.onBackendEvent((msg) => api.emit(msg.event, msg));
   bridge.onThemeChange((msg) => api.emit('theme', msg));
   bridge.onPlayerCommand((cmd) => api.emit('player-command', cmd));
+  bridge.onSearchLink((msg) => api.emit('search-link', msg));
 
   H.api = api;
 })();

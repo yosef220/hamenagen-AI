@@ -1,14 +1,20 @@
 'use strict';
 
 /**
- * electron-builder configuration for the three Windows editions. Pick one
- * with HAMENAGEN_EDITION (default "portable"):
+ * electron-builder configuration for the four Windows editions. Pick one
+ * with HAMENAGEN_EDITION (default "portable"). Every edition is one file:
  *
- *   portable — Hamenagen-<v>-Windows.zip          unzip and run; the AI model
- *                                                 downloads once on first run
- *   offline  — Hamenagen-<v>-Windows-Offline.zip  the same, with the AI model
- *                                                 inside (build/models)
- *   setup    — Hamenagen-<v>-Setup.exe            a per-user installer
+ *   portable      — Hamenagen-<v>-Portable.exe         opens itself once into a
+ *                   folder you pick and runs from there; the AI model downloads
+ *                   once on first run (scripts/portable.nsi, from win-unpacked)
+ *   offline       — Hamenagen-<v>-Portable-Offline.exe the same, with the AI
+ *                   model inside (build/models)
+ *   setup         — Hamenagen-<v>-Setup.exe            a per-user installer
+ *   setup-offline — Hamenagen-<v>-Setup-Offline.exe    the installer, with the
+ *                   AI model inside
+ *
+ * After packaging, scripts/parts.js writes resources/parts.json — the parts of
+ * the app and their fingerprints, for the smart update.
  *
  * Every edition carries the small vocal-detection model (build/audio-models,
  * 6 MB, from backend/scripts/prepare_audio_model.py) and ffmpeg.exe
@@ -22,7 +28,7 @@
 const fs = require('fs');
 
 const edition = process.env.HAMENAGEN_EDITION || 'portable';
-if (!['portable', 'offline', 'setup'].includes(edition)) {
+if (!['portable', 'offline', 'setup', 'setup-offline'].includes(edition)) {
   throw new Error(`unknown edition: ${edition}`);
 }
 
@@ -55,6 +61,8 @@ const config = {
     { from: 'build/win-python', to: 'python', filter: ['**/*'] },
   ],
   asar: true,
+  // resources/parts.json, for the smart update.
+  afterPack: './scripts/parts.js',
   electronFuses: {
     runAsNode: false,
     enableCookieEncryption: true,
@@ -87,12 +95,19 @@ if (fs.existsSync('build/audio-models')) {
 if (fs.existsSync('build/ffmpeg')) {
   config.extraResources.push({ from: 'build/ffmpeg', to: 'ffmpeg', filter: ['**/*'] });
 }
-if (edition === 'offline') {
+const withModel = edition === 'offline' || edition === 'setup-offline';
+if (withModel) {
   config.extraResources.push({ from: 'build/models', to: 'models', filter: ['**/*'] });
-  config.win.artifactName = 'Hamenagen-${version}-Windows-Offline.${ext}';
 }
-if (edition === 'setup') {
+if (edition === 'portable' || edition === 'offline') {
+  // Only the folder; scripts/portable.nsi makes the one-file EXE from it.
+  config.win.target = ['dir'];
+}
+if (edition === 'setup' || edition === 'setup-offline') {
   config.win.target = ['nsis'];
+}
+if (edition === 'setup-offline') {
+  config.nsis.artifactName = 'Hamenagen-${version}-Setup-Offline.${ext}';
 }
 
 module.exports = config;

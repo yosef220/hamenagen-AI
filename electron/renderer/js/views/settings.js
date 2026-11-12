@@ -239,11 +239,50 @@
         } }, icon('eye', 'icon-sm'), 'להציג')));
   }
 
+  // Details and covers for the whole library, filled in only for a sure match.
+  let detailsRunning = false;
+  let detailsLine = null;
+  function detailsRow() {
+    detailsLine = h('div', { class: 'set-help' }, detailsRunning ? 'מחפש פרטים…' : '');
+    const button = h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: async () => {
+      if (detailsRunning) {
+        await api.stopCompleteDetails().catch(() => {});
+        detailsLine.textContent = 'נעצר אחרי השיר הנוכחי.';
+        return;
+      }
+      const r = await api.completeDetails().catch((err) => ({ started: false, reason: err.message }));
+      if (r.started) {
+        detailsRunning = true;
+        button.textContent = 'לעצור';
+        detailsLine.textContent = 'מחפש פרטים ותמונות ברשת…';
+      } else {
+        detailsLine.textContent = r.reason === 'already running' ? 'כבר מחפש.' : `לא התחיל: ${r.reason || ''}`;
+      }
+    } }, icon('image', 'icon-sm'), detailsRunning ? 'לעצור' : 'להשלים');
+    return row('פרטים ותמונות לכל הספרייה',
+      'לשירים בלי תמונה או בלי זמר: המנגן מחפש ברשת, וממלא רק כשההתאמה ודאית — אותו שם, אותו זמר ואותו אורך. השאר נשאר לבחירה מהתפריט של השיר („פרטים ותמונה מהרשת”). הקבצים עצמם לא משתנים. איטי בכוונה, ברקע.',
+      button, { wide: detailsLine });
+  }
+  api.on('details_progress', (p) => {
+    detailsRunning = true;
+    if (detailsLine) detailsLine.textContent = `עבר על ${H.n(p.done)} מתוך ${H.n(p.total)} שירים · נמצאו פרטים ל-${H.n(p.found)}`;
+  });
+  api.on('details_done', (r) => {
+    detailsRunning = false;
+    const text = r && r.message ? r.message
+      : r && r.total === 0 ? 'אין שירים שחסרים להם פרטים (או שכבר חיפשתי אותם).'
+        : `הסתיים: נמצאו פרטים ותמונה ל-${H.n((r && r.found) || 0)} מתוך ${H.n((r && r.done) || 0)} שירים.`;
+    if (detailsLine) detailsLine.textContent = text;
+    H.toast(text, { icon: 'image' });
+    if (!root.hidden) render({ focus: 'online' });
+  });
+
   function online(info) {
     const folder = (info && info.downloads_dir) || '';
     return h('section', { class: 'set-group', id: 'set-online' },
       h('h2', {}, 'השלמה מהרשת'),
       toggle('autoplay_after_download', 'לנגן שיר מיד כשההורדה מסתיימת', null),
+      detailsRow(),
       row('תיקיית ההורדות', folder || '—',
         h('div', { style: { display: 'flex', gap: '8px' } },
           h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => api.openFolder(folder) }, icon('folder-open', 'icon-sm'), 'לפתוח'),
@@ -266,8 +305,12 @@
           result.textContent = 'לא ניתן לבדוק עכשיו — אין חיבור לרשת.';
         } else {
           if (r.app && r.app.newer) {
+            const smart = r.app.smart || {};
             result.append(h('div', {}, `גרסה ${r.app.latest} זמינה (מותקנת ${r.app.current}). `,
-              h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => api.openExternal(r.app.url) }, 'להורדה')));
+              smart.possible
+                ? h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: () => H.startAppUpdate(r.app) },
+                  `לעדכן עכשיו (${smart.download_text})`)
+                : h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => api.openExternal(r.app.url) }, 'להורדה')));
           } else {
             result.append(h('div', {}, `המנגן מעודכן (גרסה ${info ? info.version : ''}).`));
           }
@@ -295,7 +338,7 @@
 
     return h('section', { class: 'set-group', id: 'set-updates' },
       h('h2', {}, 'עדכונים'),
-      toggle('auto_update', 'לבדוק עדכונים בכל הפעלה', 'רק בדיקה: התוכנה לא מתעדכנת לבד בלי לשאול.'),
+      toggle('auto_update', 'לבדוק עדכונים בכל הפעלה', 'רק בדיקה: התוכנה לא מתעדכנת לבד בלי לשאול. כשמעדכנים, יורדים רק החלקים שהשתנו — בדרך כלל כמה מגה-בייט, והמודל לא יורד שוב.'),
       row('בדיקה ידנית', null, check, { wide: result }),
       row('חבילת אופליין', 'למחשב בלי אינטרנט: מניחים קובץ ‎.pack ליד התוכנה והיא מתקינה ממנו.', packBtn));
   }

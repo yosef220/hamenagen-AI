@@ -332,6 +332,34 @@ class RpcServer:
         """Make a YouTube song ready to play without saving it."""
         return self.service.listen_prepare(_result_from(params.get("result") or {}))
 
+    # -- details for the whole library -------------------------------------------
+    def rpc_complete_details_async(self, params):
+        """Fill in details and covers where the match is sure, in the background.
+        Emits ``details_progress`` and ``details_done``."""
+        def work():
+            return self.service.complete_details(on_progress=lambda p: self._emit("details_progress", p))
+
+        return self._start_job("details", work, "details_done")
+
+    def rpc_stop_complete_details(self, params):
+        return self.service.stop_complete_details()
+
+    # -- the smart update ------------------------------------------------------
+    def rpc_app_update_download_async(self, params):
+        """Download the changed parts of the new version in the background.
+        Emits ``app_update_progress`` and ``app_update_done``."""
+        def work():
+            return self.service.app_update_download(
+                on_progress=lambda p: self._emit("app_update_progress", p))
+
+        return self._start_job("app_update", work, "app_update_done")
+
+    def rpc_app_update_cancel(self, params):
+        return self.service.app_update_cancel()
+
+    def rpc_app_update_result(self, params):
+        return self.service.app_update_result()
+
     def rpc_online_link(self, params):
         """What a pasted link is (a song, a playlist, a channel) and its songs."""
         outcome = self.fetcher.link_info(params.get("url", ""), limit=int(params.get("limit", 300)))
