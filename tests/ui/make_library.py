@@ -7,8 +7,11 @@ classify and play. Usage: python make_library.py <folder>
 
 from __future__ import annotations
 
+import math
+import struct
 import sys
 import wave
+import zlib
 from pathlib import Path
 
 SONGS = [
@@ -41,13 +44,68 @@ def write_wav(path: Path, seconds: int) -> None:
         w.writeframes(b"\x80" * (RATE * seconds))  # 8-bit silence
 
 
+# Album covers for some performers (the others keep the letter), drawn here
+# so the harness needs no image library: a record on a coloured sleeve.
+COVERS = {
+    "מקהלת שירת הים": ((29, 91, 159), (169, 122, 31)),
+    "קול ברמה": ((22, 54, 95), (216, 178, 94)),
+    "אברהם ויוסף": ((120, 52, 44), (243, 214, 160)),
+    "אחים כהן": ((47, 122, 79), (233, 238, 246)),
+    "להקת הנרות": ((154, 106, 0), (255, 244, 214)),
+    "תזמורת ניגון": ((74, 88, 112), (227, 237, 248)),
+    "שמוליק סוכות": ((90, 46, 120), (240, 220, 250)),
+}
+
+
+def png(width: int, height: int, pixel) -> bytes:
+    rows = b"".join(b"\x00" + bytes(c for x in range(width) for c in pixel(x, y)) for y in range(height))
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b""))
+
+
+def cover(sleeve: tuple, accent: tuple, size: int = 160) -> bytes:
+    c = size / 2
+
+    def pixel(x, y):
+        d = math.hypot(x - c * 1.18, y - c * 0.95)
+        if d < size * 0.06:
+            return accent
+        if d < size * 0.42:
+            ring = int(d / 3) % 2
+            return tuple(int(v * (0.16 if ring else 0.24)) for v in (255, 255, 255))
+        band = (x + y) // 18 % 2
+        return tuple(min(255, int(v * (1.0 if band else 0.86))) for v in sleeve)
+
+    return png(size, size, pixel)
+
+
+def embed_cover(path: Path, picture: bytes) -> None:
+    try:
+        from mutagen.id3 import APIC  # type: ignore
+        from mutagen.wave import WAVE  # type: ignore
+    except Exception:
+        return  # no mutagen: songs without covers
+    audio = WAVE(path)
+    if audio.tags is None:
+        audio.add_tags()
+    audio.tags.add(APIC(encoding=3, mime="image/png", type=3, desc="", data=picture))
+    audio.save()
+
+
 def main(folder: str) -> int:
     out = Path(folder)
     out.mkdir(parents=True, exist_ok=True)
+    pictures = {name: cover(*colors) for name, colors in COVERS.items()}
     for performer, title, seconds in SONGS:
         target = out / f"{performer} - {title}.wav"
         if not target.exists():
             write_wav(target, seconds)
+            if performer in pictures:
+                embed_cover(target, pictures[performer])
     print(f"{len(SONGS)} songs in {out}")
     return 0
 

@@ -84,7 +84,8 @@ const ICONS = [
   'music-2', 'calendar-days', 'wifi-off', 'circle-play', 'mic-vocal', 'arrow-down-up', 'arrow-down',
   'arrow-up', 'plus', 'list-ordered', 'signal', 'hard-drive-download', 'package', 'circle-check',
   'circle-alert', 'keyboard', 'sliders-horizontal', 'ellipsis', 'list-plus', 'list-start', 'tag', 'ear',
-  'book-open', 'check-check', 'undo-2',
+  'book-open', 'check-check', 'undo-2', 'image', 'link', 'clipboard-paste', 'tv', 'list-checks',
+  'shield-alert', 'circle-stop',
 ];
 const symbols = [];
 for (const name of ICONS) {

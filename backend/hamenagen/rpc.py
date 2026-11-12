@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from . import network
-from .fetcher import SearchResult
+from .fetcher import SearchResult, clean_video_title
 from .service import PlayerService
 
 # Methods answered on the worker pool rather than inline.
@@ -36,6 +36,14 @@ _SLOW = {
     "online_search", "online_download", "online_link", "radio_list", "check_updates", "apply_update",
     "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
 }
+
+
+def _shown(r: SearchResult, **extra) -> dict:
+    """A result for the interface, with a clean name to show
+    ("אלי הרצליך - המלאך" rather than the whole video title)."""
+    artist, song = clean_video_title(r.title, r.channel or r.uploader)
+    shown = f"{artist} - {song}" if artist and song and artist != (r.channel or r.uploader) else song
+    return dict(r.__dict__, display=shown or r.title, **extra)
 
 
 def _result_from(r: dict) -> SearchResult:
@@ -280,7 +288,7 @@ class RpcServer:
             "blocked": bool(getattr(outcome, "blocked", False)),
             "available": self.fetcher.available(),
             "search_url": self.fetcher.search_url(query),
-            "results": [r.__dict__ for r in outcome.results],
+            "results": [_shown(r) for r in outcome.results],
             "auto_selected": outcome.result.__dict__ if outcome.result else None,
         }
 
@@ -291,7 +299,7 @@ class RpcServer:
         return {
             "ok": outcome.ok, "message": outcome.message, "code": outcome.code, "blocked": outcome.blocked,
             "kind": outcome.kind, "title": outcome.title, "artist": outcome.artist,
-            "results": [dict(r.__dict__, in_library=r.id in have) for r in outcome.results],
+            "results": [_shown(r, in_library=r.id in have) for r in outcome.results],
         }
 
     def rpc_download_batch_async(self, params):

@@ -97,6 +97,10 @@ class PlayerService:
         self.ffmpeg = find_ffmpeg(bundled_ffmpeg_dir())
         self.runner = YtDlpRunner(engine_dir=self.data_dir / "engine", ffmpeg=self.ffmpeg)
         self.fetcher = OnlineFetcher(runner=self.runner)
+        if os.environ.get("HAMENAGEN_DEMO_ONLINE"):  # the UI harness: YouTube from memory
+            from .demo_online import DemoSource
+
+            self.fetcher = OnlineFetcher(DemoSource())
         self.download_stop = threading.Event()
         self.downloading = False
         self.radio = RadioProvider(
@@ -675,7 +679,12 @@ class PlayerService:
         if track is None:
             return {"ok": False, "message": "השיר לא נמצא", "candidates": []}
         title = track.title if not is_placeholder_title(track.title) else Path(track.filename).stem
-        candidates, error = metadata_mod.search(title, track.artist, track.duration)
+        if os.environ.get("HAMENAGEN_DEMO_ONLINE"):
+            from .demo_online import demo_details
+
+            candidates, error = demo_details(title), ""
+        else:
+            candidates, error = metadata_mod.search(title, track.artist, track.duration)
         message = {"blocked": "החיפוש חסום ברשת הזו (נטפרי או סינון דומה).",
                    "network": "אין כרגע חיבור לרשת.", "bad_answer": "השירות לא ענה כמו שצריך."}.get(error, "")
         return {"ok": not error, "message": message, "error": error,
@@ -704,7 +713,7 @@ class PlayerService:
         self._classify_track(track, override=self.index.get_override(track_id),
                              analysis=self.index.analyses_for([track_id]).get(track_id))
         self.index.upsert(track)
-        spread = 0
+        spread, covered = 0, []
         if cover and propagate and track.path:
             everything = self.index.details()
             for other in self.index.tracks_in_folder(str(Path(track.path).parent)):
@@ -714,9 +723,10 @@ class PlayerService:
                                                   "source": "folder"}, commit=False)
                 self.index.set_cover(other.id, cover, commit=False)
                 spread += 1
+                covered.append(other.id)
             self.index.commit()
         return {"ok": True, "track": self._tracks_payload([track])[0], "applied": sorted(values),
-                "cover": bool(cover), "propagated": spread,
+                "cover": bool(cover), "propagated": spread, "covered_ids": covered, "cover_key": track.cover,
                 "message": "" if values or cover else "לא היה מה להוסיף מהפרטים שנבחרו."}
 
     def _candidates(self) -> list[MatchCandidate]:

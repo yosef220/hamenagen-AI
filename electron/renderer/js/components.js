@@ -5,9 +5,27 @@
   const { h, icon, api } = H;
 
   // ------------------------------------------------------------ covers
+  /** The song's picture (cover://<key>, made small by the main process),
+   * over its first letter, which shows while it loads or when there is none. */
   H.cover = function cover(track, size = 'xs') {
     const title = H.trackTitle(track);
-    return h('div', { class: `cover cover-${size}`, 'aria-hidden': 'true', 'data-tint': H.tint(track.topic) }, H.letter(title));
+    const el = h('div', { class: `cover cover-${size}`, 'aria-hidden': 'true', 'data-tint': H.tint(track.topic) }, H.letter(title));
+    if (track.cover) setCoverArt(el, track.cover);
+    return el;
+  };
+
+  function setCoverArt(el, key) {
+    const old = el.querySelector('img');
+    if (old) old.remove();
+    const img = h('img', { src: `cover://${key}/`, alt: '', loading: 'lazy', decoding: 'async', draggable: 'false' });
+    img.addEventListener('error', () => { img.remove(); el.classList.remove('has-art'); });
+    el.classList.add('has-art');
+    el.appendChild(img);
+  }
+
+  /** Show a song's new cover wherever the song is on screen. */
+  H.refreshCover = function refreshCover(id, key) {
+    for (const el of H.$$(`[data-id="${CSS.escape(id)}"] .cover`)) setCoverArt(el, key);
   };
 
   // ------------------------------------------------------------ favorites
@@ -73,7 +91,8 @@
       if (opts.onPlay) opts.onPlay(i);
       else H.player.playList(source, i);
     };
-    const sub = [track.artist, track.album].filter(Boolean).join(' · ') || (track.title ? track.filename : '');
+    // No artist or album in the file: its folder usually names them.
+    const sub = [track.artist, track.album].filter(Boolean).join(' · ') || track.folder || '';
     const main = h(
       'div',
       { class: 'track-main' },
@@ -241,7 +260,8 @@
       h('div', { class: 'menu-group' },
         item('list-start', 'לנגן אחרי השיר הזה', () => { closeTrackMenu(); H.player.playNext(track); H.toast('יתנגן אחרי השיר הזה', { icon: 'list-start' }); }),
         item('list-plus', 'להוסיף לסוף התור', () => { closeTrackMenu(); H.player.enqueue([track]); H.toast('נוסף לתור', { icon: 'list-plus' }); }),
-        track.path ? item('folder-open', 'להציג בתיקייה', () => { closeTrackMenu(); api.showInFolder(track.path); }) : null),
+        track.path ? item('folder-open', 'להציג בתיקייה', () => { closeTrackMenu(); api.showInFolder(track.path); }) : null,
+        item('image', 'פרטים ותמונה מהרשת…', () => { closeTrackMenu(); H.openDetails(track); })),
       h('div', { class: 'menu-group' },
         h('div', { class: 'menu-label' }, 'הנושא של השיר'),
         h('div', { class: 'chip-grid', role: 'group', 'aria-label': 'נושא' }, topicButtons),
@@ -256,6 +276,90 @@
         heard ? h('p', { class: 'menu-note' }, icon('ear', 'icon-sm'), heard) : null),
     );
   }
+
+  // ------------------------------------------------------------ details from the web
+  const detailsDialog = h('dialog', { class: 'dialog', 'aria-labelledby': 'details-title' });
+  document.body.appendChild(detailsDialog);
+  detailsDialog.addEventListener('click', (e) => { if (e.target === detailsDialog) detailsDialog.close(); });
+
+  function showTrackText(track) {
+    for (const row of H.$$(`.track[data-id="${CSS.escape(track.id)}"]`)) {
+      const title = row.querySelector('.track-title');
+      if (title) { title.textContent = H.trackTitle(track); title.title = H.trackTitle(track); }
+      const sub = row.querySelector('.track-sub');
+      const text = [track.artist, track.album].filter(Boolean).join(' · ');
+      if (sub && text) sub.textContent = text;
+    }
+  }
+
+  /** Look the song up on the web and let the listener pick the right one.
+   * The choice is kept by the app; the file itself is never changed. */
+  H.openDetails = async function openDetails(track) {
+    const body = h('div', { class: 'dialog-body' },
+      h('p', { class: 'muted dialog-wait' }, icon('loader-circle', 'icon-sm spin'), 'מחפש את השיר ברשת…'));
+    H.clear(detailsDialog).append(
+      h('header', { class: 'dialog-head' },
+        h('div', { class: 'dialog-heading' },
+          h('h2', { id: 'details-title' }, 'פרטים ותמונה מהרשת'),
+          h('p', { class: 'muted' }, [H.trackTitle(track), track.artist].filter(Boolean).join(' · '))),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'סגירה', onclick: () => detailsDialog.close() }, icon('x'))),
+      body,
+      h('footer', { class: 'dialog-foot' }, icon('info', 'icon-sm'),
+        h('span', {}, 'נשלחים רק שם השיר, הזמר והאורך, ל-Apple (iTunes). מה שנבחר נשמר במנגן — הקובץ עצמו לא משתנה.')));
+    if (!detailsDialog.open) detailsDialog.showModal();
+    let res;
+    try {
+      res = await api.lookupDetails(track.id);
+    } catch (err) {
+      body.replaceChildren(H.emptyState('החיפוש נכשל', err.message));
+      return;
+    }
+    if (!res.candidates.length) {
+      body.replaceChildren(H.emptyState(res.message || 'לא נמצאו פרטים לשיר הזה',
+        res.error === 'blocked' ? 'הרשת במחשב הזה חוסמת את השירות. אפשר להשאיר את השיר כמו שהוא.'
+          : 'השירות לא מכיר את השיר בשם הזה. אפשר לנסות שוב אחרי תיקון שם הקובץ.'));
+      return;
+    }
+    const list = h('div', { class: 'cand-list', role: 'list' });
+    const apply = async (c, btn) => {
+      for (const b of H.$$('button', list)) b.disabled = true;
+      btn.replaceChildren(icon('loader-circle', 'icon-sm spin'), 'שומר…');
+      try {
+        const out = await api.applyDetails(track.id, c, true);
+        detailsDialog.close();
+        if (out.track) {
+          Object.assign(track, out.track);
+          applyTrack(track, out.track);
+          showTrackText(track);
+        }
+        if (out.cover_key) for (const id of [track.id, ...(out.covered_ids || [])]) H.refreshCover(id, out.cover_key);
+        const more = out.propagated ? ` · התמונה נוספה גם ל-${H.songs(out.propagated)} באותה תיקייה` : '';
+        H.toast(out.message || `„${H.trackTitle(track)}” עודכן${more}`, { icon: 'image' });
+        api.emit('library-changed', {});
+      } catch (err) {
+        for (const b of H.$$('button', list)) b.disabled = false;
+        btn.replaceChildren(icon('check', 'icon-sm'), 'זה השיר');
+        H.toast(`לא הצלחתי לשמור: ${err.message}`, { kind: 'bad' });
+      }
+    };
+    for (const c of res.candidates) {
+      const pick = h('button', { class: 'btn btn-primary btn-sm', type: 'button' }, icon('check', 'icon-sm'), 'זה השיר');
+      pick.addEventListener('click', () => apply(c, pick));
+      list.appendChild(h('div', { class: 'cand', role: 'listitem' },
+        h('div', { class: 'cand-art' }, c.cover_url
+          ? h('img', { src: c.cover_url.replace('600x600bb', '200x200bb'), alt: '', loading: 'lazy' })
+          : icon('image')),
+        h('div', { class: 'cand-main' },
+          h('div', { class: 'cand-title' }, c.title),
+          h('div', { class: 'cand-sub' }, [c.artist, c.album].filter(Boolean).join(' · ')),
+          h('div', { class: 'cand-sub num' }, [c.year, c.duration ? H.clock(c.duration) : ''].filter(Boolean).join(' · '))),
+        h('div', { class: 'cand-actions' }, pick,
+          c.url ? h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => api.openExternal(c.url) }, 'לפתוח') : null)));
+    }
+    body.replaceChildren(
+      h('p', { class: 'muted' }, 'בחרו את השיר הנכון, או סגרו אם אף אחד מהם לא מתאים. התמונה תשמש גם לשירים באותה תיקייה שאין להם תמונה.'),
+      list);
+  };
 
   /** Open the song menu next to a button/row, or at a point {x, y}. */
   H.openTrackMenu = function openTrackMenu(track, where) {

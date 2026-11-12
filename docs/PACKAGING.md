@@ -2,7 +2,7 @@
 
 ## שלוש המהדורות
 
-כל המהדורות כוללות את אינדקס הידע ואת מודל זיהוי הווקאלי (6MB, `resources/audio-models`).
+כל המהדורות כוללות את אינדקס הידע, את מודל זיהוי הווקאלי (6MB, `resources/audio-models`) ואת `ffmpeg.exe` (בנייה ב-LGPL של [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds), `resources/ffmpeg`, להורדות ב-MP3 עם תמונה; ה-CI מוריד אותו בכל בנייה ובודק שהוא רץ). בלעדיו ההורדות יוצאות M4A.
 
 | מהדורה | קובץ | מה בפנים |
 | --- | --- | --- |

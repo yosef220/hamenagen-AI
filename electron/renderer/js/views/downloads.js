@@ -35,7 +35,8 @@
         H.toast(`"${H.trackTitle(res.track)}" נוסף לספרייה`, { icon: 'circle-check' });
         api.emit('library-changed', {});
       } else if (!res.ok) {
-        H.toast(`ההורדה נכשלה: ${job.message}`, { kind: 'bad' });
+        if (res.blocked) job.message = 'הסרטון הזה חסום ברשת שלך (נטפרי או סינון דומה).';
+        H.toast(res.blocked ? `„${job.title}” חסום ברשת שלך` : `ההורדה נכשלה: ${job.message}`, { kind: 'bad' });
       }
     } catch (err) {
       job.status = 'failed';
@@ -45,6 +46,79 @@
     badge();
     redraw();
   };
+
+  /** Download several songs one after another (a channel, a playlist).
+   * Songs already in the library are skipped; one the network blocks is
+   * marked and the rest go on. */
+  let batch = null; // { id, label, total, jobs: Map(videoId → job) }
+  H.downloadMany = async function downloadMany(items, label) {
+    if (!items.length) return;
+    if (batch) {
+      H.toast('כבר יורדים שירים מרשימה אחרת. אפשר להוסיף עוד כשהיא תסתיים.', { icon: 'download' });
+      return;
+    }
+    const id = `batch-${Date.now()}`;
+    batch = { id, label, total: items.length, jobs: new Map() };
+    for (const item of items.slice().reverse()) {
+      const job = { id: `${id}-${item.id}`, title: item.title || item.id, status: 'queued', percent: null, message: '', track: null };
+      batch.jobs.set(item.id, job);
+      jobs.unshift(job);
+    }
+    badge();
+    redraw();
+    H.toast(`${H.songs(items.length)} מ„${label}” בדרך לספרייה`, { icon: 'download', action: { label: 'למסך ההורדות', fn: () => H.go('downloads') } });
+    try {
+      const res = await api.downloadBatch(items, id);
+      if (!res.started) {
+        for (const item of items) { const j = batch.jobs.get(item.id); j.status = 'failed'; j.message = 'הורדה אחרת כבר רצה'; }
+        batch = null;
+        badge();
+        redraw();
+      }
+    } catch (err) {
+      batch = null;
+      H.toast(`ההורדה לא התחילה: ${err.message}`, { kind: 'bad' });
+    }
+  };
+
+  api.on('download_batch', (msg) => {
+    if (!batch || msg.batch_id !== batch.id) return;
+    const job = batch.jobs.get(msg.id);
+    if (!job) return;
+    if (msg.type === 'progress') {
+      if (msg.status === 'downloading') { job.status = 'downloading'; job.percent = msg.percent; }
+      else if (msg.status === 'postprocessing') job.status = 'postprocessing';
+    } else if (msg.status === 'started') {
+      job.status = 'downloading';
+    } else if (msg.status === 'done') {
+      job.status = 'done';
+      job.track = msg.track;
+      api.emit('library-changed', {});
+    } else if (msg.status === 'skipped') {
+      job.status = 'done';
+      job.message = 'כבר היה בספרייה';
+    } else if (msg.status === 'failed') {
+      job.status = 'failed';
+      job.message = msg.blocked ? 'חסום ברשת שלך' : (msg.message || 'נכשל');
+    }
+    badge();
+    if (!root.hidden) updateJob(job);
+  });
+
+  api.on('download_batch_done', (msg) => {
+    if (!batch || msg.batch_id !== batch.id) return;
+    for (const job of batch.jobs.values()) {
+      if (['queued', 'downloading', 'postprocessing'].includes(job.status)) { job.status = 'failed'; job.message = msg.stopped ? 'נעצר' : 'לא ירד'; }
+    }
+    const parts = [`ירדו ${H.songs(msg.downloaded || 0)}`];
+    if (msg.skipped) parts.push(`${H.n(msg.skipped)} כבר היו`);
+    if (msg.blocked) parts.push(`${H.n(msg.blocked)} חסומים ברשת`);
+    else if (msg.failed) parts.push(`${H.n(msg.failed)} נכשלו`);
+    H.toast(`${batch.label}: ${parts.join(' · ')}`, { icon: msg.error ? 'circle-alert' : 'circle-check', kind: msg.error ? 'bad' : undefined });
+    batch = null;
+    badge();
+    redraw();
+  });
 
   api.on('download_progress', (msg) => {
     const job = jobs.find((j) => j.id === msg.download_id);
@@ -63,8 +137,8 @@
     switch (job.status) {
       case 'queued': return 'מתחיל…';
       case 'downloading': return job.percent != null ? `מוריד · ${Math.round(job.percent)}%` : 'מוריד…';
-      case 'postprocessing': return 'ממיר לקובץ שמע…';
-      case 'done': return 'נוסף לספרייה';
+      case 'postprocessing': return 'ממיר ל-MP3 ומכניס תמונה…';
+      case 'done': return job.message || 'נוסף לספרייה';
       default: return job.message || 'נכשל';
     }
   }
@@ -104,6 +178,8 @@
         h('h1', {}, 'הורדות'),
         h('div', { class: 'page-meta' }, 'שירים שלא נמצאו במחשב ונמצאו ברשת. כל הורדה נכנסת לספרייה ומסווגת מיד.'),
         h('div', { class: 'page-actions' },
+          batch ? h('button', { class: 'btn btn-outline', type: 'button', onclick: () => { api.stopDownloads().catch(() => {}); H.toast('עוצר אחרי השיר הנוכחי', { icon: 'circle-stop' }); } },
+            icon('circle-stop'), 'לעצור את הרשימה') : null,
           folder ? h('button', { class: 'btn btn-outline', type: 'button', onclick: () => api.openFolder(folder) }, icon('folder-open'), 'תיקיית ההורדות') : null)),
       jobs.length
         ? h('section', { class: 'section', 'aria-label': 'עכשיו' }, h('div', { class: 'section-head' }, h('h2', {}, 'בהפעלה הזו')), h('div', { class: 'dl-list' }, jobs.map(jobRow)))

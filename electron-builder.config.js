@@ -11,7 +11,9 @@
  *   setup    — Hamenagen-<v>-Setup.exe            a per-user installer
  *
  * Every edition carries the small vocal-detection model (build/audio-models,
- * 6 MB, from backend/scripts/prepare_audio_model.py) when it was prepared.
+ * 6 MB, from backend/scripts/prepare_audio_model.py) and ffmpeg.exe
+ * (build/ffmpeg, an LGPL build, for MP3 downloads with the cover inside) when
+ * they were prepared.
  *
  * The edition is written into the packaged package.json (hamenagenEdition);
  * electron/main.js reads it to decide where the data folder lives.
@@ -81,6 +83,9 @@ const config = {
 
 if (fs.existsSync('build/audio-models')) {
   config.extraResources.push({ from: 'build/audio-models', to: 'audio-models', filter: ['**/*'] });
+}
+if (fs.existsSync('build/ffmpeg')) {
+  config.extraResources.push({ from: 'build/ffmpeg', to: 'ffmpeg', filter: ['**/*'] });
 }
 if (edition === 'offline') {
   config.extraResources.push({ from: 'build/models', to: 'models', filter: ['**/*'] });

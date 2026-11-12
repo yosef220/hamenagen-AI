@@ -17,9 +17,11 @@
     'getSettings', 'updateSettings', 'radioList', 'checkUpdates', 'applyUpdate',
     'offlinePackStatus', 'installOfflinePack', 'onlineAvailable', 'onlineSearch', 'onlineDownload',
     'setTrackTopic', 'setTrackVocal', 'confirmVocal', 'vocalStatus', 'vocalReview', 'analyzeVocal', 'stopVocal',
+    'onlineLink', 'downloadBatch', 'stopDownloads', 'lookupDetails', 'applyDetails',
   ];
   const SHELL = [
     'shellInfo', 'setTheme', 'openExternal', 'showInFolder', 'openFolder', 'chooseFolder', 'playerState',
+    'clipboardLink',
   ];
 
   const api = {};
