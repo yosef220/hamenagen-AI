@@ -179,6 +179,7 @@
         H.toast('לא הצלחתי להבין את הבקשה. אפשר לנסות שוב.', { icon: 'mic-off' });
         return;
       }
+      if (V.command(res.request)) return;
       api.emit('voice-heard', { text: res.request });
       H.ask(res.request);
     } catch (err) {
@@ -186,6 +187,53 @@
       H.toast(`הזיהוי לא הצליח: ${err.message}`, { kind: 'bad' });
     }
   }
+
+  // ------------------------------------------------------------ commands
+  // Short spoken commands work the player instead of being searched for.
+  // Only the whole sentence counts ("הבא", "תגביר בבקשה"), so a song whose
+  // name holds such a word is still found.
+  const POLITE = /(^| )(בבקשה|לי|את|השיר|המוזיקה|מוזיקה|קצת|עוד)(?= |$)/g;
+  const COMMANDS = [
+    ['next', ['הבא', 'שיר הבא', 'לשיר הבא', 'תעביר', 'תעביר הלאה', 'הלאה', 'דלג', 'תדלג', 'next']],
+    ['prev', ['הקודם', 'שיר קודם', 'לשיר הקודם', 'תחזור', 'אחורה', 'שוב']],
+    ['pause', ['עצור', 'תעצור', 'הפסק', 'תפסיק', 'השהה', 'stop', 'pause']],
+    ['play', ['המשך', 'תמשיך', 'נגן', 'תנגן', 'play']],
+    ['louder', ['תגביר', 'הגבר', 'יותר חזק', 'חזק יותר', 'תגביר את הווליום']],
+    ['quieter', ['תנמיך', 'הנמך', 'יותר חלש', 'חלש יותר', 'יותר בשקט', 'תנמיך את הווליום']],
+    ['shuffle', ['ערבב', 'תערבב', 'בערבוב']],
+    ['radio', ['רדיו', 'רדיו המנגן', 'תפעיל רדיו', 'תפעיל את הרדיו']],
+    ['radio-song', ['רדיו מהשיר הזה', 'עוד שירים כאלה', 'עוד כאלה', 'שירים דומים']],
+    ['what', ['מה מתנגן', 'מה מתנגן עכשיו', 'איזה שיר זה', 'מה השיר הזה', 'מה זה']],
+  ];
+  const clean = (t) => ` ${String(t || '').replace(/[.,!?״"]/g, ' ').replace(/\s+/g, ' ').trim()} `
+    .replace(POLITE, ' ').replace(/\s+/g, ' ').trim();
+  const LOOKUP = new Map();
+  for (const [name, phrases] of COMMANDS) for (const ph of phrases) LOOKUP.set(clean(ph) || ph, name);
+
+  V.commandFor = (text) => LOOKUP.get(clean(text)) || LOOKUP.get(String(text || '').trim()) || null;
+
+  V.command = function command(text) {
+    const name = V.commandFor(text);
+    if (!name) return false;
+    const P = H.player;
+    const cur = P.current();
+    const say = (msg, ic) => H.toast(msg, { icon: ic });
+    if (name === 'next') { P.next(); say('לשיר הבא', 'skip-forward'); }
+    else if (name === 'prev') { P.prev(); say('לשיר הקודם', 'skip-back'); }
+    else if (name === 'pause') { P.toggle(false); say('עצרתי', 'pause'); }
+    else if (name === 'play') { P.toggle(true); say('ממשיך לנגן', 'play'); }
+    else if (name === 'louder') { P.setVolume(Math.min(1, P.volume() + 0.15)); say(`עוצמה ${Math.round(P.volume() * 100)}%`, 'volume-2'); }
+    else if (name === 'quieter') { P.setVolume(Math.max(0.05, P.volume() - 0.15)); say(`עוצמה ${Math.round(P.volume() * 100)}%`, 'volume-1'); }
+    else if (name === 'shuffle') { P.setShuffle(true); say('בערבוב', 'shuffle'); }
+    else if (name === 'radio') H.radioFrom(null);
+    else if (name === 'radio-song') {
+      if (cur) H.radioFrom(cur);
+      else H.radioFrom(null);
+    } else if (name === 'what') {
+      say(cur ? `מתנגן: ${H.trackTitle(cur)}${cur.artist ? ` · ${cur.artist}` : ''}` : 'כרגע לא מתנגן כלום', 'music-2');
+    }
+    return true;
+  };
 
   V.toggle = async function toggle() {
     if (V.state === 'listening' && session) { session.stop(); return; }

@@ -562,7 +562,9 @@
       heart.setAttribute('aria-pressed', 'false');
     } else if (cur) {
       H.$('#dock-title').textContent = H.trackTitle(cur);
-      H.$('#dock-sub').textContent = [cur.artist, cur.album].filter(Boolean).join(' · ') || cur.filename || '';
+      // On רדיו המנגן the station's name replaces the album.
+      const radio = P.autoRadio ? (P.autoRadio.title || 'רדיו המנגן') : null;
+      H.$('#dock-sub').textContent = [cur.artist, radio || cur.album].filter(Boolean).join(' · ') || cur.filename || '';
       coverHost.dataset.tint = H.tint(cur.topic);
       coverHost.textContent = H.letter(H.trackTitle(cur));
       heart.disabled = false;
