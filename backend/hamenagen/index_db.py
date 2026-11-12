@@ -394,7 +394,7 @@ class MusicIndex:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT verdict, COUNT(*) AS n FROM audio_analysis WHERE track_id IN (SELECT id FROM tracks) "
-                "GROUP BY verdict").fetchall()
+                "AND verdict IS NOT NULL AND verdict != '' GROUP BY verdict").fetchall()
         return {r["verdict"]: r["n"] for r in rows}
 
     # -- reads -------------------------------------------------------------
