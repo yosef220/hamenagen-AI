@@ -64,6 +64,7 @@
     }
   };
 
+  H.refreshRail = () => refreshRail();
   async function refreshRail() {
     try { H.updateRail(await api.overview()); } catch { /* ignore */ }
   }

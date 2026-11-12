@@ -38,7 +38,10 @@
       total ? h('div', { class: 'results-actions' },
         h('button', { class: 'btn btn-primary', type: 'button', onclick: () => H.player.playList(res.tracks, 0, { shuffle: false }) }, icon('play'), 'נגן לפי הסדר'),
         h('button', { class: 'btn btn-outline', type: 'button', onclick: () => H.player.playList(res.tracks, 0, { shuffle: true }) }, icon('shuffle'), 'ערבב'),
-        h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => { H.player.enqueue(res.tracks); H.toast(`${H.songs(total)} נוספו לתור`, { icon: 'list-music' }); } }, icon('list-music'), 'הוספה לתור')) : null);
+        h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => { H.player.enqueue(res.tracks); H.toast(`${H.songs(total)} נוספו לתור`, { icon: 'list-music' }); } }, icon('list-music'), 'הוספה לתור'),
+        res.playlist_id
+          ? h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => H.go('playlists', { id: res.playlist_id }) }, icon('pencil'), 'לסדר את הרשימה')
+          : h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => H.saveAsPlaylist(res.tracks, res.understood || '') }, icon('list-plus'), 'שמירה כרשימה')) : null);
 
     const parts = [head];
     const topic = (res.intent && res.intent.topic) || params.topic;

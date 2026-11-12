@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import struct
+import shutil
 import sys
 import wave
 import zlib
@@ -106,7 +107,13 @@ def main(folder: str) -> int:
             write_wav(target, seconds)
             if performer in pictures:
                 embed_cover(target, pictures[performer])
-    print(f"{len(SONGS)} songs in {out}")
+    # The same song kept twice (a backup folder): the library shows it once.
+    backup = out / "גיבוי"
+    backup.mkdir(exist_ok=True)
+    original = out / "מקהלת שירת הים - מנוחה ושמחה.wav"
+    if not (backup / original.name).exists():
+        shutil.copyfile(original, backup / original.name)
+    print(f"{len(SONGS)} songs in {out}, one of them twice")
     return 0
 
 

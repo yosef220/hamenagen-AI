@@ -221,6 +221,52 @@ async function run() {
       await shot(page, `16-details${suffix}`);
       await page.evaluate(() => document.querySelector('dialog.dialog').close());
 
+      // Each song once: a copy in another folder hides behind the shown one.
+      await page.evaluate(() => H.go('library'));
+      await page.waitForSelector('#view-library .track');
+      const copies = await page.$$eval('#view-library .track .track-title', (els) => els.filter((e) => e.textContent.trim() === 'מנוחה ושמחה').length);
+      if (copies !== 1) errors.push(`a song kept in two folders shows ${copies} times`);
+      await page.locator('#view-library .track', { hasText: 'מנוחה ושמחה' }).first().click({ button: 'right' });
+      await page.waitForSelector('#track-menu:not([hidden]) .menu-copies', { timeout: 10000 })
+        .catch(() => errors.push('the song menu does not show the other copy'));
+
+      // Saved playlists: a new one from the song menu, more songs, a reorder.
+      await page.evaluate(async () => {
+        for (const p of (await H.api.playlists()).playlists) await H.api.playlistDelete(p.id);
+      });
+      await page.locator('#track-menu .menu-item', { hasText: 'הוספה לרשימה' }).click();
+      await page.waitForSelector('dialog.dialog[open] .pl-form input');
+      await page.fill('dialog.dialog[open] .pl-form input', 'שבת בבוקר');
+      await page.click('dialog.dialog[open] .pl-form button[type=submit]');
+      await page.waitForFunction(() => !document.querySelector('dialog.dialog[open]'));
+      for (const title of ['יה ריבון', 'צור משלו', 'ידיד נפש', 'שלום עליכם']) {
+        await page.locator('#view-library .track', { hasText: title }).first().click({ button: 'right' });
+        await page.locator('#track-menu .menu-item', { hasText: 'הוספה לרשימה' }).click();
+        await page.locator('dialog.dialog[open] .pl-choice', { hasText: 'שבת בבוקר' }).click();
+        await page.waitForFunction(() => !document.querySelector('dialog.dialog[open]'));
+      }
+      await page.evaluate(async () => {
+        const res = await H.api.ask('השירים של קול ברמה');
+        await H.api.playlistCreate('קול ברמה', res.tracks.map((t) => t.id));
+      });
+      await page.evaluate(() => H.go('playlists'));
+      await page.waitForSelector('#view-playlists .pl-card');
+      await page.waitForTimeout(600);
+      await shot(page, `19-playlists${suffix}`);
+      await page.locator('#view-playlists .pl-card', { hasText: 'שבת בבוקר' }).click();
+      await page.waitForSelector('#view-playlists .pl-row');
+      const firstTitle = (await page.textContent('#view-playlists .pl-row .track-title')).trim();
+      await page.focus('#view-playlists .pl-row');
+      await page.keyboard.press('Alt+ArrowDown');
+      await page.waitForTimeout(400);
+      const saved = await page.evaluate(async () => {
+        const { playlists } = await H.api.playlists();
+        const p = playlists.find((x) => x.name === 'שבת בבוקר');
+        return (await H.api.playlistGet(p.id)).tracks.map((t) => t.title);
+      });
+      if (saved.length !== 5 || saved[1] !== firstTitle) errors.push(`playlist order after a move: ${saved.join(', ')}`);
+      await shot(page, `20-playlist${suffix}`);
+
       await page.evaluate(() => H.go('downloads'));
       await page.waitForTimeout(300);
       await shot(page, `09-downloads${suffix}`);

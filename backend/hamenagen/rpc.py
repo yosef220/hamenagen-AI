@@ -150,6 +150,31 @@ class RpcServer:
     def rpc_library_overview(self, params):
         return self.service.library_overview()
 
+    # -- saved playlists and copies -------------------------------------------
+    def rpc_playlists(self, params):
+        return self.service.playlists()
+
+    def rpc_playlist_get(self, params):
+        return self.service.playlist_get(params.get("id", 0))
+
+    def rpc_playlist_create(self, params):
+        return self.service.playlist_create(params.get("name", ""), params.get("track_ids") or [])
+
+    def rpc_playlist_rename(self, params):
+        return self.service.playlist_rename(params.get("id", 0), params.get("name", ""))
+
+    def rpc_playlist_delete(self, params):
+        return self.service.playlist_delete(params.get("id", 0))
+
+    def rpc_playlist_add(self, params):
+        return self.service.playlist_add(params.get("id", 0), params.get("track_ids") or [])
+
+    def rpc_playlist_set_order(self, params):
+        return self.service.playlist_set_order(params.get("id", 0), params.get("track_ids") or [])
+
+    def rpc_track_copies(self, params):
+        return self.service.track_copies(params.get("id", ""))
+
     def rpc_list_tracks(self, params):
         return self.service.list_tracks(**params)
 

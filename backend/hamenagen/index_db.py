@@ -87,6 +87,23 @@ CREATE TABLE IF NOT EXISTS details (
     source_url TEXT,
     updated_at TEXT
 );
+-- Playlists the listener saved by name. Each item keeps the song's name and
+-- length too, so a song that moved to another folder (a new id) is found again.
+CREATE TABLE IF NOT EXISTS playlists (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS playlist_items (
+    playlist_id INTEGER NOT NULL,
+    pos         INTEGER NOT NULL,
+    track_id    TEXT NOT NULL,
+    title       TEXT,
+    artist      TEXT,
+    duration    REAL,
+    PRIMARY KEY (playlist_id, pos)
+);
 CREATE INDEX IF NOT EXISTS idx_tracks_topic         ON tracks(topic);
 CREATE INDEX IF NOT EXISTS idx_tracks_download_date ON tracks(download_date);
 CREATE INDEX IF NOT EXISTS idx_tracks_release_date  ON tracks(release_date);
@@ -101,6 +118,9 @@ _MIGRATIONS = {
     "size": "INTEGER",
     "topic_note": "TEXT DEFAULT ''",
     "cover": "TEXT DEFAULT ''",
+    # Another copy of the same song (another folder or format): the id of the
+    # copy that is shown. Set by mark_duplicates(), never by a scan.
+    "dup_of": "TEXT DEFAULT ''",
 }
 
 _COLUMNS = [
@@ -120,6 +140,9 @@ _SORTS: dict[str, list[str]] = {
     "added": ["COALESCE(download_date, added_at)"],
     "released": ["COALESCE(release_date, '')"],
 }
+
+# Formats from best to worst, to choose which copy of a song to show.
+_FORMAT_RANK = {".flac": 6, ".wav": 5, ".m4a": 4, ".aac": 4, ".opus": 4, ".ogg": 3, ".mp3": 3, ".wma": 1}
 
 # The fallback length (seconds) for a song whose duration is unknown, when a
 # playlist is built to fill a span of time.
@@ -143,6 +166,9 @@ def decode_tags(raw: str | None) -> list[str]:
 class MusicIndex:
     def __init__(self, db_path: str | Path = ":memory:"):
         self.db_path = str(db_path)
+        # Show each song once: other copies (another folder or format) hide
+        # behind the one kept by mark_duplicates().
+        self.hide_duplicates = True
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=10)
         self._conn.row_factory = sqlite3.Row
@@ -346,7 +372,7 @@ class MusicIndex:
         return self._query(
             "SELECT t.* FROM tracks t JOIN audio_analysis a ON a.track_id = t.id "
             "LEFT JOIN overrides o ON o.track_id = t.id "
-            "WHERE a.verdict IN ('vocal', 'maybe') AND o.vocal IS NULL "
+            f"WHERE a.verdict IN ('vocal', 'maybe') AND o.vocal IS NULL AND {self._shown('t')} "
             "ORDER BY (a.verdict = 'vocal') DESC, a.acapella DESC LIMIT ?",
             (limit,),
         )
@@ -359,6 +385,11 @@ class MusicIndex:
         return {r["verdict"]: r["n"] for r in rows}
 
     # -- reads -------------------------------------------------------------
+    def _shown(self, alias: str = "") -> str:
+        """SQL that keeps one copy of each song (or every row)."""
+        col = f"{alias}.dup_of" if alias else "dup_of"
+        return f"({col} IS NULL OR {col} = '')" if self.hide_duplicates else "1=1"
+
     def _rows_to_tracks(self, rows: Iterable[sqlite3.Row]) -> list[Track]:
         out = []
         for r in rows:
@@ -406,7 +437,7 @@ class MusicIndex:
     def by_topic(self, topic: str, limit: int | None = None, *, shuffle: bool = False) -> list[Track]:
         """Songs whose main topic — or one of whose tags — is ``topic``."""
         order = "RANDOM()" if shuffle else "COALESCE(NULLIF(title, ''), filename) COLLATE NOCASE"
-        sql = f"SELECT * FROM tracks WHERE topic=? OR tags LIKE ? ORDER BY {order}"
+        sql = f"SELECT * FROM tracks WHERE (topic=? OR tags LIKE ?) AND {self._shown()} ORDER BY {order}"
         params: list = [topic, _tag_pattern(topic)]
         if limit:
             sql += " LIMIT ?"
@@ -417,7 +448,7 @@ class MusicIndex:
         """How many songs each topic has (main topic or tag)."""
         counts: dict[str, int] = {}
         with self._lock:
-            rows = self._conn.execute("SELECT topic, tags FROM tracks").fetchall()
+            rows = self._conn.execute(f"SELECT topic, tags FROM tracks WHERE {self._shown()}").fetchall()
         for r in rows:
             seen = set(decode_tags(r["tags"]))
             if r["topic"]:
@@ -428,19 +459,20 @@ class MusicIndex:
 
     def recent_downloaded(self, limit: int = 25) -> list[Track]:
         return self._query(
-            "SELECT * FROM tracks WHERE download_date IS NOT NULL ORDER BY download_date DESC LIMIT ?",
+            f"SELECT * FROM tracks WHERE download_date IS NOT NULL AND {self._shown()} "
+            "ORDER BY download_date DESC LIMIT ?",
             (limit,),
         )
 
     def recent_released(self, limit: int = 25) -> list[Track]:
         return self._query(
-            "SELECT * FROM tracks WHERE release_date IS NOT NULL AND release_date != '' "
+            f"SELECT * FROM tracks WHERE release_date IS NOT NULL AND release_date != '' AND {self._shown()} "
             "ORDER BY release_date DESC LIMIT ?",
             (limit,),
         )
 
     def random(self, limit: int = 25) -> list[Track]:
-        return self._query("SELECT * FROM tracks ORDER BY RANDOM() LIMIT ?", (limit,))
+        return self._query(f"SELECT * FROM tracks WHERE {self._shown()} ORDER BY RANDOM() LIMIT ?", (limit,))
 
     def list_tracks(
         self,
@@ -455,7 +487,7 @@ class MusicIndex:
         limit: int = 200,
     ) -> dict:
         """One page of the library table, with the total that matches."""
-        where: list[str] = []
+        where: list[str] = [self._shown()] if self.hide_duplicates else []
         params: list = []
         if source:
             where.append("source = ?")
@@ -489,8 +521,9 @@ class MusicIndex:
                 "SELECT COUNT(*) AS n, COALESCE(SUM(duration), 0) AS secs, "
                 "SUM(CASE WHEN topic IS NULL OR topic = '' THEN 1 ELSE 0 END) AS untagged, "
                 "SUM(CASE WHEN source != 'local' THEN 1 ELSE 0 END) AS downloaded "
-                "FROM tracks"
+                f"FROM tracks WHERE {self._shown()}"
             ).fetchone()
+            copies = self._conn.execute("SELECT COUNT(*) AS n FROM tracks WHERE dup_of != ''").fetchone()["n"]
             favs = self._conn.execute("SELECT COUNT(*) AS n FROM favorites").fetchone()["n"]
         return {
             "tracks": r["n"],
@@ -498,7 +531,215 @@ class MusicIndex:
             "untagged": int(r["untagged"] or 0),
             "downloaded": int(r["downloaded"] or 0),
             "favorites": favs,
+            "duplicates": int(copies or 0),
         }
+
+    # -- the same song more than once -----------------------------------------
+    @staticmethod
+    def _quality(row: sqlite3.Row) -> tuple:
+        """Which copy to show: the better format, then the one with a cover
+        and full tags, then the bigger file; the path breaks a tie."""
+        ext = Path(row["path"]).suffix.lower()
+        return (_FORMAT_RANK.get(ext, 2), bool(row["cover"]), bool(row["artist"]), bool(row["album"]),
+                row["size"] or 0, row["path"])
+
+    def mark_duplicates(self) -> int:
+        """Find songs that are in the library more than once — another folder,
+        another format — and keep one copy in view. Two files are the same
+        song when their names match and their lengths are within two seconds,
+        or when they are the same size and length — and the singer matches,
+        or one of them has none. A favorite copy makes the shown one a
+        favorite. Returns how many copies are hidden."""
+        from .text_normalize import normalize
+
+        with self._lock:
+            rows = [r for r in self._conn.execute(
+                "SELECT id, path, title, artist, album, filename, duration, size, cover, is_video FROM tracks")
+                if not r["is_video"]]
+        parent = {r["id"]: r["id"] for r in rows}
+
+        def find(x: str) -> str:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        by_title: dict[str, list] = {}
+        by_size: dict[int, list] = {}
+        for r in rows:
+            name = normalize(r["title"] or Path(r["filename"] or r["path"]).stem)
+            if len(name) >= 2 and r["duration"]:
+                by_title.setdefault(name, []).append(r)
+            if (r["size"] or 0) > 100_000 and r["duration"]:
+                by_size.setdefault(r["size"], []).append(r)
+        for group in by_title.values():
+            for i, a in enumerate(group):
+                for b in group[i + 1:]:
+                    if abs(a["duration"] - b["duration"]) <= 2.0:
+                        sa, sb = normalize(a["artist"] or ""), normalize(b["artist"] or "")
+                        if not sa or not sb or sa == sb:
+                            parent[find(a["id"])] = find(b["id"])
+        for group in by_size.values():
+            for i, a in enumerate(group):
+                for b in group[i + 1:]:
+                    sa, sb = normalize(a["artist"] or ""), normalize(b["artist"] or "")
+                    if abs(a["duration"] - b["duration"]) <= 0.5 and (not sa or not sb or sa == sb):
+                        parent[find(a["id"])] = find(b["id"])
+        clusters: dict[str, list] = {}
+        for r in rows:
+            clusters.setdefault(find(r["id"]), []).append(r)
+        hidden: list[tuple[str, str]] = []
+        for members in clusters.values():
+            if len(members) > 1:
+                keep = max(members, key=self._quality)
+                hidden += [(keep["id"], m["id"]) for m in members if m is not keep]
+        with self._lock:
+            self._conn.execute("UPDATE tracks SET dup_of='' WHERE dup_of IS NULL OR dup_of != ''")
+            self._conn.executemany("UPDATE tracks SET dup_of=? WHERE id=?", hidden)
+            self._conn.execute(
+                "INSERT OR IGNORE INTO favorites (track_id, added_at) "
+                "SELECT t.dup_of, f.added_at FROM favorites f JOIN tracks t ON t.id = f.track_id "
+                "WHERE t.dup_of != ''")
+            self._conn.commit()
+        return len(hidden)
+
+    def copies_of(self, track_id: str) -> list[Track]:
+        """The other files of the same song (the shown copy first)."""
+        track = self.get(track_id)
+        if track is None:
+            return []
+        main = track.dup_of or track.id
+        return [t for t in self._query("SELECT * FROM tracks WHERE id=? OR dup_of=? ORDER BY path", (main, main))
+                if t.id != track_id]
+
+    # -- playlists -----------------------------------------------------------
+    def playlists(self) -> list[dict]:
+        """Every saved playlist with its size and length, newest change first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT p.id, p.name, p.created_at, p.updated_at, COUNT(i.track_id) AS n, "
+                "COALESCE(SUM(COALESCE(i.duration, 0)), 0) AS secs "
+                "FROM playlists p LEFT JOIN playlist_items i ON i.playlist_id = p.id "
+                "GROUP BY p.id ORDER BY p.updated_at DESC, p.id DESC").fetchall()
+            covers = self._conn.execute(
+                "SELECT i.playlist_id, t.cover FROM playlist_items i JOIN tracks t ON t.id = i.track_id "
+                "WHERE t.cover != '' ORDER BY i.playlist_id, i.pos").fetchall()
+        art: dict[int, list[str]] = {}
+        for c in covers:
+            keys = art.setdefault(c["playlist_id"], [])
+            if len(keys) < 4 and c["cover"] not in keys:
+                keys.append(c["cover"])
+        return [{"id": r["id"], "name": r["name"], "count": r["n"], "seconds": float(r["secs"] or 0),
+                 "created_at": r["created_at"], "updated_at": r["updated_at"], "covers": art.get(r["id"], [])}
+                for r in rows]
+
+    def playlist_name(self, playlist_id: int) -> str | None:
+        with self._lock:
+            r = self._conn.execute("SELECT name FROM playlists WHERE id=?", (playlist_id,)).fetchone()
+        return r["name"] if r else None
+
+    def playlist_by_name(self, name: str) -> int | None:
+        from .text_normalize import normalize
+
+        want = normalize(name)
+        with self._lock:
+            rows = self._conn.execute("SELECT id, name FROM playlists").fetchall()
+        for r in rows:
+            if normalize(r["name"]) == want:
+                return r["id"]
+        return None
+
+    def playlist_tracks(self, playlist_id: int) -> list[Track]:
+        """The songs of a playlist in order. A song whose file moved is found
+        again by its name, singer and length; a hidden copy shows as the
+        copy in view."""
+        from .text_normalize import normalize
+
+        with self._lock:
+            items = self._conn.execute(
+                "SELECT pos, track_id, title, artist, duration FROM playlist_items "
+                "WHERE playlist_id=? ORDER BY pos", (playlist_id,)).fetchall()
+        if not items:
+            return []
+        found = {t.id: t for t in self.get_many([i["track_id"] for i in items])}
+        missing = [i for i in items if i["track_id"] not in found]
+        relinked: list[tuple[str, int]] = []
+        if missing:
+            everyone = self.all_tracks()
+            for item in missing:
+                name, singer = normalize(item["title"] or ""), normalize(item["artist"] or "")
+                for t in everyone:
+                    if (name and normalize(t.title) == name and normalize(t.artist) == singer
+                            and (not item["duration"] or not t.duration or abs(t.duration - item["duration"]) <= 2)):
+                        found[t.id] = t
+                        relinked.append((t.id, item["pos"]))
+                        break
+            if relinked:
+                with self._lock:
+                    self._conn.executemany(
+                        "UPDATE playlist_items SET track_id=? WHERE playlist_id=? AND pos=?",
+                        [(tid, playlist_id, pos) for tid, pos in relinked])
+                    self._conn.commit()
+        moved = {pos: tid for tid, pos in relinked}
+        out: list[Track] = []
+        for item in items:
+            t = found.get(moved.get(item["pos"], item["track_id"]))
+            if t is None:
+                continue
+            if self.hide_duplicates and t.dup_of:
+                t = self.get(t.dup_of) or t
+            out.append(t)
+        return out
+
+    def _write_items(self, playlist_id: int, tracks: list[Track]) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        with self._lock:
+            self._conn.execute("DELETE FROM playlist_items WHERE playlist_id=?", (playlist_id,))
+            self._conn.executemany(
+                "INSERT INTO playlist_items (playlist_id, pos, track_id, title, artist, duration) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [(playlist_id, pos, t.id, t.title, t.artist, t.duration) for pos, t in enumerate(tracks)])
+            self._conn.execute("UPDATE playlists SET updated_at=? WHERE id=?", (now, playlist_id))
+            self._conn.commit()
+
+    def create_playlist(self, name: str, track_ids: list[str] | None = None) -> int:
+        now = datetime.now().isoformat(timespec="seconds")
+        with self._lock:
+            cur = self._conn.execute("INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)",
+                                     (name.strip() or "רשימה חדשה", now, now))
+            self._conn.commit()
+            pid = int(cur.lastrowid)
+        if track_ids:
+            self._write_items(pid, self.get_many(list(dict.fromkeys(track_ids))))
+        return pid
+
+    def rename_playlist(self, playlist_id: int, name: str) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE playlists SET name=?, updated_at=? WHERE id=?",
+                               (name.strip(), datetime.now().isoformat(timespec="seconds"), playlist_id))
+            self._conn.commit()
+
+    def delete_playlist(self, playlist_id: int) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM playlist_items WHERE playlist_id=?", (playlist_id,))
+            self._conn.execute("DELETE FROM playlists WHERE id=?", (playlist_id,))
+            self._conn.commit()
+
+    def add_to_playlist(self, playlist_id: int, track_ids: list[str]) -> int:
+        """Append songs that are not in the playlist yet; returns how many."""
+        current = self.playlist_tracks(playlist_id)
+        have = {t.id for t in current}
+        new = [t for t in self.get_many(list(dict.fromkeys(track_ids))) if t.id not in have]
+        if new:
+            self._write_items(playlist_id, current + new)
+        return len(new)
+
+    def set_playlist_order(self, playlist_id: int, track_ids: list[str]) -> int:
+        """Save the playlist as exactly these songs in this order (drag to
+        reorder, remove a song)."""
+        tracks = self.get_many(list(dict.fromkeys(track_ids)))
+        self._write_items(playlist_id, tracks)
+        return len(tracks)
 
     # -- favorites ---------------------------------------------------------
     def set_favorite(self, track_id: str, on: bool) -> bool:
@@ -520,7 +761,7 @@ class MusicIndex:
     def favorites(self, limit: int = 500) -> list[Track]:
         return self._query(
             "SELECT t.* FROM tracks t JOIN favorites f ON f.track_id = t.id "
-            "ORDER BY f.added_at DESC LIMIT ?",
+            f"WHERE {self._shown('t')} ORDER BY f.added_at DESC LIMIT ?",
             (limit,),
         )
 

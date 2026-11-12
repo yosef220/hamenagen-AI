@@ -88,6 +88,7 @@ class PlayerService:
         topics_mod.load_override(self.data_dir / "topics_override.json")
         self.db_path = self.data_dir / "library.db"
         self.index = MusicIndex(self.db_path)
+        self.index.hide_duplicates = self.settings.hide_duplicates
         self.models_dir = self.data_dir / "models"
         self.bundled_models_dir = bundled_models_dir()
         self.classifier = HybridClassifier(self._build_backend())
@@ -165,6 +166,8 @@ class PlayerService:
             self._apply_vocal_verdicts()
         if "update_manifest_url" in changed:
             self.updater.manifest_url = self.settings.update_manifest_url
+        if "hide_duplicates" in changed:
+            self.index.hide_duplicates = self.settings.hide_duplicates
         if {"shabbat_city", "candle_minutes", "shabbat_stop_before", "havdalah"} & set(changed):
             self._configure_zmanim()
         if "radio_list_url" in changed:
@@ -246,6 +249,7 @@ class PlayerService:
             idx.commit()
             removed = self._remove_missing(idx, known, seen, use_roots if partial else None)
             propagated = self._propagate(idx)
+            duplicates = idx.mark_duplicates()
             finished = datetime.now()
             idx.set_meta("last_scan_at", finished.isoformat(timespec="seconds"))
             if not partial:
@@ -257,6 +261,7 @@ class PlayerService:
                 "updated": updated,
                 "removed": removed,
                 "propagated": propagated,
+                "duplicates": duplicates,
                 "total": idx.count(),
                 "seconds": round((finished - started).total_seconds(), 1),
             }
@@ -637,6 +642,7 @@ class PlayerService:
         track.download_date = datetime.now().isoformat()
         self._classify_track(track)
         self.index.upsert(track)
+        self.index.mark_duplicates()
         return {"ok": True, "message": outcome.message, "track": self._tracks_payload([track])[0],
                 "path": outcome.path, "code": "", "blocked": False}
 
@@ -737,12 +743,13 @@ class PlayerService:
                 "message": "" if values or cover else "לא היה מה להוסיף מהפרטים שנבחרו."}
 
     def _candidates(self) -> list[MatchCandidate]:
+        hide = self.index.hide_duplicates
         return [
             MatchCandidate(
                 id=t.id, title=t.title, artist=t.artist, album=t.album, filename=t.filename,
                 folder=self._folder_hint(t.path) if t.path else "",
             )
-            for t in self.index.iter_tracks()
+            for t in self.index.iter_tracks() if not (hide and t.dup_of)
         ]
 
     # -- shaping tracks for the UI -------------------------------------------
@@ -773,8 +780,100 @@ class PlayerService:
     # -- the main request path --------------------------------------------
     def handle_request(self, text: str) -> dict:
         """Turn a free Hebrew request into a playlist + explanation."""
+        saved = self._saved_playlist_request(text)
+        if saved is not None:
+            return self.play_playlist(saved)
         intent = intent_mod.parse(text)
         return self._respond(intent)
+
+    _PLAY_VERBS = ("תשמיע ", "תנגן ", "נגן ", "השמע ", "תפעיל ", "שים ", "תשים ")
+    _LIST_WORDS = ("את הרשימה ", "הרשימה ", "את רשימת ", "רשימת ", "רשימה ", "את הפלייליסט ", "הפלייליסט ",
+                   "פלייליסט ")
+
+    def _saved_playlist_request(self, text: str) -> int | None:
+        """"תשמיע את הרשימה של שבת בבוקר" — or just the playlist's name."""
+        t = " ".join((text or "").split())
+        for verb in self._PLAY_VERBS:
+            if t.startswith(verb):
+                t = t[len(verb):]
+                break
+        for word in self._LIST_WORDS:
+            if t.startswith(word):
+                t = t[len(word):]
+                if t.startswith("של "):
+                    t = t[3:]
+                break
+        name = t.strip(" \"'״”„“")
+        return self.index.playlist_by_name(name) if name else None
+
+    # -- saved playlists -------------------------------------------------------
+    def playlists(self) -> dict:
+        return {"playlists": self.index.playlists()}
+
+    def _unique_name(self, name: str, keep: int | None = None) -> str:
+        base = " ".join((name or "").split()) or "רשימה חדשה"
+        taken = {normalize(p["name"]) for p in self.index.playlists() if p["id"] != keep}
+        candidate, n = base, 2
+        while normalize(candidate) in taken:
+            candidate, n = f"{base} ({n})", n + 1
+        return candidate
+
+    def playlist_get(self, playlist_id: int) -> dict:
+        name = self.index.playlist_name(int(playlist_id))
+        if name is None:
+            return {"ok": False, "message": "הרשימה לא נמצאה."}
+        tracks = self.index.playlist_tracks(int(playlist_id))
+        return {"ok": True, "id": int(playlist_id), "name": name, "tracks": self._tracks_payload(tracks),
+                "count": len(tracks), "seconds": round(sum(t.duration or AVERAGE_SONG_SECONDS for t in tracks))}
+
+    def playlist_create(self, name: str, track_ids: list[str] | None = None) -> dict:
+        pid = self.index.create_playlist(self._unique_name(name), list(track_ids or []))
+        return self.playlist_get(pid)
+
+    def playlist_rename(self, playlist_id: int, name: str) -> dict:
+        if self.index.playlist_name(int(playlist_id)) is None:
+            return {"ok": False, "message": "הרשימה לא נמצאה."}
+        self.index.rename_playlist(int(playlist_id), self._unique_name(name, keep=int(playlist_id)))
+        return {"ok": True, "name": self.index.playlist_name(int(playlist_id))}
+
+    def playlist_delete(self, playlist_id: int) -> dict:
+        self.index.delete_playlist(int(playlist_id))
+        return {"ok": True}
+
+    def playlist_add(self, playlist_id: int, track_ids: list[str]) -> dict:
+        name = self.index.playlist_name(int(playlist_id))
+        if name is None:
+            return {"ok": False, "message": "הרשימה לא נמצאה."}
+        added = self.index.add_to_playlist(int(playlist_id), list(track_ids or []))
+        return {"ok": True, "added": added, "name": name}
+
+    def playlist_set_order(self, playlist_id: int, track_ids: list[str]) -> dict:
+        if self.index.playlist_name(int(playlist_id)) is None:
+            return {"ok": False, "message": "הרשימה לא נמצאה."}
+        return {"ok": True, "count": self.index.set_playlist_order(int(playlist_id), list(track_ids or []))}
+
+    def play_playlist(self, playlist_id: int) -> dict:
+        """A saved playlist as the answer to a request."""
+        name = self.index.playlist_name(int(playlist_id)) or ""
+        tracks = self.index.playlist_tracks(int(playlist_id))
+        return {
+            "intent": {"action": "saved_playlist", "playlist_id": int(playlist_id), "raw": name},
+            "understood": f"הרשימה „{name}”",
+            "tracks": self._tracks_payload(tracks),
+            "count": len(tracks),
+            "seconds": round(sum(t.duration or AVERAGE_SONG_SECONDS for t in tracks)),
+            "note": "" if tracks else "הרשימה ריקה. אפשר להוסיף אליה שירים מהתפריט של כל שיר.",
+            "found_local": bool(tracks),
+            "near": False,
+            "query": "",
+            "playlist_id": int(playlist_id),
+        }
+
+    def track_copies(self, track_id: str) -> dict:
+        """The other files of the same song, for the song menu."""
+        return {"copies": [{"id": t.id, "path": t.path, "folder": display_folder(t.path),
+                            "format": Path(t.path).suffix.lstrip(".").upper()}
+                           for t in self.index.copies_of(track_id)]}
 
     def playlist(self, kind: str, *, topic: str | None = None, minutes: int | None = None,
                  limit: int | None = None) -> dict:

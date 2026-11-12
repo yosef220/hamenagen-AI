@@ -141,6 +141,8 @@ class Settings:
     radio_list_url: str = "https://kcm.fm/Live/"
     # Update manifest URL (spec §14): the update.json of the latest release.
     update_manifest_url: str = DEFAULT_UPDATE_MANIFEST
+    # Show each song once when it is in several folders or formats.
+    hide_duplicates: bool = True
     # Shabbat and festival mode: the music fades out and stops before candle
     # lighting, and "שבת שלום" stays on screen until Shabbat ends (zmanim.py).
     shabbat_mode: bool = True
