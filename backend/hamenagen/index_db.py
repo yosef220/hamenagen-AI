@@ -117,6 +117,8 @@ _MIGRATIONS = {
     "mtime": "REAL",
     "size": "INTEGER",
     "topic_note": "TEXT DEFAULT ''",
+    # 1.4: "speech" for a spoken recording (sound.is_speech); "" for a song.
+    "kind": "TEXT DEFAULT ''",
     "cover": "TEXT DEFAULT ''",
     # Another copy of the same song (another folder or format): the id of the
     # copy that is shown. Set by mark_duplicates(), never by a scan.
@@ -129,6 +131,19 @@ _ANALYSIS_MIGRATIONS = {
     "energy": "REAL",
     "pulse": "REAL",
     "loudness": "REAL",
+    # 1.4: the sound profile (sound.py) and silence at the edges.
+    "profile": "BLOB",
+    "speech": "REAL",
+    "music": "REAL",
+    "profile_v": "INTEGER",
+    "lead": "REAL",
+    "tail": "REAL",
+}
+
+# 1.4: more of the listener's own decisions.
+_OVERRIDE_MIGRATIONS = {
+    "speech": "INTEGER",      # 1 a spoken recording, 0 a song, NULL as heard
+    "disliked": "INTEGER",    # 1: never in mixes, sets or the radio
 }
 
 _COLUMNS = [
@@ -177,6 +192,8 @@ class MusicIndex:
         # Show each song once: other copies (another folder or format) hide
         # behind the one kept by mark_duplicates().
         self.hide_duplicates = True
+        # Folders whose songs never play in mixes, sets or the radio (settings).
+        self.isolated_folders: list[str] = []
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=10)
         self._conn.row_factory = sqlite3.Row
@@ -204,6 +221,10 @@ class MusicIndex:
         for column, decl in _ANALYSIS_MIGRATIONS.items():
             if column not in have:
                 self._conn.execute(f"ALTER TABLE audio_analysis ADD COLUMN {column} {decl}")
+        have = {r["name"] for r in self._conn.execute("PRAGMA table_info(overrides)")}
+        for column, decl in _OVERRIDE_MIGRATIONS.items():
+            if column not in have:
+                self._conn.execute(f"ALTER TABLE overrides ADD COLUMN {column} {decl}")
 
     def close(self) -> None:
         with self._lock:
@@ -329,17 +350,22 @@ class MusicIndex:
     def set_override(self, track_id: str, **values) -> dict:
         """Set ``has_topic``/``topic`` and/or ``vocal`` for a song. A row with
         nothing left to say is removed."""
-        current = self.get_override(track_id) or {"track_id": track_id, "has_topic": 0, "topic": None, "vocal": None}
-        current.update({k: v for k, v in values.items() if k in ("has_topic", "topic", "vocal")})
+        current = self.get_override(track_id) or {"track_id": track_id, "has_topic": 0, "topic": None, "vocal": None,
+                                                  "speech": None, "disliked": None}
+        current.update({k: v for k, v in values.items() if k in ("has_topic", "topic", "vocal", "speech", "disliked")})
         with self._lock:
-            if not current.get("has_topic") and current.get("vocal") is None:
+            if (not current.get("has_topic") and current.get("vocal") is None and current.get("speech") is None
+                    and not current.get("disliked")):
                 self._conn.execute("DELETE FROM overrides WHERE track_id=?", (track_id,))
             else:
                 self._conn.execute(
-                    "INSERT INTO overrides (track_id, has_topic, topic, vocal, updated_at) VALUES (?, ?, ?, ?, ?) "
+                    "INSERT INTO overrides (track_id, has_topic, topic, vocal, speech, disliked, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(track_id) DO UPDATE SET has_topic=excluded.has_topic, topic=excluded.topic, "
-                    "vocal=excluded.vocal, updated_at=excluded.updated_at",
+                    "vocal=excluded.vocal, speech=excluded.speech, disliked=excluded.disliked, "
+                    "updated_at=excluded.updated_at",
                     (track_id, 1 if current.get("has_topic") else 0, current.get("topic"), current.get("vocal"),
+                     current.get("speech"), 1 if current.get("disliked") else None,
                      datetime.now().isoformat(timespec="seconds")),
                 )
             self._conn.commit()
@@ -353,7 +379,8 @@ class MusicIndex:
 
     def save_analysis(self, track_id: str, row: dict, *, commit: bool = True) -> None:
         cols = [c for c in ("model", "verdict", "acapella", "instrument", "windows", "mtime", "size", "analyzed_at",
-                            "tempo", "energy", "pulse", "loudness") if c in row]
+                            "tempo", "energy", "pulse", "loudness", "profile", "speech", "music", "profile_v",
+                            "lead", "tail") if c in row]
         with self._lock:
             self._conn.execute(
                 f"INSERT INTO audio_analysis (track_id, {', '.join(cols)}) VALUES (?{', ?' * len(cols)}) "
@@ -398,6 +425,43 @@ class MusicIndex:
         return {r["verdict"]: r["n"] for r in rows}
 
     # -- reads -------------------------------------------------------------
+    def _mixable(self, alias: str = "") -> str:
+        """SQL for songs that may play in a mix, a set or the radio: not a
+        spoken recording, not one the listener disliked, not in a folder kept
+        apart (``isolated_folders``)."""
+        a = f"{alias}." if alias else ""
+        parts = [f"COALESCE({a}kind, '') != 'speech'",
+                 f"{a}id NOT IN (SELECT track_id FROM overrides WHERE disliked = 1)"]
+        for folder in self.isolated_folders:
+            prefix = folder.rstrip("/\\")
+            if prefix:
+                esc = prefix.replace("'", "''").replace("!", "!!").replace("%", "!%").replace("_", "!_")
+                parts.append(f"{a}path NOT LIKE '{esc}%' ESCAPE '!'")
+        return "(" + " AND ".join(parts) + ")"
+
+    def set_kind(self, track_id: str, kind: str, *, commit: bool = True) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE tracks SET kind=? WHERE id=?", (kind or "", track_id))
+            if commit:
+                self._conn.commit()
+
+    def speech_count(self) -> int:
+        with self._lock:
+            return self._conn.execute(
+                f"SELECT COUNT(*) AS n FROM tracks WHERE kind = 'speech' AND {self._shown()}").fetchone()["n"]
+
+    def artist_counts(self) -> dict[str, int]:
+        """How many songs (one copy each) carry each spelling of a singer."""
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT artist, COUNT(*) AS n FROM tracks WHERE artist IS NOT NULL AND artist != '' "
+                f"AND {self._shown()} GROUP BY artist").fetchall()
+        return {r["artist"]: r["n"] for r in rows}
+
+    def disliked_ids(self) -> set[str]:
+        with self._lock:
+            return {r["track_id"] for r in self._conn.execute("SELECT track_id FROM overrides WHERE disliked = 1")}
+
     def _shown(self, alias: str = "") -> str:
         """SQL that keeps one copy of each song (or every row)."""
         col = f"{alias}.dup_of" if alias else "dup_of"
@@ -447,10 +511,14 @@ class MusicIndex:
                 for r in self._conn.execute("SELECT id, mtime, size FROM tracks")
             }
 
-    def by_topic(self, topic: str, limit: int | None = None, *, shuffle: bool = False) -> list[Track]:
-        """Songs whose main topic — or one of whose tags — is ``topic``."""
+    def by_topic(self, topic: str, limit: int | None = None, *, shuffle: bool = False,
+                 mix: bool = True) -> list[Track]:
+        """Songs whose main topic — or one of whose tags — is ``topic`` (for
+        playing: without spoken recordings or disliked songs, unless ``mix`` is
+        False)."""
         order = "RANDOM()" if shuffle else "COALESCE(NULLIF(title, ''), filename) COLLATE NOCASE"
-        sql = f"SELECT * FROM tracks WHERE (topic=? OR tags LIKE ?) AND {self._shown()} ORDER BY {order}"
+        keep = f" AND {self._mixable()}" if mix else ""
+        sql = f"SELECT * FROM tracks WHERE (topic=? OR tags LIKE ?) AND {self._shown()}{keep} ORDER BY {order}"
         params: list = [topic, _tag_pattern(topic)]
         if limit:
             sql += " LIMIT ?"
@@ -485,7 +553,12 @@ class MusicIndex:
         )
 
     def random(self, limit: int = 25) -> list[Track]:
-        return self._query(f"SELECT * FROM tracks WHERE {self._shown()} ORDER BY RANDOM() LIMIT ?", (limit,))
+        return self._query(f"SELECT * FROM tracks WHERE {self._shown()} AND {self._mixable()} "
+                           "ORDER BY RANDOM() LIMIT ?", (limit,))
+
+    def mixable_tracks(self) -> list[Track]:
+        """Every song that may play in a mix, a set or the radio."""
+        return self._query(f"SELECT * FROM tracks WHERE {self._shown()} AND {self._mixable()} AND is_video = 0")
 
     def list_tracks(
         self,
@@ -496,6 +569,8 @@ class MusicIndex:
         text: str = "",
         favorites_only: bool = False,
         source: str | None = None,
+        kind: str | None = None,
+        artists: list[str] | None = None,
         offset: int = 0,
         limit: int = 200,
     ) -> dict:
@@ -512,10 +587,17 @@ class MusicIndex:
             params += [topic, _tag_pattern(topic)]
         if favorites_only:
             where.append("id IN (SELECT track_id FROM favorites)")
+        if kind == "speech":
+            where.append("kind = 'speech'")
+        elif kind == "disliked":
+            where.append("id IN (SELECT track_id FROM overrides WHERE disliked = 1)")
         if text.strip():
             like = f"%{text.strip()}%"
-            where.append("(title LIKE ? OR artist LIKE ? OR album LIKE ? OR filename LIKE ?)")
-            params += [like, like, like, like]
+            # Every spelling of a singer the text names (artists.py).
+            same = [a for a in (artists or []) if a][:50]
+            extra = f" OR artist IN ({', '.join('?' * len(same))})" if same else ""
+            where.append(f"(title LIKE ? OR artist LIKE ? OR album LIKE ? OR filename LIKE ?{extra})")
+            params += [like, like, like, like, *same]
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         order = ", ".join(
             f"{expr} DESC" if descending else expr for expr in _SORTS.get(sort, _SORTS["title"])
@@ -801,6 +883,12 @@ class MusicIndex:
             ") p ON p.track_id = t.id ORDER BY p.n DESC, p.last DESC LIMIT ?",
             (limit,),
         )
+
+    def last_played_map(self) -> dict[str, str]:
+        """{track id: when it was last played (ISO)}."""
+        with self._lock:
+            rows = self._conn.execute("SELECT track_id, MAX(played_at) AS last FROM plays GROUP BY track_id")
+            return {r["track_id"]: r["last"] for r in rows}
 
     def play_counts(self, track_ids: list[str]) -> dict[str, int]:
         if not track_ids:

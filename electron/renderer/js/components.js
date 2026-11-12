@@ -235,6 +235,45 @@
     }
   }
 
+  async function chooseSpeech(track, value) {
+    closeTrackMenu();
+    try {
+      const res = await api.setTrackSpeech(track.id, value);
+      applyTrack(track, res.track);
+      H.toast(value === true ? `„${H.trackTitle(track)}” עבר ל„דיבור ושיעורים” ולא יתנגן בערבובים`
+        : value === false ? `„${H.trackTitle(track)}” סומן כשיר` : 'הזיהוי חזר להיות אוטומטי', { icon: 'message-square-quote' });
+    } catch (err) {
+      H.toast(`לא הצלחתי לשמור: ${err.message}`, { kind: 'bad' });
+    }
+  }
+
+  async function chooseDisliked(track, on) {
+    closeTrackMenu();
+    try {
+      const res = await api.setTrackDisliked(track.id, on);
+      applyTrack(track, res.track);
+      H.toast(on ? `„${H.trackTitle(track)}” לא יתנגן יותר בערבובים, בסטים וברדיו`
+        : `„${H.trackTitle(track)}” חזר לערבובים`, { icon: on ? 'thumbs-down' : 'undo-2' });
+    } catch (err) {
+      H.toast(`לא הצלחתי לשמור: ${err.message}`, { kind: 'bad' });
+    }
+  }
+
+  // רדיו המנגן מהשיר הזה: the song, then songs that sound like it, on and on.
+  H.radioFrom = async function radioFrom(track) {
+    closeTrackMenu();
+    try {
+      const res = await api.station(track ? track.id : null, []);
+      if (!res.ok || !H.player.playRadio(res)) {
+        H.toast(res.message || res.note || 'אין עדיין מספיק שירים לרדיו', { kind: 'bad', icon: 'radio' });
+        return;
+      }
+      H.toast(res.title, { icon: 'radio' });
+    } catch (err) {
+      H.toast(`הרדיו לא נפתח: ${err.message}`, { kind: 'bad' });
+    }
+  };
+
   function item(iconName, label, onclick, attrs = {}) {
     return h('button', { type: 'button', role: 'menuitem', class: 'menu-item', onclick, ...attrs },
       iconName ? icon(iconName, 'icon-sm') : null, h('span', {}, label));
@@ -243,6 +282,7 @@
   function renderTrackMenu(track) {
     const topics = (H.cachedTopics || []).length ? H.cachedTopics : Object.entries(H.topicLabels || {}).map(([key, label]) => ({ key, label }));
     const vocalState = track.vocal === 'yes' ? 'yes' : track.vocal === 'no' ? 'no' : 'auto';
+    const speechState = track.speech_chosen === true ? 'speech' : track.speech_chosen === false ? 'song' : 'auto';
     const heard = track.vocal === 'vocal' ? 'המנגן שמע בשיר שירה בלי כלי נגינה.'
       : track.vocal === 'maybe' ? 'נשמע כמו שירה בלי כלים, אבל לא בטוח.' : '';
     const topicButtons = topics.map((t) => h('button', {
@@ -261,6 +301,7 @@
         item('list-start', 'לנגן אחרי השיר הזה', () => { closeTrackMenu(); H.player.playNext(track); H.toast('יתנגן אחרי השיר הזה', { icon: 'list-start' }); }),
         item('list-plus', 'להוסיף לסוף התור', () => { closeTrackMenu(); H.player.enqueue([track]); H.toast('נוסף לתור', { icon: 'list-plus' }); }),
         item('list-music', 'הוספה לרשימה…', () => { closeTrackMenu(); H.addToPlaylist([track]); }),
+        track.kind !== 'speech' ? item('radio', 'רדיו מהשיר הזה', () => H.radioFrom(track)) : null,
         track.path ? item('folder-open', 'להציג בתיקייה', () => { closeTrackMenu(); api.showInFolder(track.path); }) : null,
         item('image', 'פרטים ותמונה מהרשת…', () => { closeTrackMenu(); H.openDetails(track); })),
       h('div', { class: 'menu-group' },
@@ -275,6 +316,17 @@
           [['yes', 'ווקאלי', true], ['no', 'יש כלים', false], ['auto', 'אוטומטי', null]].map(([key, label, value]) =>
             h('button', { type: 'button', role: 'menuitemradio', 'aria-pressed': vocalState === key ? 'true' : 'false', 'aria-checked': vocalState === key ? 'true' : 'false', onclick: () => chooseVocal(track, value) }, label))),
         heard ? h('p', { class: 'menu-note' }, icon('ear', 'icon-sm'), heard) : null),
+      h('div', { class: 'menu-group' },
+        h('div', { class: 'menu-label' }, 'שיר או דיבור'),
+        h('div', { class: 'segmented segmented-sm', role: 'group', 'aria-label': 'שיר או דיבור' },
+          [['song', 'שיר', false], ['speech', 'דיבור / שיעור', true], ['auto', 'אוטומטי', null]].map(([key, label, value]) => {
+            const on = key === speechState;
+            return h('button', { type: 'button', role: 'menuitemradio', 'aria-pressed': on ? 'true' : 'false', 'aria-checked': on ? 'true' : 'false', onclick: () => chooseSpeech(track, value) }, label);
+          })),
+        track.kind === 'speech' && track.speech_chosen == null
+          ? h('p', { class: 'menu-note' }, icon('ear', 'icon-sm'), 'המנגן שמע כאן דיבור, ולכן זה לא מתנגן בערבובים ובסטים.') : null,
+        item(track.disliked ? 'undo-2' : 'thumbs-down', track.disliked ? 'להחזיר לערבובים' : 'לא אהוב: לא לנגן בערבובים',
+          () => chooseDisliked(track, !track.disliked), { 'aria-pressed': track.disliked ? 'true' : 'false' })),
     );
     // Other files of the same song (another folder or format), shown once.
     api.trackCopies(track.id).then(({ copies }) => {

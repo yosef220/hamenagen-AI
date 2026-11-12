@@ -102,7 +102,102 @@
         stats && stats.duplicates
           ? `${H.n(stats.duplicates)} עותקים של שירים שכבר יש (בתיקייה אחרת או בפורמט אחר) מוסתרים, ומוצג העותק הטוב ביותר. את העותקים רואים בתפריט ⋯ של השיר.`
           : 'שיר שנמצא בכמה תיקיות או בכמה פורמטים יוצג פעם אחת, בעותק הטוב ביותר.',
-        () => { render({ focus: 'library' }); H.refreshRail && H.refreshRail(); }));
+        () => { render({ focus: 'library' }); H.refreshRail && H.refreshRail(); }),
+      isolatedRow());
+  }
+
+  // Folders kept apart: they play when chosen, never in mixes, sets or the radio.
+  function isolatedRow() {
+    const kept = H.settings.isolated_folders || [];
+    const list = h('div', { class: 'roots' });
+    kept.forEach((r, i) => {
+      list.appendChild(h('div', { class: 'root-item' }, icon('folder-lock', 'icon-sm'), h('span', { class: 'path', title: r }, r),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': `להחזיר את ${r} לערבובים`, onclick: async () => {
+          if (await save({ isolated_folders: kept.filter((_, j) => j !== i) })) render({ focus: 'library' });
+        } }, icon('x', 'icon-sm'))));
+    });
+    const add = h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: async () => {
+      const dir = await api.chooseFolder('תיקייה שלא תתנגן בערבובים');
+      if (!dir || kept.includes(dir)) return;
+      if (await save({ isolated_folders: [...kept, dir] })) render({ focus: 'library' });
+    } }, icon('folder-lock', 'icon-sm'), 'הוספת תיקייה');
+    return row('תיקיות בנפרד',
+      'למשל שירי ילדים או הקלטות של המשפחה: הם בספרייה ומתנגנים כשבוחרים אותם, אבל לא נכנסים לערבובים, לסטים ולרדיו. הקלטות דיבור ושיעורים מופרדות כך מעצמן.',
+      add, kept.length ? { wide: list } : {});
+  }
+
+  // One singer, one name: spellings unified by themselves, and suggestions.
+  function artistsGroup(data) {
+    const groups = (data && data.groups) || [];
+    const section = h('section', { class: 'set-group', id: 'set-artists' }, h('h2', {}, 'שמות של זמרים'));
+    const choose = async (key, choice) => {
+      try {
+        await api.setArtistChoice(key, choice);
+        render({ focus: 'artists' });
+        api.emit('library-changed', {});
+      } catch (err) {
+        H.toast(`לא הצלחתי לשמור: ${err.message}`, { kind: 'bad' });
+      }
+    };
+    const spellings = (g) => g.variants.map((v) => `${v.name} (${H.n(v.count)})`).join(' · ');
+    const waiting = groups.filter((g) => !g.applied && !g.sure);
+    const unified = groups.filter((g) => g.applied);
+    const apart = groups.filter((g) => !g.applied && g.sure);
+    section.append(h('p', { class: 'set-help' },
+      'אותו זמר כתוב לפעמים בכמה צורות: בעברית ובאנגלית, עם נקודה או בלי, בכתיב מלא או חסר. המנגן מציג אותו בשם אחד, והחיפוש מוצא את השירים בכל הכתיבים. בקבצים עצמם לא משתנה כלום.'));
+    if (!groups.length) {
+      section.append(h('p', { class: 'muted' }, 'לא נמצאו זמרים שכתובים בכמה צורות.'));
+      return section;
+    }
+    for (const g of waiting) {
+      section.append(h('div', { class: 'artist-row waiting' },
+        h('div', { class: 'artist-names' }, h('div', { class: 'set-label' }, `אותו זמר? ${g.name}`), h('div', { class: 'set-help' }, spellings(g))),
+        h('div', { class: 'artist-actions' },
+          h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: () => choose(g.key, { merge: true }) }, icon('check', 'icon-sm'), 'לאחד'),
+          h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => choose(g.key, { apart: true }) }, 'זמרים שונים'))));
+    }
+    const row = (g) => {
+      const pick = h('select', { class: 'select', 'aria-label': `השם של ${g.name}` },
+        [...new Set([g.name, ...g.variants.map((v) => v.name)])].map((n) => h('option', { value: n, selected: n === g.name }, n)));
+      pick.addEventListener('change', () => choose(g.key, { name: pick.value }));
+      return h('div', { class: 'artist-row' },
+        h('div', { class: 'artist-names' }, h('div', { class: 'set-label' }, g.name), h('div', { class: 'set-help' }, spellings(g))),
+        h('div', { class: 'artist-actions' }, g.applied ? pick : null,
+          g.applied
+            ? h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => choose(g.key, { apart: true }) }, 'לא לאחד')
+            : h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => choose(g.key, { apart: false, merge: !g.sure }) }, icon('undo-2', 'icon-sm'), 'לאחד שוב')));
+    };
+    if (unified.length || apart.length) {
+      section.append(h('details', { class: 'artist-list', open: !waiting.length && unified.length <= 6 },
+        h('summary', {}, `${H.n(unified.length)} זמרים מאוחדים${apart.length ? ` · ${H.n(apart.length)} בנפרד` : ''}`),
+        ...unified.map(row), ...apart.map(row)));
+    }
+    return section;
+  }
+
+  function voiceGroup(st) {
+    const s = st || {};
+    const state = s.available
+      ? h('span', { class: 'pill good' }, icon('circle-check'), s.bundled ? 'מוכן (בתוך התוכנה)' : 'מוכן')
+      : h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: () => { H.go('home'); H.voice.toggle(); } },
+        icon('cloud-download', 'icon-sm'), `להוריד (${H.n(s.download_mb || 73)}MB)`);
+    return h('section', { class: 'set-group', id: 'set-voice' },
+      h('h2', {}, 'בקשה בקול'),
+      row('זיהוי דיבור בעברית',
+        'לוחצים על המיקרופון שליד שורת הבקשה (או Ctrl+M), אומרים מה לשמוע, והמנגן מבין לבד מתי סיימת. הזיהוי נעשה במחשב, גם בלי אינטרנט, וההקלטה לא נשמרת ולא נשלחת לשום מקום.',
+        state),
+      h('p', { class: 'set-help credit' }, `המודל: ${s.credit || 'ivrit.ai'}.`));
+  }
+
+  function sound() {
+    return h('section', { class: 'set-group', id: 'set-sound' },
+      h('h2', {}, 'צליל'),
+      toggle('normalize_volume', 'עוצמה אחידה',
+        'שירים שהוקלטו חזק מתנגנים מעט בשקט, כך שלא צריך לגעת בווליום בין שיר לשיר. המנגן רק מנמיך, אף פעם לא מגביר, כדי שלא יהיה עיוות. לפי ההקשבה ברקע.',
+        (on) => H.player.setSoundOptions({ normalize: on })),
+      toggle('skip_silence', 'לדלג על שקט בתחילת השיר ובסופו',
+        'שקט של יותר משנייה לפני שהשיר מתחיל, או אחרי שנגמר, לא מתנגן. השיר הבא מתחיל מיד.',
+        (on) => H.player.setSoundOptions({ skipSilence: on })));
   }
 
   function modelPill(st) {
@@ -362,9 +457,10 @@
   }
 
   async function render(params = {}) {
-    const [settings, status, overview, info, shell, vocal] = await Promise.all([
+    const [settings, status, overview, info, shell, vocal, artistData, voiceSt] = await Promise.all([
       api.getSettings(), api.classifierStatus().catch(() => null), api.overview().catch(() => null),
       api.appInfo().catch(() => null), api.shellInfo(), api.vocalStatus().catch(() => null),
+      api.artistGroups().catch(() => null), api.voiceStatus().catch(() => null),
       H.shabbat ? H.shabbat.refresh() : null,
     ]);
     H.settings = settings;
@@ -372,7 +468,7 @@
     H.clear(root).append(
       h('header', { class: 'page-head' }, h('h1', {}, 'הגדרות')),
       h('div', { class: 'settings' },
-        appearance(), library(overview), ai(status, info), suggestions(), shabbat(), listening(vocal), online(info), updates(info),
+        appearance(), library(overview), artistsGroup(artistData), sound(), voiceGroup(voiceSt), ai(status, info), suggestions(), shabbat(), listening(vocal), online(info), updates(info),
         about(info, shell)));
     if (params.focus) {
       const target = H.$(`#set-${params.focus}`);

@@ -24,6 +24,12 @@
     { key: null, label: '' },
   ];
 
+  const EMPTY = {
+    favorites: ['עוד לא סימנת שירים בלב', 'לחיצה על הלב שליד שיר שומרת אותו כאן.'],
+    speech: ['אין הקלטות דיבור', 'הרצאות, שיעורים וסיפורים שהמנגן שומע ברקע יופיעו כאן, ולא יתנגנו בערבובים.'],
+    disliked: ['אין שירים לא אהובים', 'שיר שמסמנים בתפריט ⋯ כ„לא אהוב” לא מתנגן בערבובים, ומופיע כאן כדי שאפשר יהיה להחזיר אותו.'],
+  };
+
   function query(offset) {
     return {
       sort: state.sort,
@@ -31,6 +37,7 @@
       topic: state.filter === 'untagged' ? '__none__' : state.topic || null,
       text: state.text,
       favorites_only: state.filter === 'favorites',
+      kind: state.filter === 'speech' || state.filter === 'disliked' ? state.filter : null,
       offset,
       limit: PAGE,
     };
@@ -54,8 +61,8 @@
       sentinel.textContent = loaded.length < total ? 'טוען עוד…' : '';
       if (!total) {
         list.appendChild(H.emptyState(
-          state.filter === 'favorites' ? 'עוד לא סימנת שירים בלב' : 'לא נמצאו שירים',
-          state.filter === 'favorites' ? 'לחיצה על הלב שליד שיר שומרת אותו כאן.' : 'אפשר לנסות מילה אחרת או לנקות את הסינון.'));
+          EMPTY[state.filter] ? EMPTY[state.filter][0] : 'לא נמצאו שירים',
+          EMPTY[state.filter] ? EMPTY[state.filter][1] : 'אפשר לנסות מילה אחרת או לנקות את הסינון.'));
       }
     } catch (err) {
       H.toast(`לא הצלחתי לטעון את הספרייה: ${err.message}`, { kind: 'bad' });
@@ -91,9 +98,12 @@
     search.addEventListener('input', H.debounce(() => { state.text = search.value; loadMore(true); }, 220));
 
     const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'סינון' },
-      [['all', 'הכל'], ['favorites', 'שאהבתי'], ['untagged', 'ללא נושא']].map(([key, label]) =>
-        h('button', { type: 'button', 'aria-pressed': state.filter === key ? 'true' : 'false', onclick: () => { state.filter = key; render(false); } },
-          key === 'favorites' ? icon('heart') : null, label)));
+      [['all', 'הכל'], ['favorites', 'שאהבתי'], ['untagged', 'ללא נושא'],
+        (stats && stats.speech) || state.filter === 'speech' ? ['speech', 'דיבור ושיעורים'] : null,
+        (stats && stats.disliked) || state.filter === 'disliked' ? ['disliked', 'לא אהובים'] : null]
+        .filter(Boolean).map(([key, label]) =>
+          h('button', { type: 'button', 'aria-pressed': state.filter === key ? 'true' : 'false', onclick: () => { state.filter = key; render(false); } },
+            key === 'favorites' ? icon('heart') : key === 'speech' ? icon('message-square-quote') : key === 'disliked' ? icon('thumbs-down') : null, label)));
 
     const topicSelect = h('select', { class: 'select', 'aria-label': 'נושא' },
       h('option', { value: '' }, 'כל הנושאים'),
@@ -140,11 +150,17 @@
     } catch (err) {
       H.toast(err.message, { kind: 'bad' });
     }
-    if (all.length) H.player.playList(all, 0, { shuffle });
+    // A mix of the whole library leaves out spoken recordings and disliked
+    // songs, like every other mix; a chosen list plays as it is.
+    const songs = shuffle && state.filter === 'all' ? all.filter((t) => t.kind !== 'speech' && !t.disliked) : all;
+    if (songs.length) H.player.playList(songs, 0, { shuffle });
   }
 
   api.on('favorites-changed', () => {
     if (!root.hidden && state.filter === 'favorites') loadMore(true);
+  });
+  api.on('track-changed', () => {
+    if (!root.hidden && (state.filter === 'speech' || state.filter === 'disliked')) render(false);
   });
 
   H.views = H.views || {};

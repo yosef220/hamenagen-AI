@@ -14,6 +14,7 @@ import platform
 import random
 import sys
 import threading
+import time
 from collections import Counter
 from collections.abc import Callable
 from datetime import date, datetime
@@ -30,7 +31,10 @@ from .fuzzy import MatchCandidate, near_matches, search as fuzzy_search
 from .hebrew_calendar import VOCAL_TOPIC, detect_occasion, from_gregorian, today_info
 from .zmanim import ZmanimService
 from .smart_update import SmartUpdater
+from . import artists as artists_mod
 from . import sets as sets_mod
+from . import sound as sound_mod
+from . import station as station_mod
 from .index_db import AVERAGE_SONG_SECONDS, MusicIndex, encode_tags
 from .intent import Action, Intent
 from .models import Track
@@ -58,6 +62,7 @@ from .settings import (
 )
 from .text_normalize import normalize
 from .updater import Updater, current_ytdlp_version
+from . import voice as voice_mod
 from .vocal import MODEL_NAME as VOCAL_MODEL, VocalDetector
 from .ytdlp_runner import YtDlpRunner
 
@@ -91,6 +96,7 @@ class PlayerService:
         self.db_path = self.data_dir / "library.db"
         self.index = MusicIndex(self.db_path)
         self.index.hide_duplicates = self.settings.hide_duplicates
+        self.index.isolated_folders = list(self.settings.isolated_folders)
         self.models_dir = self.data_dir / "models"
         self.bundled_models_dir = bundled_models_dir()
         self.classifier = HybridClassifier(self._build_backend())
@@ -119,6 +125,7 @@ class PlayerService:
         # Listening for a cappella songs: the model ships in every edition;
         # a dev run can put it in data/models (prepare_audio_model.py).
         self.vocal = VocalDetector([bundled_audio_models_dir() or "", self.models_dir])
+        self.voice = voice_mod.SpeechRecognizer([self.bundled_models_dir or "", self.models_dir])
         # Shabbat mode: times for the city, cached; the harness stays offline.
         offline = bool(os.environ.get("HAMENAGEN_DEMO_ONLINE"))
         self.zmanim = ZmanimService(self.data_dir / "zmanim.json", sources=[] if offline else None)
@@ -174,6 +181,8 @@ class PlayerService:
             self.updater.manifest_url = self.settings.update_manifest_url
         if "hide_duplicates" in changed:
             self.index.hide_duplicates = self.settings.hide_duplicates
+        if "isolated_folders" in changed:
+            self.index.isolated_folders = list(self.settings.isolated_folders)
         if {"shabbat_city", "candle_minutes", "shabbat_stop_before", "havdalah"} & set(changed):
             self._configure_zmanim()
         if "radio_list_url" in changed:
@@ -256,6 +265,8 @@ class PlayerService:
             removed = self._remove_missing(idx, known, seen, use_roots if partial else None)
             propagated = self._propagate(idx)
             duplicates = idx.mark_duplicates()
+            self._update_kinds(idx)
+            self._forget_artists()
             finished = datetime.now()
             idx.set_meta("last_scan_at", finished.isoformat(timespec="seconds"))
             if not partial:
@@ -432,6 +443,148 @@ class PlayerService:
         self.index.set_override(track_id, vocal=None if value is None else (1 if value else 0))
         return self._reclassify_one(track_id)
 
+    # -- requests by voice (1.4) ---------------------------------------------------
+    def voice_status(self) -> dict:
+        folder = self.voice.model_dir()
+        return {
+            "available": folder is not None,
+            "loaded": self.voice.loaded,
+            "bundled": folder is not None and self.bundled_models_dir is not None
+            and folder.parent == self.bundled_models_dir,
+            "download_mb": voice_mod.DOWNLOAD_MB,
+            "credit": voice_mod.CREDIT,
+            "error": self.voice.load_error,
+        }
+
+    def install_voice(self, on_progress=None) -> dict:
+        try:
+            voice_mod.install(self.models_dir, on_progress=on_progress)
+        except Exception as exc:  # noqa: BLE001 - the window says what went wrong
+            return {"ok": False, "message": f"ההורדה לא הצליחה: {exc}", **self.voice_status()}
+        ok = self.voice.load()
+        return {"ok": ok, "message": "" if ok else self.voice.load_error, **self.voice_status()}
+
+    def voice_recognize(self, pcm_b64: str, rate: int = 16000) -> dict:
+        """What was said: 16-bit mono PCM (base64) from the window's
+        microphone, recognized on this computer."""
+        import base64
+
+        import numpy as np
+
+        if not self.voice.available:
+            return {"ok": False, "reason": "no-model", "text": "", **self.voice_status()}
+        try:
+            raw = base64.b64decode(pcm_b64 or "", validate=False)
+        except ValueError:
+            return {"ok": False, "reason": "bad-audio", "text": ""}
+        if len(raw) < 2 * int(0.3 * rate):
+            return {"ok": True, "text": "", "request": ""}
+        samples = np.frombuffer(raw[: len(raw) // 2 * 2], dtype="<i2").astype(np.float32) / 32768.0
+        try:
+            text = self.voice.recognize(samples, rate)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "reason": "failed", "text": "", "message": str(exc)}
+        return {"ok": True, "text": text, "request": voice_mod.clean_request(text)}
+
+    # -- one singer, one name (1.4) -----------------------------------------------
+    ARTIST_CHOICES = "artist_choices"
+
+    def _artist_choices(self) -> dict:
+        try:
+            data = json.loads(self.index.get_meta(self.ARTIST_CHOICES) or "{}")
+            return data if isinstance(data, dict) else {}
+        except ValueError:
+            return {}
+
+    def _artists(self) -> tuple[dict[str, str], list, set[str]]:
+        """(spelling → name shown, groups, names shown), kept for a few seconds."""
+        now = time.monotonic()
+        cache = getattr(self, "_artist_cache", None)
+        if cache and now - cache[0] < 5.0:
+            return cache[1]
+        counts = self.index.artist_counts()
+        mapping, groups = artists_mod.build(counts, self._artist_choices())
+        shown = {mapping.get(a, a) for a in counts}
+        self._artist_cache = (now, (mapping, groups, shown))
+        return mapping, groups, shown
+
+    def _forget_artists(self) -> None:
+        self._artist_cache = None
+
+    def artist_name(self, spelling: str | None) -> str:
+        if not spelling:
+            return spelling or ""
+        return self._artists()[0].get(spelling, spelling)
+
+    def artist_groups(self) -> dict:
+        """The spellings unified and the ones suggested (settings)."""
+        _, groups, _ = self._artists()
+        return {"groups": [g.to_dict() for g in groups],
+                "waiting": sum(1 for g in groups if not g.applied and not g.sure)}
+
+    def set_artist_choice(self, key: str, name: str | None = None, merge: bool | None = None,
+                          apart: bool | None = None) -> dict:
+        """The listener's decision about a group of spellings: the name to
+        show, to unify a suggested group (merge), or to keep it apart."""
+        if not key:
+            return {"ok": False}
+        choices = self._artist_choices()
+        c = dict(choices.get(key) or {})
+        if name is not None:
+            c["name"] = str(name).strip()[:120] or None
+        if merge is not None:
+            c["merge"] = bool(merge)
+            c.pop("apart", None)
+        if apart is not None:
+            c["apart"] = bool(apart)
+            if apart:
+                c.pop("merge", None)
+        c = {k: v for k, v in c.items() if v}
+        if c:
+            choices[key] = c
+        else:
+            choices.pop(key, None)
+        self.index.set_meta(self.ARTIST_CHOICES, json.dumps(choices, ensure_ascii=False))
+        self._forget_artists()
+        return {"ok": True, **self.artist_groups()}
+
+    # -- spoken recordings, disliked songs (1.4) --------------------------------
+    @staticmethod
+    def _speech_text(track: Track) -> str:
+        return " ".join(p for p in (track.title, track.album, track.filename) if p)
+
+    def _update_kinds(self, idx: MusicIndex | None = None) -> int:
+        """Mark spoken recordings (sound.is_speech) after a scan, a listening
+        pass or a decision of the listener. Returns how many changed."""
+        idx = idx or self.index
+        analyses = idx.analyses()
+        overrides = idx.overrides()
+        changed = 0
+        for t in idx.all_tracks():
+            kind = "speech" if sound_mod.is_speech(analyses.get(t.id), self._speech_text(t),
+                                                    overrides.get(t.id)) else ""
+            if kind != (t.kind or ""):
+                idx.set_kind(t.id, kind, commit=False)
+                changed += 1
+        idx.commit()
+        return changed
+
+    def set_track_speech(self, track_id: str, value: bool | None) -> dict:
+        """True: a spoken recording (a talk, a shiur); False: a song; None:
+        as the listening heard it."""
+        self.index.set_override(track_id, speech=None if value is None else (1 if value else 0))
+        self._update_kinds()
+        return self._one_track(track_id)
+
+    def set_track_disliked(self, track_id: str, on: bool) -> dict:
+        """A song the listener does not want to hear in mixes, sets and the radio."""
+        self.index.set_override(track_id, disliked=1 if on else None)
+        return self._one_track(track_id)
+
+    def _one_track(self, track_id: str) -> dict:
+        track = self.index.get(track_id)
+        return {"ok": track is not None, "track": self._tracks_payload([track])[0] if track else None}
+
     def confirm_vocal(self, track_ids: list[str], value: bool) -> dict:
         for tid in track_ids:
             self.index.set_override(tid, vocal=1 if value else 0)
@@ -540,8 +693,10 @@ class PlayerService:
             a = done.get(t.id)
             changed = a is None or (a.get("mtime"), a.get("size")) != (t.mtime, t.size)
             unreadable = not changed and a.get("verdict") == "unreadable"
-            need_listen = listen and (changed or a.get("model") != VOCAL_MODEL)
-            need_rhythm = rhythm and not unreadable and (changed or a.get("energy") is None)
+            need_listen = listen and (changed or a.get("model") != VOCAL_MODEL
+                                      or (not unreadable and a.get("profile_v") != sound_mod.PROFILE_VERSION))
+            need_rhythm = rhythm and not unreadable and (changed or a.get("energy") is None
+                                                        or a.get("lead") is None)
             if need_listen or need_rhythm:
                 out.append((t, need_listen))
         return out
@@ -580,7 +735,14 @@ class PlayerService:
                 rh = result.rhythm or {}
                 row.update({"tempo": rh.get("tempo"), "energy": rh.get("energy", 0.0),
                             "pulse": rh.get("pulse"), "loudness": rh.get("loudness")})
+                if result.profile:
+                    row.update(result.profile)
+                # Edges it could not read count as none, so the song is not read again.
+                row.update(result.edges if result.edges is not None else {"lead": 0.0, "tail": 0.0})
                 idx.save_analysis(track.id, row, commit=False)
+                kind = "speech" if sound_mod.is_speech(row, self._speech_text(track), overrides.get(track.id)) else ""
+                if kind != (track.kind or ""):
+                    idx.set_kind(track.id, kind, commit=False)
                 done += 1
                 if with_listening and result.verdict == "vocal":
                     found += 1
@@ -820,12 +982,18 @@ class PlayerService:
                 "cover": bool(cover), "propagated": spread, "covered_ids": covered, "cover_key": track.cover,
                 "message": "" if values or cover else "לא היה מה להוסיף מהפרטים שנבחרו."}
 
+    def _search_text(self, query: str) -> str:
+        """A singer's other spellings, written as the name shown."""
+        mapping, _, shown = self._artists()
+        return artists_mod.expand_query(query, mapping, shown) or query
+
     def _candidates(self) -> list[MatchCandidate]:
         hide = self.index.hide_duplicates
+        mapping = self._artists()[0]
         return [
             MatchCandidate(
-                id=t.id, title=t.title, artist=t.artist, album=t.album, filename=t.filename,
-                folder=self._folder_hint(t.path) if t.path else "",
+                id=t.id, title=t.title, artist=mapping.get(t.artist, t.artist) if t.artist else "",
+                album=t.album, filename=t.filename, folder=self._folder_hint(t.path) if t.path else "",
             )
             for t in self.index.iter_tracks() if not (hide and t.dup_of)
         ]
@@ -839,6 +1007,9 @@ class PlayerService:
         d.pop("mtime", None)
         d.pop("size", None)
         d["folder"] = display_folder(track.path) if track.path else ""
+        if track.artist:
+            d["artist_raw"] = track.artist
+            d["artist"] = self.artist_name(track.artist)
         # What the listener decided and what the detector heard, for the menu
         # and the "found by listening" marks.
         vocal = override.get("vocal") if override else None
@@ -846,6 +1017,14 @@ class PlayerService:
                       else (analysis or {}).get("verdict") if (analysis or {}).get("verdict") in ("vocal", "maybe")
                       else None)
         d["topic_chosen"] = bool(override and override.get("has_topic"))
+        # 1.4: the listener's other decisions, and what the player needs to
+        # play the song at an even volume without its silent edges.
+        d["speech_chosen"] = None if not override or override.get("speech") is None else bool(override["speech"])
+        d["disliked"] = bool(override and override.get("disliked"))
+        a = analysis or {}
+        d["gain"] = sound_mod.gain_db(a.get("loudness"))
+        d["lead"] = a.get("lead") or 0.0
+        d["tail"] = a.get("tail") or 0.0
         return d
 
     def _tracks_payload(self, tracks: list[Track]) -> list[dict]:
@@ -894,8 +1073,102 @@ class PlayerService:
         tracks = [t for t in self.index.all_tracks() if t.artist and not t.is_video]
         plays = self.index.play_counts([t.id for t in tracks])
         hearts = self.index.favorite_ids()
-        rows = [(t.artist, 0.3 + plays.get(t.id, 0) + (3.0 if t.id in hearts else 0.0)) for t in tracks]
+        rows = [(self.artist_name(t.artist), 0.3 + plays.get(t.id, 0) + (3.0 if t.id in hearts else 0.0)) for t in tracks]
         return sets_mod.top_artists(rows, limit)
+
+    # -- רדיו המנגן (1.4) ---------------------------------------------------------
+    STATION_BATCH = 8
+
+    def _station_candidates(self) -> tuple[list[station_mod.Candidate], dict[str, Track]]:
+        tracks = [t for t in self.index.mixable_tracks()
+                  if not t.duration or self.SET_MIN_SECONDS <= t.duration <= 20 * 60]
+        ids = [t.id for t in tracks]
+        analyses = self.index.analyses_for(ids)
+        overrides = self.index.overrides_for(ids)
+        plays = self.index.play_counts(ids)
+        last = self.index.last_played_map()
+        hearts = self.index.favorite_ids()
+        now = datetime.now()
+        out = []
+        for t in tracks:
+            a = analyses.get(t.id) or {}
+            o = overrides.get(t.id) or {}
+            hours = None
+            if t.id in last:
+                try:
+                    hours = (now - datetime.fromisoformat(last[t.id])).total_seconds() / 3600
+                except ValueError:
+                    hours = None
+            out.append(station_mod.Candidate(
+                id=t.id, artist=self.artist_name((t.artist or "").strip()), topic=t.topic, tags=tuple(t.tag_list),
+                energy=a.get("energy"), tempo=a.get("tempo"), profile=sound_mod.unpack(a.get("profile")),
+                favorite=t.id in hearts, plays=plays.get(t.id, 0), hours_since_played=hours,
+                vocal=o.get("vocal") == 1 or VOCAL_TOPIC in ((t.topic,) + tuple(t.tag_list)),
+                duration=t.duration))
+        return out, {t.id: t for t in tracks}
+
+    def _mood_tracks(self, mood, limit: int) -> list[Track]:
+        """Songs that sound like the mood asked for ("משהו רגוע"), best
+        first with a little variety. Only songs the listening has heard."""
+        candidates, by_id = self._station_candidates()
+        heard = [c for c in candidates if c.energy is not None or c.profile is not None]
+        if len(heard) < 3:
+            return []
+        rng = random.Random()
+        ranked = sorted(heard, key=lambda c: -station_mod.score_for_mood(c, mood) * rng.uniform(0.9, 1.1))
+        keep = ranked[: max(3, min(limit, int(len(ranked) * 0.5) or 3))]
+        return [by_id[c.id] for c in keep]
+
+    def _station_mood(self, now: datetime) -> station_mod.Mood:
+        part = station_mod.daypart(now)
+        info = today_info(now.date(), vocal_suggestions=self.settings.vocal_suggestions)
+        primary = info.get("primary") or {}
+        topic = primary.get("topic")
+        vocal_only = topic == VOCAL_TOPIC
+        if vocal_only or topic in sets_mod.SOLEMN_TOPICS:
+            topic = None
+        out_of_season = (set(sets_mod.SEASONAL_TOPICS) | set(sets_mod.SOLEMN_TOPICS)) - {"שבת", topic}
+        return station_mod.Mood(part=part, topic=topic,
+                                topic_label=topics_mod.TOPIC_LABELS.get(topic, topic or "") if topic else "",
+                                vocal_only=vocal_only, out_of_season=frozenset(out_of_season))
+
+    def station(self, seed: str | None = None, history: list[str] | None = None,
+                count: int | None = None) -> dict:
+        """רדיו המנגן: the next songs of a station that plays on from the
+        listener's own songs — by the time of day and the calendar, or after a
+        chosen song (``seed``). ``history``: the songs it already played."""
+        history = list(history or [])
+        count = max(1, min(int(count or self.STATION_BATCH), 30))
+        candidates, by_id = self._station_candidates()
+        now = datetime.now()
+        if seed:
+            seed_track = self.index.get(seed)
+            if seed_track is None:
+                return {"ok": False, "message": "השיר לא נמצא במאגר.", "tracks": []}
+            seed_c = next((c for c in candidates if c.id == seed), None)
+            if seed_c is None:   # a spoken recording or a disliked song still starts its own radio
+                a = self.index.analyses_for([seed]).get(seed) or {}
+                seed_c = station_mod.Candidate(id=seed, artist=self.artist_name((seed_track.artist or "").strip()),
+                                               topic=seed_track.topic, tags=tuple(seed_track.tag_list),
+                                               energy=a.get("energy"), tempo=a.get("tempo"),
+                                               profile=sound_mod.unpack(a.get("profile")))
+            chosen = station_mod.pick(candidates, count, seed=seed_c, history=history)
+            tracks = ([seed_track] if not history else []) + [by_id[c.id] for c in chosen]
+            name = seed_track.title or seed_track.filename
+            heard = seed_c.profile is not None
+            return {"ok": True, "mode": "song", "seed": seed, "title": f"רדיו מהשיר {name}",
+                    "subtitle": "שירים שנשמעים דומה, של אותו זמר ובאותו קצב" if heard
+                    else "שירים של אותו זמר, באותו נושא ובקצב דומה",
+                    "tracks": self._tracks_payload(tracks)}
+        mood = self._station_mood(now)
+        chosen = station_mod.pick(candidates, count, mood=mood, history=history)
+        note = ""
+        if mood.vocal_only and not chosen:
+            note = "אין עדיין במחשב שירים ווקאליים מאושרים. אפשר לאשר אותם בעמוד „ווקאלי”."
+        elif not chosen:
+            note = "אין עדיין מספיק שירים לרדיו. אחרי הסריקה הוא יתמלא."
+        return {"ok": True, "mode": "time", "seed": None, "title": mood.title, "subtitle": mood.subtitle,
+                "daypart": mood.part.key, "note": note, "tracks": self._tracks_payload([by_id[c.id] for c in chosen])}
 
     def play_set(self, intent: Intent) -> dict:
         """A set that warms up, builds and eases off, for a celebration
@@ -908,7 +1181,7 @@ class PlayerService:
         analyses = self.index.analyses()
         hide = self.index.hide_duplicates
         pool: list[sets_mod.SetSong] = []
-        for t in self.index.all_tracks():
+        for t in self.index.mixable_tracks():
             if t.is_video or (hide and t.dup_of) or t.topic in sets_mod.SOLEMN_TOPICS:
                 continue
             if t.duration and not self.SET_MIN_SECONDS <= t.duration <= self.SET_MAX_SECONDS:
@@ -1180,6 +1453,7 @@ class PlayerService:
         elif intent.action == Action.PLAY_TOPIC and intent.topic:
             song_query = intent.params.get("song_query")
             if song_query:
+                song_query = self._search_text(song_query)
                 found = fuzzy_search(song_query, self._candidates(), limit=intent.limit or 25)
                 if found and found[0].score >= _STRONG_TITLE_MATCH:
                     by_id = {t.id: t for t in self.index.get_many([r.candidate.id for r in found])}
@@ -1189,7 +1463,15 @@ class PlayerService:
             understood = topics_mod.topic_phrase(intent.topic)
         else:
             # SEARCH_SONG (or fallback): every word of the request must match.
-            query = intent.query or intent.raw
+            mood = station_mod.mood_request(intent.raw or "") or station_mod.mood_request(intent.query or "")
+            if mood is not None:
+                tracks = self._mood_tracks(mood, 1000 if minutes else (intent.limit or 30))
+                if tracks:
+                    if minutes:
+                        tracks = self._fill_minutes(tracks, minutes)
+                        return tracks, f"{_span_text(minutes)} של {mood.label}", ""
+                    return tracks, mood.label, ""
+            query = self._search_text(intent.query or intent.raw)
             candidates = self._candidates()
             found = fuzzy_search(query, candidates, limit=limit)
             near = False
@@ -1200,7 +1482,7 @@ class PlayerService:
             tracks = [by_id[r.candidate.id] for r in found if r.candidate.id in by_id]
             shown = _display_query(intent.raw) or query
             understood = f"חיפוש: {shown}"
-            artists = [t.artist for t, r in zip(tracks, found) if r.by_artist and t.artist]
+            artists = [self.artist_name(t.artist) for t, r in zip(tracks, found) if r.by_artist and t.artist]
             if tracks and not near and len(artists) >= max(1, 0.6 * len(tracks)):
                 understood = f"השירים של {Counter(artists).most_common(1)[0][0]}"
             if not tracks:
@@ -1253,12 +1535,23 @@ class PlayerService:
         return [dict(t, count=counts.get(t["key"], 0)) for t in topics_mod.topic_list()]
 
     def list_tracks(self, **params) -> dict:
-        allowed = {"sort", "descending", "topic", "text", "favorites_only", "source", "offset", "limit"}
-        page = self.index.list_tracks(**{k: v for k, v in params.items() if k in allowed})
+        allowed = {"sort", "descending", "topic", "text", "favorites_only", "source", "kind", "offset", "limit"}
+        args = {k: v for k, v in params.items() if k in allowed}
+        text = (args.get("text") or "").strip()
+        if text:
+            mapping, _, shown = self._artists()
+            name = normalize(artists_mod.expand_query(text, mapping, shown))
+            # The library is searched by the spelling in the file: add the
+            # spellings of the singer the text names.
+            args["artists"] = [s for s, n in mapping.items() if normalize(n) == name] + \
+                [n for n in shown if normalize(n) == name]
+        page = self.index.list_tracks(**args)
         return {**page, "tracks": self._tracks_payload(page["tracks"])}
 
     def library_overview(self) -> dict:
         stats = self.index.stats()
+        stats["speech"] = self.index.speech_count()
+        stats["disliked"] = len(self.index.disliked_ids())
         return {
             "stats": stats,
             "topics": self.topics(),

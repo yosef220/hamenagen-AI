@@ -93,6 +93,14 @@ contextBridge.exposeInMainWorld('hamenagen', {
   vocalReview: (limit) => core('vocal_review', { limit }),
   analyzeVocal: () => core('analyze_vocal_async'),
   stopVocal: () => core('stop_vocal'),
+  setTrackSpeech: (id, value) => core('set_track_speech', { id, value }),
+  setTrackDisliked: (id, on) => core('set_track_disliked', { id, on }),
+  artistGroups: () => core('artist_groups'),
+  voiceStatus: () => core('voice_status'),
+  voiceRecognize: (pcm, rate) => core('voice_recognize', { pcm, rate }),
+  installVoice: () => core('install_voice_async'),
+  setArtistChoice: (key, choice) => core('set_artist_choice', { key, ...choice }),
+  station: (seed, history, count) => core('station', { seed: seed || null, history: history || [], count: count || null }),
 
   // The operating system.
   shellInfo: () => ipcRenderer.invoke('app:info'),

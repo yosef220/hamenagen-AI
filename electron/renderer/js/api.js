@@ -17,6 +17,8 @@
     'getSettings', 'updateSettings', 'radioList', 'checkUpdates', 'applyUpdate',
     'offlinePackStatus', 'installOfflinePack', 'onlineAvailable', 'onlineSearch', 'onlineDownload',
     'setTrackTopic', 'setTrackVocal', 'confirmVocal', 'vocalStatus', 'vocalReview', 'analyzeVocal', 'stopVocal',
+    'setTrackSpeech', 'setTrackDisliked', 'station', 'artistGroups', 'setArtistChoice',
+    'voiceStatus', 'voiceRecognize', 'installVoice',
     'onlineLink', 'downloadBatch', 'stopDownloads', 'lookupDetails', 'applyDetails',
     'appUpdateDownload', 'appUpdateCancel', 'appUpdateResult', 'completeDetails', 'stopCompleteDetails',
     'shabbatStatus', 'playlists', 'playlistGet', 'playlistCreate', 'playlistRename', 'playlistDelete',

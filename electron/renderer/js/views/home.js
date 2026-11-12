@@ -93,8 +93,16 @@
   const askSection = h('section', { class: 'ask', 'aria-label': 'בקשה' },
     h('form', { class: 'ask-form', role: 'search', onsubmit: (e) => { e.preventDefault(); H.ask(askInput.value); } },
       icon('search'), askInput,
+      H.voice ? H.voice.button() : null,
       h('button', { class: 'btn btn-primary', type: 'submit' }, 'השמע')),
     askChips);
+  // What was said goes into the request line, as if it was typed.
+  api.on('voice-heard', ({ text }) => { askInput.value = text; });
+  api.on('voice-state', ({ state }) => {
+    if (state === 'listening') askInput.value = '';
+    askInput.placeholder = state === 'listening' ? 'מקשיב… אפשר לדבר עכשיו'
+      : state === 'thinking' ? 'מזהה את הבקשה…' : 'מה לשמוע? למשל: שעה של שירי שבת';
+  });
 
   function updateChips() {
     const chips = SUGGESTIONS.slice();
@@ -136,11 +144,52 @@
         overview.scanning ? null : h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => H.rescan() }, icon('refresh-cw'), 'לסרוק שוב')));
   }
 
+  // ------------------------------------------------------------ רדיו המנגן
+  // The station for this hour, asked for once in a while (the home page is
+  // refreshed often); a press plays a fresh pick, which then plays on.
+  let stationPeek = null;
+  let stationAt = 0;
+  async function peekStation() {
+    if (stationPeek && Date.now() - stationAt < 10 * 60 * 1000) return stationPeek;
+    try {
+      stationPeek = await api.station(null, [], 3);
+      stationAt = Date.now();
+    } catch {
+      stationPeek = null;
+    }
+    return stationPeek;
+  }
+
+  function radioSection(peek) {
+    if (!peek || !peek.ok) return null;
+    const names = (peek.tracks || []).map((t) => H.trackTitle(t)).slice(0, 3);
+    const play = async (btn) => {
+      btn.disabled = true;
+      try {
+        const res = await api.station(null, []);
+        if (!H.player.playRadio(res)) H.toast(res.note || 'אין עדיין מספיק שירים לרדיו', { kind: 'bad', icon: 'radio' });
+      } catch (err) {
+        H.toast(`הרדיו לא נפתח: ${err.message}`, { kind: 'bad' });
+      } finally {
+        btn.disabled = false;
+      }
+    };
+    const btn = h('button', { class: 'btn btn-gold', type: 'button', onclick: (e) => play(e.currentTarget) }, icon('play'), 'להפעיל');
+    return h('section', { class: 'radio-card', 'data-part': peek.daypart || '', 'aria-label': peek.title },
+      h('div', { class: 'radio-card-mark', 'aria-hidden': 'true' }, icon('radio')),
+      h('div', { class: 'radio-card-text' },
+        h('div', { class: 'radio-card-title' }, peek.title),
+        h('div', { class: 'radio-card-sub' }, peek.note || peek.subtitle),
+        names.length ? h('div', { class: 'radio-card-songs' }, `למשל: ${names.join(' · ')}`) : null),
+      peek.tracks && peek.tracks.length ? btn : null);
+  }
+
   // ------------------------------------------------------------ render
   async function render() {
     let overview;
     try {
       [today, overview] = await Promise.all([api.today(), api.overview()]);
+      if (overview.stats.tracks) await peekStation();
     } catch (err) {
       H.clear(restHost).appendChild(H.emptyState('לא הצלחתי לטעון את דף הבית', err.message));
       return;
@@ -153,6 +202,7 @@
     if (!overview.stats.tracks) {
       parts.push(scanningPanel(overview));
     } else {
+      parts.push(radioSection(stationPeek));
       parts.push(topicsSection(overview.topics));
       parts.push(h('div', { class: 'home-cols' },
         listSection('שמעת לאחרונה', overview.history, 'השירים שתשמעו יופיעו כאן.',
@@ -160,7 +210,7 @@
         listSection('נוספו לאחרונה', overview.recent, 'עוד לא נוספו שירים.',
           h('button', { class: 'btn btn-quiet more', type: 'button', onclick: () => H.go('results', { kind: 'recent_downloaded' }) }, 'הכל', icon('chevron-left', 'icon-sm')))));
     }
-    H.clear(restHost).append(...parts);
+    H.clear(restHost).append(...parts.filter(Boolean));
     H.markActive(restHost);
   }
 

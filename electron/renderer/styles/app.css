@@ -393,6 +393,39 @@ select.select {
 }
 .luach .chip:hover { background: rgba(243, 246, 251, 0.08); }
 
+/* --------------------------------------------------------- רדיו המנגן */
+.radio-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s5);
+  padding: var(--s5) var(--s6);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg, 12px);
+  background: linear-gradient(90deg, var(--tekhelet-soft), var(--surface) 70%);
+}
+.radio-card-mark {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--mantle);
+  color: var(--thread);
+}
+.radio-card-mark .icon { width: 26px; height: 26px; }
+.radio-card[data-part="night"] .radio-card-mark,
+.radio-card[data-part="evening"] .radio-card-mark { background: #0F2240; }
+.radio-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.radio-card-title { font-family: var(--font-display); font-size: var(--fs-xl); font-weight: 500; line-height: 1.15; }
+.radio-card-sub { color: var(--ink-2); }
+.radio-card-songs { color: var(--ink-3); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.radio-card .btn-gold { white-space: nowrap; }
+@media (max-width: 640px) {
+  .radio-card { grid-template-columns: auto minmax(0, 1fr); }
+  .radio-card .btn-gold { grid-column: 1 / -1; justify-self: start; }
+}
+
 /* --------------------------------------------------------- request line */
 .ask { display: flex; flex-direction: column; gap: var(--s3); }
 .ask-form {
@@ -1412,4 +1445,67 @@ body.at-rest .app { visibility: hidden; }
   justify-content: center;
   gap: var(--s2);
   color: #4A5870;
+}
+
+/* --------------------------------------------------------- שמות של זמרים */
+.artist-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--line);
+}
+.artist-row.waiting { border-top-color: var(--gold); }
+.artist-names { min-width: 0; flex: 1 1 260px; }
+.artist-actions { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.artist-list > summary { cursor: pointer; padding: var(--s2) 0; color: var(--ink-2); }
+
+/* --------------------------------------------------------- בקשה בקול */
+.mic-btn {
+  --level: 0;
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--tekhelet);
+  cursor: pointer;
+}
+.mic-btn:hover { background: var(--tekhelet-soft); }
+.mic-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mic-btn .icon { width: 20px; height: 20px; }
+.mic-btn[data-state="listening"] {
+  border-color: var(--live);
+  background: var(--live);
+  color: #fff;
+  box-shadow: 0 0 0 calc(3px + var(--level) * 12px) color-mix(in srgb, var(--live) 22%, transparent);
+  transition: box-shadow 60ms linear;
+}
+.mic-btn[data-state="thinking"] .icon,
+.mic-btn[data-state="preparing"] .icon { animation: spin 0.9s linear infinite; }
+.mic-btn:disabled { cursor: progress; }
+.voice-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-inline-start: 3px solid var(--tekhelet);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.voice-offer-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 280px; min-width: 0; }
+.voice-offer-text span { color: var(--ink-2); font-size: var(--fs-sm); }
+.voice-offer-actions { display: flex; gap: var(--s2); }
+.voice-progress { height: 4px; border-radius: 2px; background: var(--sunken); overflow: hidden; margin-top: var(--s2); }
+.voice-progress > span { display: block; height: 100%; width: 0; background: var(--tekhelet); transition: width 200ms; }
+@media (prefers-reduced-motion: reduce) {
+  .mic-btn[data-state="thinking"] .icon, .mic-btn[data-state="preparing"] .icon { animation: none; }
 }
