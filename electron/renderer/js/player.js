@@ -288,8 +288,46 @@
   }
   setInterval(sleepTick, 1000);
 
+  // ------------------------------------------------------------ Shabbat mode
+  // While Shabbat mode holds the player nothing plays — not a click, a media
+  // key or a download that finished. Before that the music fades to silence.
+  let restFade = null;
+  P.blocked = false;
+  P.setBlocked = function setBlocked(on) {
+    P.blocked = !!on;
+    if (P.blocked) {
+      audio.pause();
+      if (P.sleep) { P.sleep = null; renderSleep(); }
+    }
+    changed('blocked');
+  };
+  P.fadeOutAndStop = function fadeOutAndStop(ms) {
+    if (restFade) return Promise.resolve();
+    if (!P.isPlaying()) { audio.pause(); return Promise.resolve(); }
+    return new Promise((resolve) => {
+      const from = audio.volume;
+      const t0 = Date.now();
+      fading = true;
+      restFade = setInterval(() => {
+        const k = Math.min(1, (Date.now() - t0) / Math.max(ms, 1));
+        audio.volume = from * (1 - k) * (1 - k);
+        if (k >= 1) {
+          clearInterval(restFade);
+          restFade = null;
+          audio.pause();
+          fading = false;
+          applyVolume();
+          resolve();
+        }
+      }, 200);
+    });
+  };
+
   // ------------------------------------------------------------ audio events
-  audio.addEventListener('play', () => changed('play'));
+  audio.addEventListener('play', () => {
+    if (P.blocked) { audio.pause(); return; }
+    changed('play');
+  });
   audio.addEventListener('pause', () => changed('pause'));
   audio.addEventListener('playing', () => { errorsInARow = 0; });
   audio.addEventListener('ended', () => {

@@ -282,7 +282,7 @@ bridge.onEvent((msg) => {
 
 // --- IPC: requests to the Python core ------------------------------------------------
 const BACKEND_METHODS = new Set([
-  'ping', 'app_info', 'today', 'opening_suggestion',
+  'ping', 'app_info', 'today', 'opening_suggestion', 'shabbat_status',
   'handle_request', 'playlist', 'set_favorite', 'record_play', 'track_lyrics',
   'library_overview', 'list_tracks', 'topics', 'rescan_async',
   'classifier_status', 'install_model_async', 'reclassify_async',

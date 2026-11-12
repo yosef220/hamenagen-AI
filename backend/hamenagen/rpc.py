@@ -119,6 +119,9 @@ class RpcServer:
     def rpc_today(self, params):
         return self.service.today()
 
+    def rpc_shabbat_status(self, params):
+        return self.service.shabbat_status()
+
     def rpc_opening_suggestion(self, params):
         return self.service.opening_suggestion()
 

@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('hamenagen', {
   // The Python core. Every call resolves to { ok, result } or { ok:false, error }.
   appInfo: () => core('app_info'),
   today: () => core('today'),
+  shabbatStatus: () => core('shabbat_status'),
   ask: (text) => core('handle_request', { text }),
   playlist: (kind, opts) => core('playlist', { kind, ...(opts || {}) }),
   setFavorite: (id, on) => core('set_favorite', { id, on }),

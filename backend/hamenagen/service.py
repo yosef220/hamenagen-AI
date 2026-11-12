@@ -28,6 +28,7 @@ from .classifier import EmbeddingBackend, HybridClassifier
 from .fetcher import OnlineFetcher, ProgressHook, SearchResult, find_ffmpeg
 from .fuzzy import MatchCandidate, near_matches, search as fuzzy_search
 from .hebrew_calendar import VOCAL_TOPIC, detect_occasion, from_gregorian, today_info
+from .zmanim import ZmanimService
 from .index_db import AVERAGE_SONG_SECONDS, MusicIndex, encode_tags
 from .intent import Action, Intent
 from .models import Track
@@ -112,6 +113,10 @@ class PlayerService:
         # Listening for a cappella songs: the model ships in every edition;
         # a dev run can put it in data/models (prepare_audio_model.py).
         self.vocal = VocalDetector([bundled_audio_models_dir() or "", self.models_dir])
+        # Shabbat mode: times for the city, cached; the harness stays offline.
+        offline = bool(os.environ.get("HAMENAGEN_DEMO_ONLINE"))
+        self.zmanim = ZmanimService(self.data_dir / "zmanim.json", sources=[] if offline else None)
+        self._configure_zmanim()
         self.vocal_running = False
         self.vocal_stop = False
         self.scanning = False
@@ -160,6 +165,8 @@ class PlayerService:
             self._apply_vocal_verdicts()
         if "update_manifest_url" in changed:
             self.updater.manifest_url = self.settings.update_manifest_url
+        if {"shabbat_city", "candle_minutes", "shabbat_stop_before", "havdalah"} & set(changed):
+            self._configure_zmanim()
         if "radio_list_url" in changed:
             self.radio.source_url = self.settings.radio_list_url
         return {**self.settings.to_dict(), "_changed": changed}
@@ -916,6 +923,19 @@ class PlayerService:
             "scanning": self.scanning,
             "roots": self._roots(),
         }
+
+    # -- Shabbat mode ---------------------------------------------------------
+    def _configure_zmanim(self) -> None:
+        s = self.settings
+        self.zmanim.configure(city=s.shabbat_city, candle_minutes=s.candle_minutes,
+                              stop_before=s.shabbat_stop_before, havdalah=s.havdalah)
+
+    def shabbat_status(self) -> dict:
+        """The coming (or current) Shabbat or festival for the player's clock.
+        Fresh times are fetched in the background about once a week."""
+        if self.settings.shabbat_mode:
+            self.zmanim.refresh_in_background()
+        return self.zmanim.status(enabled=self.settings.shabbat_mode)
 
     # -- the calendar (spec §7) ------------------------------------------------
     def today(self, on: date | None = None) -> dict:

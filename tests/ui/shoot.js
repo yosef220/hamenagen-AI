@@ -167,6 +167,22 @@ async function run() {
       await shot(page, `06-settings${suffix}`);
       await page.evaluate(() => document.querySelector('#set-vocal').scrollIntoView({ block: 'start' }));
       await shot(page, `12-settings-vocal${suffix}`);
+      await page.evaluate(() => document.querySelector('#set-shabbat').scrollIntoView({ block: 'start' }));
+      await page.waitForFunction(() => /הדלקת נרות/.test(document.querySelector('#set-shabbat .set-times').textContent || ''), null, { timeout: 10000 })
+        .catch(() => errors.push('the Shabbat card shows no times'));
+      await shot(page, `17-settings-shabbat${suffix}`);
+
+      // Shabbat mode: the screen that covers the player until Shabbat goes out.
+      await page.locator('#set-shabbat button', { hasText: 'להציג' }).click();
+      await page.waitForSelector('#rest:not([hidden]) .rest-greeting');
+      const greeting = await page.textContent('#rest .rest-greeting');
+      if (!/שלום|חג|שנה טובה|חתימה/.test(greeting)) errors.push(`Shabbat screen says: ${greeting}`);
+      await shot(page, `18-shabbat${suffix}`);
+      await page.locator('#rest button', { hasText: 'חזרה' }).click();
+      // The real thing: the window has begun, the player is held.
+      await page.evaluate(() => H.shabbat.show(H.shabbat.status().next));
+      if (!(await page.evaluate(() => H.player.blocked && !H.player.isPlaying()))) errors.push('the player is not held during Shabbat');
+      await page.evaluate(() => H.shabbat.hide());
 
       await page.evaluate(() => H.openDrawer('queue'));
       await page.waitForSelector('#drawer .track');

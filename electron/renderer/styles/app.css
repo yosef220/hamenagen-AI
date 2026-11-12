@@ -1187,3 +1187,90 @@ input[type="range"]:hover::-webkit-slider-thumb, input[type="range"]:focus-visib
 .cand-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cand-sub { font-size: var(--fs-sm); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cand-actions { display: flex; flex-direction: column; gap: var(--s1); }
+
+/* ---------------------------------------------------------- Shabbat mode */
+/* The whole window becomes the mantle of the luach: two candles, the
+   greeting in gold thread, and the times — until Shabbat goes out. */
+.rest {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: var(--s8);
+  overflow: auto;
+  background: var(--mantle);
+  color: var(--mantle-ink);
+}
+.rest::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 28px;
+  height: 5px;
+  border-top: 2px solid var(--thread);
+  border-bottom: 1px solid var(--thread);
+  opacity: 0.85;
+}
+body.at-rest .app { visibility: hidden; }
+.rest-inner { display: flex; flex-direction: column; align-items: center; gap: var(--s3); text-align: center; max-width: 680px; }
+.rest-candles { display: flex; gap: 30px; height: 96px; align-items: flex-end; margin-bottom: var(--s4); }
+.candle {
+  position: relative;
+  width: 12px;
+  height: 64px;
+  border-radius: 3px 3px 2px 2px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--mantle-ink) 82%, var(--mantle)), var(--mantle-ink) 45%, color-mix(in srgb, var(--mantle-ink) 70%, var(--mantle)));
+}
+.flame {
+  position: absolute;
+  left: 50%;
+  top: -27px;
+  width: 14px;
+  height: 23px;
+  margin-left: -7px;
+  border-radius: 50% 50% 46% 46% / 62% 62% 38% 38%;
+  background: radial-gradient(ellipse at 50% 72%, #fffbe8 0 22%, var(--thread) 58%, transparent 74%);
+  filter: drop-shadow(0 0 12px var(--thread));
+  transform-origin: 50% 100%;
+  animation: flame 3.4s ease-in-out infinite;
+}
+.candle + .candle .flame { animation-delay: -1.3s; }
+@keyframes flame {
+  0%, 100% { transform: scale(1, 1) rotate(-1deg); }
+  35% { transform: scale(1.06, 0.95) rotate(1.5deg); }
+  70% { transform: scale(0.96, 1.04) rotate(-0.5deg); }
+}
+.rest-kicker { color: var(--mantle-ink-2); font-size: var(--fs-md); }
+.rest-greeting {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: clamp(56px, 9vw, 120px);
+  line-height: 1;
+  color: var(--thread);
+  text-wrap: balance;
+}
+.rest-title { font-family: var(--font-display); font-size: var(--fs-2xl); }
+.rest-times { display: flex; gap: var(--s10); margin: var(--s5) 0 0; }
+.rest-times > div { display: flex; flex-direction: column; gap: 2px; }
+.rest-times dt { color: var(--mantle-ink-2); font-size: var(--fs-sm); }
+.rest-times dd { margin: 0; font-family: var(--font-display); font-size: var(--fs-3xl); font-variant-numeric: tabular-nums; }
+.rest-note { margin: var(--s3) 0 0; max-width: 48ch; color: var(--mantle-ink-2); font-size: var(--fs-sm); }
+.rest-foot { margin-top: var(--s8); min-height: 40px; display: flex; align-items: center; justify-content: center; }
+.rest-off {
+  border: 0;
+  background: none;
+  color: var(--mantle-ink-2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  opacity: 0.8;
+  cursor: pointer;
+}
+.rest-off:hover, .rest-off:focus-visible { opacity: 1; }
+.rest-confirm { display: flex; gap: var(--s2); align-items: center; font-size: var(--fs-sm); }
+.rest-confirm[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .flame { animation: none; } }
+.set-times { color: var(--ink-2); font-size: var(--fs-sm); }

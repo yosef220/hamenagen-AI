@@ -183,6 +183,52 @@
         'כבוי: שירים שזוהו מחכים לאישור שלך בעמוד „ווקאלי”, ורק שירים שאושרו מוצעים בימי הספירה ובין המצרים. הזיהוי אוטומטי ויכול לטעות — בעיקר בשירה עם ליווי חלש מאוד.'));
   }
 
+  function shabbat() {
+    const s = H.settings;
+    const st = H.shabbat ? H.shabbat.status() : null;
+    const cities = (st && st.cities) || [s.shabbat_city];
+    const line = h('div', { class: 'set-times' });
+    const describe = (r) => {
+      if (!r || !r.enabled) return 'מצב השבת כבוי.';
+      const w = r.current || r.next;
+      if (!w) return '';
+      const what = w.kind === 'shabbat' ? (w.detail || 'שבת') : w.title;
+      return `${what}: הדלקת נרות ב${w.eve_weekday} ${w.candle_text}, המוזיקה נעצרת ${w.stop_text}, ${w.end_label} ${w.end_text}. מקור הזמנים: ${w.source_label}.`;
+    };
+    const refreshLine = async () => { line.textContent = describe(await H.shabbat.refresh()); };
+    refreshLine();
+    const select = (key, label, options, value, numeric) => {
+      const el = h('select', { class: 'select', 'aria-label': label },
+        options.map(([v, text]) => h('option', { value: String(v), selected: String(v) === String(value) }, text)));
+      el.addEventListener('change', async () => {
+        if (await save({ [key]: numeric ? Number(el.value) : el.value })) {
+          if (key === 'shabbat_city') render({ focus: 'shabbat' });
+          else refreshLine();
+        }
+      });
+      return el;
+    };
+    const cityMinutes = st ? st.city_minutes : 18;
+    return h('section', { class: 'set-group', id: 'set-shabbat' },
+      h('h2', {}, 'שבת וחג'),
+      toggle('shabbat_mode', 'מצב שבת וחג',
+        'לפני הדלקת נרות המוזיקה נחלשת ונעצרת, ועד צאת השבת או החג מוצג „שבת שלום” ושום דבר לא מתנגן. הזמנים מאתר זמנים טובא (כתר תורה); אם אין אליו גישה — מ-Hebcal, ובלי אינטרנט בכלל — מחישוב במחשב.',
+        () => refreshLine()),
+      row('העיר', null, select('shabbat_city', 'העיר', cities.map((c) => [c, c]), s.shabbat_city)),
+      row('הדלקת נרות', 'כמה דקות לפני השקיעה',
+        select('candle_minutes', 'הדלקת נרות', [[0, `כמנהג העיר (${cityMinutes} דקות)`], [18, '18 דקות'], [20, '20 דקות'], [22, '22 דקות'], [30, '30 דקות'], [40, '40 דקות']], s.candle_minutes, true)),
+      row('עצירת המוזיקה', 'כמה זמן לפני הדלקת נרות',
+        select('shabbat_stop_before', 'עצירת המוזיקה', [[0, 'בזמן הדלקת נרות'], [5, '5 דקות לפני'], [10, '10 דקות לפני'], [15, '15 דקות לפני'], [20, '20 דקות לפני'], [30, 'חצי שעה לפני']], s.shabbat_stop_before, true)),
+      row('צאת השבת', null,
+        segmented([['tzeit', 'צאת הכוכבים'], ['rt', 'רבנו תם']], s.havdalah, async (v) => { if (await save({ havdalah: v })) refreshLine(); }, 'צאת השבת'),
+        { wide: line }),
+      row('המסך בשבת', 'כך ייראה המנגן מהדלקת נרות ועד צאת השבת.',
+        h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: () => {
+          const r = H.shabbat.status();
+          H.shabbat.preview(r && (r.current || r.next));
+        } }, icon('eye', 'icon-sm'), 'להציג')));
+  }
+
   function online(info) {
     const folder = (info && info.downloads_dir) || '';
     return h('section', { class: 'set-group', id: 'set-online' },
@@ -266,13 +312,14 @@
     const [settings, status, overview, info, shell, vocal] = await Promise.all([
       api.getSettings(), api.classifierStatus().catch(() => null), api.overview().catch(() => null),
       api.appInfo().catch(() => null), api.shellInfo(), api.vocalStatus().catch(() => null),
+      H.shabbat ? H.shabbat.refresh() : null,
     ]);
     H.settings = settings;
     H.appInfo = info;
     H.clear(root).append(
       h('header', { class: 'page-head' }, h('h1', {}, 'הגדרות')),
       h('div', { class: 'settings' },
-        appearance(), library(overview), ai(status, info), suggestions(), listening(vocal), online(info), updates(info),
+        appearance(), library(overview), ai(status, info), suggestions(), shabbat(), listening(vocal), online(info), updates(info),
         about(info, shell)));
     if (params.focus) {
       const target = H.$(`#set-${params.focus}`);
