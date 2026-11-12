@@ -292,7 +292,7 @@ const BACKEND_METHODS = new Set([
   'download_batch_async', 'stop_downloads', 'lookup_details', 'apply_details',
   'set_track_topic', 'set_track_vocal', 'confirm_vocal',
   'playlists', 'playlist_get', 'playlist_create', 'playlist_rename', 'playlist_delete', 'playlist_add',
-  'playlist_set_order', 'track_copies',
+  'playlist_set_order', 'track_copies', 'online_set', 'listen_prepare',
   'vocal_status', 'vocal_review', 'analyze_vocal_async', 'stop_vocal',
 ]);
 

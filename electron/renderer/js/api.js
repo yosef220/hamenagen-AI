@@ -19,7 +19,7 @@
     'setTrackTopic', 'setTrackVocal', 'confirmVocal', 'vocalStatus', 'vocalReview', 'analyzeVocal', 'stopVocal',
     'onlineLink', 'downloadBatch', 'stopDownloads', 'lookupDetails', 'applyDetails',
     'shabbatStatus', 'playlists', 'playlistGet', 'playlistCreate', 'playlistRename', 'playlistDelete',
-    'playlistAdd', 'playlistSetOrder', 'trackCopies',
+    'playlistAdd', 'playlistSetOrder', 'trackCopies', 'onlineSet', 'listenPrepare',
   ];
   const SHELL = [
     'shellInfo', 'setTheme', 'openExternal', 'showInFolder', 'openFolder', 'chooseFolder', 'playerState',

@@ -123,6 +123,14 @@ _MIGRATIONS = {
     "dup_of": "TEXT DEFAULT ''",
 }
 
+# Columns of audio_analysis added in 1.3: the tempo and energy of a song.
+_ANALYSIS_MIGRATIONS = {
+    "tempo": "REAL",
+    "energy": "REAL",
+    "pulse": "REAL",
+    "loudness": "REAL",
+}
+
 _COLUMNS = [
     "id", "path", "title", "artist", "album", "filename", "duration",
     "is_video", "source", "topic", "topic_source", "download_date",
@@ -192,6 +200,10 @@ class MusicIndex:
             if column not in have:
                 self._conn.execute(f"ALTER TABLE tracks ADD COLUMN {column} {decl}")
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_tags ON tracks(tags)")
+        have = {r["name"] for r in self._conn.execute("PRAGMA table_info(audio_analysis)")}
+        for column, decl in _ANALYSIS_MIGRATIONS.items():
+            if column not in have:
+                self._conn.execute(f"ALTER TABLE audio_analysis ADD COLUMN {column} {decl}")
 
     def close(self) -> None:
         with self._lock:
@@ -340,7 +352,8 @@ class MusicIndex:
         return {r["track_id"]: dict(r) for r in rows}
 
     def save_analysis(self, track_id: str, row: dict, *, commit: bool = True) -> None:
-        cols = ["model", "verdict", "acapella", "instrument", "windows", "mtime", "size", "analyzed_at"]
+        cols = [c for c in ("model", "verdict", "acapella", "instrument", "windows", "mtime", "size", "analyzed_at",
+                            "tempo", "energy", "pulse", "loudness") if c in row]
         with self._lock:
             self._conn.execute(
                 f"INSERT INTO audio_analysis (track_id, {', '.join(cols)}) VALUES (?{', ?' * len(cols)}) "

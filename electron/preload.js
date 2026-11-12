@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('hamenagen', {
   playlistAdd: (id, trackIds) => core('playlist_add', { id, track_ids: trackIds }),
   playlistSetOrder: (id, trackIds) => core('playlist_set_order', { id, track_ids: trackIds }),
   trackCopies: (id) => core('track_copies', { id }),
+  onlineSet: (event, topic) => core('online_set', { event, topic }),
+  listenPrepare: (result) => core('listen_prepare', { result }),
   ask: (text) => core('handle_request', { text }),
   playlist: (kind, opts) => core('playlist', { kind, ...(opts || {}) }),
   setFavorite: (id, on) => core('set_favorite', { id, on }),

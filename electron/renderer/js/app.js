@@ -242,6 +242,7 @@
       return;
     }
     H.settings = settings;
+    H.player.setCrossfade(settings.crossfade_seconds || 0);
     H.applyTheme(settings.theme);
     H.applyTextSize(settings.text_size);
     api.appInfo().then((info) => { H.appInfo = info; }).catch(() => {});

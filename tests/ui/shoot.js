@@ -267,6 +267,37 @@ async function run() {
       if (saved.length !== 5 || saved[1] !== firstTitle) errors.push(`playlist order after a move: ${saved.join(', ')}`);
       await shot(page, `20-playlist${suffix}`);
 
+      // A set for an occasion: the brit's songs from the library, and YouTube
+      // in the listener's style, to play without saving.
+      await page.evaluate(() => H.ask('תפעיל לי סט שירים לברית'));
+      await page.waitForSelector('#view-results .set-online .online-item', { timeout: 15000 });
+      const setTitle = await page.textContent('.results-title');
+      if (!/סט לברית/.test(setTitle)) errors.push(`a set request understood as: ${setTitle}`);
+      await shot(page, `21-set-brit${suffix}`);
+      await page.locator('#view-results .set-online .results-actions .btn-primary').click();
+      await page.waitForFunction(() => H.player.isPlaying(), null, { timeout: 15000 })
+        .catch(() => errors.push('the set did not start playing'));
+      await page.evaluate(() => { const P = H.player; P.jump(P.queue.findIndex((t) => t.listen)); });
+      await page.waitForFunction(() => { const c = H.player.current(); return c && c.listen && c.path && H.player.isPlaying(); }, null, { timeout: 20000 })
+        .catch(() => errors.push('a song from YouTube did not play without saving'));
+      await page.waitForTimeout(500);
+      await shot(page, `22-listening${suffix}`);
+      await page.evaluate(() => H.player.toggle(false));
+
+      // A soft transition: near the end of a song, the next one comes in.
+      const crossfaded = await page.evaluate(async () => {
+        const P = H.player;
+        const { tracks } = await H.api.ask('שירי חנוכה');
+        P.playList(tracks.slice(0, 2), 0, { crossfade: 4 });
+        await new Promise((r) => setTimeout(r, 800));
+        P.seekTo(P.audio.duration - 5);
+        await new Promise((r) => setTimeout(r, 2500));
+        const handed = P.index === 1 && P.isPlaying();
+        P.toggle(false);
+        return handed;
+      });
+      if (!crossfaded) errors.push('the crossfade did not move on to the next song');
+
       await page.evaluate(() => H.go('downloads'));
       await page.waitForTimeout(300);
       await shot(page, `09-downloads${suffix}`);

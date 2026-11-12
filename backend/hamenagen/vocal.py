@@ -84,9 +84,10 @@ class WindowScores:
 
 @dataclass
 class VocalResult:
-    verdict: str                      # vocal | maybe | instruments | unreadable
+    verdict: str                      # vocal | maybe | instruments | unreadable | "" (not listened)
     windows: list[WindowScores] = field(default_factory=list)
     error: str = ""
+    rhythm: dict | None = None        # tempo, pulse, loudness, energy (rhythm.py)
 
     @property
     def acapella(self) -> float:
@@ -144,6 +145,28 @@ class VocalDetector:
             if p.exists():
                 return p
         return None
+
+    @staticmethod
+    def readers_present() -> bool:
+        """What reading the windows needs (the tempo needs nothing more)."""
+        try:
+            import numpy  # noqa: F401
+            import soundfile  # noqa: F401
+        except Exception:
+            return False
+        return True
+
+    def _load_readers(self) -> bool:
+        if self._np is not None:
+            return True
+        try:
+            import numpy as np
+            import soundfile as sf
+        except Exception as exc:  # noqa: BLE001
+            self.load_error = f"{type(exc).__name__}: {exc}"
+            return False
+        self._np, self._sf = np, sf
+        return True
 
     @staticmethod
     def libraries_present() -> bool:
@@ -263,17 +286,27 @@ class VocalDetector:
             beatbox=float(probs[c["beatboxing"]]),
         )
 
-    def analyze(self, path: str | Path) -> VocalResult:
-        """Listen to one song. Never raises: a file that cannot be read gets
+    def analyze(self, path: str | Path, *, listen: bool = True) -> VocalResult:
+        """Listen to one song: singing without instruments (``listen``) and
+        its tempo and energy. Never raises: a file that cannot be read gets
         the verdict "unreadable"."""
+        from .rhythm import analyze_windows
+
         with self._lock:
-            if not self.load():
+            if listen and not self.load():
+                return VocalResult("unreadable", error=self.load_error)
+            if not self._load_readers():
                 return VocalResult("unreadable", error=self.load_error)
             try:
-                windows = [self.score_window(x) for x in self.read_windows(path)]
+                audio = self.read_windows(path)
+                windows = [self.score_window(x) for x in audio] if listen else []
             except Exception as exc:  # noqa: BLE001 - one bad file must not stop the job
                 return VocalResult("unreadable", error=f"{type(exc).__name__}: {exc}")
-            return VocalResult(decide(windows), windows)
+            try:
+                rhythm = analyze_windows(audio, SAMPLE_RATE)
+            except Exception:  # noqa: BLE001 - the tempo is a bonus
+                rhythm = None
+            return VocalResult(decide(windows) if listen else "", windows, rhythm=rhythm)
 
 
 def _mel_filterbank(np, n_freqs: int = 257, f_min: float = 0.0, f_max: float = 8000.0, n_mels: int = 64,

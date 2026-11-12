@@ -39,6 +39,15 @@ def main(music: str, data: str) -> int:
                 "mtime": track.mtime, "size": track.size, "analyzed_at": "2026-11-11T12:00:00",
             })
             seeded += 1
+    # And the tempo and energy it would have heard: lively wedding songs,
+    # calmer zemirot — enough for a "סט לשמחה" with its warm-up and peak.
+    lively = {"קול ששון": (132, 0.86), "מזל טוב": (128, 0.81), "רוקדים במעגל": (140, 0.9),
+              "שמחת בית השואבה": (124, 0.78), "בוקר של אור": (112, 0.62), "משנכנס אדר": (118, 0.7),
+              "שושנת יעקב": (126, 0.74), "סביבון": (120, 0.66), "חד גדיא": (116, 0.64)}
+    for n, track in enumerate(service.index.all_tracks()):
+        tempo, energy = lively.get(track.title, (84 + (n * 7) % 30, 0.25 + ((n * 13) % 30) / 100))
+        service.index.save_analysis(track.id, {"tempo": float(tempo), "energy": energy, "pulse": 0.4,
+                                               "loudness": -14.0, "mtime": track.mtime, "size": track.size})
     service.close()
     print(f"seeded {seeded} vocal verdicts")
     return 0 if seeded == len(HEARD) else 1

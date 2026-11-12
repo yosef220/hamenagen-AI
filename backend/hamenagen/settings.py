@@ -134,6 +134,10 @@ class Settings:
     # a list for the listener to confirm, and only confirmed songs are
     # suggested in the Omer count and the Three Weeks.
     vocal_auto_include: bool = False
+    # Hear each song's tempo and energy (rhythm.py), for the "סט לשמחה".
+    rhythm_analysis: bool = True
+    # A soft transition between songs: seconds of crossfade (0 = none).
+    crossfade_seconds: int = 0
     # Appearance: "system" | "light" | "dark", and the text size.
     theme: str = "system"
     text_size: str = "normal"
@@ -185,6 +189,7 @@ class Settings:
             self.shabbat_city = DEFAULT_CITY
         self.candle_minutes = _clamp(self.candle_minutes, 0, 90)
         self.shabbat_stop_before = _clamp(self.shabbat_stop_before, 0, 120)
+        self.crossfade_seconds = _clamp(self.crossfade_seconds, 0, 12)
         if self.havdalah not in HAVDALAH_CHOICES:
             self.havdalah = "tzeit"
         return self

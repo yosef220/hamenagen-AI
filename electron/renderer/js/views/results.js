@@ -25,7 +25,12 @@
     }
     current = res;
     render(res, params);
-    if (params.autoplay && res.tracks.length) H.player.playList(res.tracks, 0);
+    if (params.autoplay && res.tracks.length) H.player.playList(res.tracks, 0, playOptions(res));
+  }
+
+  /** A set plays in its order, with a soft crossfade. */
+  function playOptions(res, extra = {}) {
+    return res.set ? { shuffle: false, crossfade: res.set.crossfade, ...extra } : extra;
   }
 
   function render(res, params) {
@@ -36,8 +41,8 @@
       total ? h('div', { class: 'results-meta num' }, `${H.songs(total)} · ${H.span(res.seconds)}${
         res.intent && res.intent.minutes && res.seconds < res.intent.minutes * 60 * 0.9 ? ' — כל מה שיש במאגר' : ''}`) : null,
       total ? h('div', { class: 'results-actions' },
-        h('button', { class: 'btn btn-primary', type: 'button', onclick: () => H.player.playList(res.tracks, 0, { shuffle: false }) }, icon('play'), 'נגן לפי הסדר'),
-        h('button', { class: 'btn btn-outline', type: 'button', onclick: () => H.player.playList(res.tracks, 0, { shuffle: true }) }, icon('shuffle'), 'ערבב'),
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: () => H.player.playList(res.tracks, 0, playOptions(res, { shuffle: false })) }, icon('play'), res.set ? 'נגן את הסט' : 'נגן לפי הסדר'),
+        res.set ? null : h('button', { class: 'btn btn-outline', type: 'button', onclick: () => H.player.playList(res.tracks, 0, { shuffle: true }) }, icon('shuffle'), 'ערבב'),
         h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => { H.player.enqueue(res.tracks); H.toast(`${H.songs(total)} נוספו לתור`, { icon: 'list-music' }); } }, icon('list-music'), 'הוספה לתור'),
         res.playlist_id
           ? h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => H.go('playlists', { id: res.playlist_id }) }, icon('pencil'), 'לסדר את הרשימה')
@@ -48,6 +53,13 @@
     const searching = res.intent && res.intent.action === 'search_song';
     const query = res.query || params.text || '';
     if (topic === VOCAL) parts.push(reviewPanel());
+    if (res.set) {
+      if (res.note) parts.push(h('p', { class: 'results-note' }, icon(total ? 'audio-lines' : 'info', 'icon-sm'), res.note));
+      if (total) parts.push(H.trackList(res.tracks, { onPlay: (i) => H.player.playList(res.tracks, i, playOptions(res)) }));
+      if (res.online) parts.push(setOnlinePanel(res));
+      H.clear(root).append(...parts);
+      return;
+    }
     if (total) {
       if (res.near) parts.push(h('p', { class: 'results-note' }, icon('info', 'icon-sm'), res.note));
       parts.push(H.trackList(res.tracks));
@@ -148,6 +160,8 @@
       h('div', { class: 'o-actions' },
         h('button', { class: `btn ${primary ? 'btn-primary' : 'btn-outline'} btn-sm`, type: 'button', onclick: () => H.download(item) },
           icon('download', 'icon-sm'), 'הורדה לספרייה'),
+        h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => H.player.playList([H.listenTrack(item)], 0) },
+          icon('play', 'icon-sm'), 'להשמיע בלי לשמור'),
         h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => api.openExternal(item.url) }, 'ביוטיוב')));
   }
 
@@ -266,6 +280,62 @@
     return h('div', { class: `paste${prominent ? ' prominent' : ''}` },
       h('label', { class: 'paste-label' }, icon('link', 'icon-sm'), 'יש קישור? מדביקים כאן קישור לשיר, לפלייליסט או לערוץ ביוטיוב:'),
       h('div', { class: 'paste-row' }, input, paste, go));
+  }
+
+  /** A YouTube result as a song to play without saving it. */
+  H.listenTrack = function listenTrack(item) {
+    return {
+      id: `yt:${item.id}`, listen: true, result: item, path: '',
+      title: item.display || item.title || item.id, artist: item.channel || item.uploader || '',
+      duration: item.duration || null, topic: null, tags: [], favorite: false,
+    };
+  };
+
+  /** Not enough songs on the computer for the set: YouTube, in the style of
+   * the singers the listener plays most — to listen without saving, or to
+   * download into the library. */
+  function setOnlinePanel(res) {
+    const o = res.online;
+    const list = h('div', { class: 'online-list' });
+    const status = h('p', { class: 'muted' }, icon('loader-circle', 'icon-sm spin'), 'מחפש ביוטיוב…');
+    const actions = h('div', { class: 'results-actions' });
+    const style = o.artists && o.artists.length
+      ? `בסגנון של מה שאתה שומע: ${o.artists.slice(0, 3).join(', ')}.`
+      : 'לפי האירוע (עוד אין במחשב מספיק שירים כדי לדעת מה הסגנון שלך).';
+    const linkResult = h('div', { class: 'link-result' });
+    const paste = pasteBox(linkResult);
+    const panel = h('section', { class: 'online set-online', 'aria-label': 'יוטיוב' },
+      h('div', { class: 'online-head' }, icon('cloud-download'),
+        h('h3', {}, res.tracks.length ? `עוד שירים ל${o.label} מיוטיוב` : `שירים ל${o.label} מיוטיוב`)),
+      h('p', { class: 'muted' }, style, ' אפשר להשמיע בלי לשמור במחשב, או להוריד לספרייה.'),
+      status, actions, list, paste, linkResult);
+    api.onlineSet(o.event, o.topic).then((r) => {
+      if (r.blocked || r.code === 'netfree') {
+        status.replaceChildren(h('div', { class: 'notice' }, icon('shield-alert'),
+          h('div', {},
+            h('strong', {}, 'החיפוש ביוטיוב חסום ברשת שלך (נטפרי או סינון דומה).'),
+            h('p', {}, 'אפשר לחפש בדפדפן, להעתיק קישור לשיר, לפלייליסט או לערוץ ולהדביק אותו כאן.'),
+            h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: () => api.openExternal(r.search_url) },
+              icon('external-link', 'icon-sm'), `לחפש „${(r.queries || [])[0] || o.label}” בדפדפן`))));
+        paste.classList.add('prominent');
+        return;
+      }
+      if (!r.ok || !r.results.length) {
+        status.replaceChildren(r.code === 'network' ? 'אין כרגע חיבור לרשת.' : (r.message || 'לא נמצאו שירים ביוטיוב.'));
+        return;
+      }
+      status.replaceChildren(`${H.songs(r.results.length)} מיוטיוב.`);
+      const fresh = r.results.filter((it) => !it.in_library);
+      const listenAll = () => H.player.playList([...res.tracks, ...fresh.map(H.listenTrack)], 0,
+        { shuffle: false, crossfade: res.set ? res.set.crossfade : 6 });
+      actions.replaceChildren(
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: listenAll }, icon('play'),
+          res.tracks.length ? 'להשמיע את הסט עם השירים מיוטיוב' : 'להשמיע הכל בלי לשמור'),
+        h('button', { class: 'btn btn-outline', type: 'button', onclick: () => H.downloadMany(fresh, `${o.label} מיוטיוב`) },
+          icon('download'), `להוריד הכל לספרייה (${H.n(fresh.length)})`));
+      r.results.forEach((item) => list.appendChild(songRow(item, false)));
+    }).catch((err) => status.replaceChildren(err.message));
+    return panel;
   }
 
   function onlinePanel(query) {

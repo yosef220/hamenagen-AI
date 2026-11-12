@@ -17,6 +17,7 @@ of spec §8.1 and the listening-habit requests added in 1.0:
 * most played           — "השירים שאני הכי שומע"
 * specific song search  — "תשמיע אמת של שמוליק סוכות"
 * random / shuffle      — "תשמיע משהו", "אקראי"
+* a set for an occasion — "תפעיל לי סט שירים לברית", "מוזיקה לריקודים"
 
 When no structured pattern is recognised we fall back to a fuzzy song search
 over the free text, which is the safest default.
@@ -28,6 +29,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
+from . import sets as sets_mod
 from . import topics as topics_mod
 from .text_normalize import contains_phrase, normalize, word_variants
 
@@ -41,6 +43,7 @@ class Action(str, Enum):
     MOST_PLAYED = "most_played"
     SEARCH_SONG = "search_song"
     RANDOM = "random"
+    SET = "set"
 
 
 @dataclass
@@ -201,6 +204,23 @@ def parse(text: str) -> Intent:
         return make(Action.RECENT_RELEASED)
     if _looks_recent_downloaded(norm):
         return make(Action.RECENT_DOWNLOADED)
+
+    # A set for a celebration or for dancing ("תפעיל לי סט שירים לברית",
+    # "סט שירי שבת"). A celebration named without the word "סט" is a set
+    # only when nothing else is left in the request ("ברית עולם" is a song),
+    # and a wedding without "סט" stays the wedding topic.
+    event = sets_mod.event_in(norm)
+    explicit = sets_mod.wants_set(norm)
+    if event is not None and event.key == "wedding" and not explicit:
+        event = None
+    if explicit or event is not None:
+        residual = [w for w in _strip_play_words(norm).split() if w not in sets_mod._SET_WORDS]
+        if event is not None:
+            named = {t for word in event.words for t in normalize(word).split()}
+            residual = [w for w in residual if w not in named and not (set(word_variants(w)) & named)]
+        if explicit or not residual:
+            topic = None if event is not None else _find_topic(norm)
+            return make(Action.SET, topic=topic, extra={"event": event.key if event else None})
 
     # Listening habits: most played before history ("הכי שמעתי" has "שמעתי").
     if any(_has_phrase(norm, p) for p in _MOST_PLAYED_PHRASES):

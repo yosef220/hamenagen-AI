@@ -35,6 +35,7 @@ from .service import PlayerService
 _SLOW = {
     "online_search", "online_download", "online_link", "radio_list", "check_updates", "apply_update",
     "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
+    "online_set", "listen_prepare",
 }
 
 
@@ -223,9 +224,10 @@ class RpcServer:
     def rpc_analyze_vocal_async(self, params):
         """Listen to the songs not heard yet, on a background thread.
         Emits ``vocal_progress`` and ``vocal_done``."""
-        status = self.service.vocal.status()
-        if not self.service.settings.vocal_detection or not status.get("available"):
-            return {"started": False, "reason": "disabled" if status.get("available") else "unavailable"}
+        listen, rhythm = self.service._listening_plan()
+        if not listen and not rhythm:
+            available = self.service.vocal.status().get("available")
+            return {"started": False, "reason": "disabled" if available else "unavailable"}
 
         def work():
             return self.service.analyze_vocal(on_progress=lambda p: self._emit("vocal_progress", p))
@@ -319,6 +321,16 @@ class RpcServer:
             "results": [_shown(r) for r in outcome.results],
             "auto_selected": outcome.result.__dict__ if outcome.result else None,
         }
+
+    def rpc_online_set(self, params):
+        """YouTube songs for a set, in the listener's style."""
+        out = self.service.online_set(params.get("event"), params.get("topic"), int(params.get("limit", 18)))
+        out["results"] = [_shown(_result_from(r), in_library=r.get("in_library", False)) for r in out["results"]]
+        return out
+
+    def rpc_listen_prepare(self, params):
+        """Make a YouTube song ready to play without saving it."""
+        return self.service.listen_prepare(_result_from(params.get("result") or {}))
 
     def rpc_online_link(self, params):
         """What a pasted link is (a song, a playlist, a channel) and its songs."""
