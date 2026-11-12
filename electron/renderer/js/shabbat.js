@@ -63,6 +63,8 @@
     if (shown && shown.start_ms === win.start_ms && !overlay.hidden) return;
     shown = win;
     render(win);
+    // The Google page lies over the window: it goes away first.
+    if (H.currentView && H.currentView() === 'websearch') H.closeWebSearch();
     overlay.hidden = false;
     document.body.classList.add('at-rest');
     H.player.setBlocked(true);

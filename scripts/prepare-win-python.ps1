@@ -63,6 +63,24 @@ if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 Get-ChildItem -Path $OutDir -Recurse -Directory -Include "__pycache__", "tests" -ErrorAction SilentlyContinue |
   Where-Object { $_.FullName -match "site-packages" } |
   Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Path $OutDir -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
+  Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+# The same folder in every build, so that the smart update downloads Python
+# only when its libraries change. pip's command-line launchers (Scripts\*.exe)
+# each embed the time they were made, and the RECORD of every package lists
+# them with their checksums; the app runs "python -m ..." and needs neither.
+$scripts = Join-Path $OutDir "Scripts"
+if (Test-Path $scripts) { Remove-Item -Recurse -Force $scripts }
+Get-ChildItem -Path (Join-Path $OutDir "Lib\site-packages") -Directory -Filter "*.dist-info" | ForEach-Object {
+  $record = Join-Path $_.FullName "RECORD"
+  if (Test-Path $record) {
+    $text = [IO.File]::ReadAllText($record)
+    $nl = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+    $keep = @($text -split "`r?`n" | Where-Object { $_ -ne "" -and $_ -notmatch '^\.\./\.\./Scripts/' })
+    [IO.File]::WriteAllText($record, (($keep -join $nl) + $nl), (New-Object Text.UTF8Encoding $false))
+  }
+}
 
 Write-Host "Embedded Python ready at $OutDir"
 Write-Host "Next: npm run dist  (produces dist/Hamenagen-<version>-Windows.zip)"

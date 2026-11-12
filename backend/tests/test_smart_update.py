@@ -11,6 +11,7 @@ import json
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,10 @@ def build(folder: Path, *, version: str, backend: str, asar: bytes, exe: bytes) 
         "resources/ffmpeg/ffmpeg.exe": b"ffmpeg build " + version.encode(),   # rebuilt, same version
         "resources/ffmpeg/VERSION.txt": b"ffmpeg version n7.1.2-12-gabcdef-20261101",
         "resources/ffmpeg/LICENSE.txt": b"LGPL",
+        # Left by the build's checks, which run the packaged core: never part
+        # of a fingerprint or of a part's ZIP.
+        "resources/backend/hamenagen/__pycache__/__init__.cpython-311.pyc": b"cache " + version.encode(),
+        "resources/python/Lib/site-packages/yt_dlp/__pycache__/__init__.cpython-311.pyc": b"cache",
     }
     for rel, data in files.items():
         p = folder / rel
@@ -53,6 +58,9 @@ def build(folder: Path, *, version: str, backend: str, asar: bytes, exe: bytes) 
 
 def release_entry(new: Path, parts_dir: Path, version: str) -> dict:
     subprocess.run([sys.executable, str(REPO / "scripts" / "make_parts.py"), str(new), str(parts_dir)], check=True)
+    for z in parts_dir.glob("*.zip"):   # the caches stay out of every ZIP
+        with zipfile.ZipFile(z) as zf:
+            assert not [n for n in zf.namelist() if "__pycache__" in n or n.endswith(".pyc")], z.name
     manifest = json.loads((parts_dir / "parts-offline.json").read_text(encoding="utf-8"))
     for part in manifest["parts"].values():
         z = parts_dir / part["file"]
@@ -115,6 +123,38 @@ def test_only_the_changed_parts_are_downloaded_and_swapped(tmp_path):
     # Now up to date with that release.
     again = SmartUpdater(data, res).plan(release)
     assert again["possible"] and again["changed"] == []
+
+
+def test_a_part_that_changed_after_its_fingerprint_stops_the_build(tmp_path):
+    # As in 1.3.0, when the build's checks wrote into the package after the
+    # fingerprints were taken: the app would refuse such a part, so the
+    # build refuses to publish it.
+    new = build(tmp_path / "new", version="1.3.1", backend="v2", asar=b"asar-2", exe=b"exe 1.3.1")
+    (new / "resources" / "backend" / "hamenagen" / "written-later.txt").write_text("x")
+    out = subprocess.run([sys.executable, str(REPO / "scripts" / "make_parts.py"), str(new), str(tmp_path / "parts")],
+                         capture_output=True, text=True)
+    assert out.returncode == 1 and "backend" in out.stderr and "python" not in out.stderr
+
+
+def test_the_packaging_hook_removes_python_caches(tmp_path):
+    app = build(tmp_path / "app", version="1.3.0", backend="v1", asar=b"asar-1", exe=b"exe 1.3.0")
+    script = "const p = require(process.argv[1]); console.log(p.removeCaches(process.argv[2]));"
+    out = subprocess.run([NODE, "-e", script, str(REPO / "scripts" / "parts.js"), str(app / "resources")],
+                         capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "2"
+    assert not list((app / "resources").rglob("__pycache__")) and not list((app / "resources").rglob("*.pyc"))
+
+
+def test_a_copy_of_1_3_0_accepts_the_new_parts(tmp_path, monkeypatch):
+    # 1.3.0 counts every file it unpacks, caches included; the parts hold
+    # none, so its check agrees with the fingerprint.
+    import hamenagen.smart_update as su
+    monkeypatch.setattr(su, "is_cache", lambda rel: False)
+    installed = build(tmp_path / "installed", version="1.3.0", backend="v1", asar=b"asar-1", exe=b"exe 1.3.0")
+    new = build(tmp_path / "new", version="1.3.1", backend="v2", asar=b"asar-2", exe=b"exe 1.3.1")
+    release = release_entry(new, tmp_path / "parts", "1.3.1")
+    out = SmartUpdater(tmp_path / "data", installed / "resources").download(release)
+    assert out["ok"], out
 
 
 def test_a_damaged_download_is_refused(tmp_path):

@@ -46,13 +46,38 @@ function fileHash(full) {
   return hash.digest('hex');
 }
 
+// Python's compiled caches are not part of the program: Python writes them
+// next to the code on its first run, so they are never hashed or packed
+// (the same rule as smart_update.py and make_parts.py).
+const CACHE_DIR = '__pycache__';
+const isCacheFile = (name) => name.endsWith('.pyc');
+
 function walk(dir, out) {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, ent.name);
-    if (ent.isDirectory()) walk(full, out);
-    else if (ent.isFile()) out.push(full);
+    if (ent.isDirectory()) {
+      if (ent.name !== CACHE_DIR) walk(full, out);
+    } else if (ent.isFile() && !isCacheFile(ent.name)) out.push(full);
   }
   return out;
+}
+
+/** Delete Python's caches under `dir` (left by build steps that ran Python). */
+function removeCaches(dir) {
+  let removed = 0;
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, ent.name);
+    if (ent.isDirectory()) {
+      if (ent.name === CACHE_DIR) {
+        fs.rmSync(full, { recursive: true, force: true });
+        removed += 1;
+      } else removed += removeCaches(full);
+    } else if (ent.isFile() && isCacheFile(ent.name)) {
+      fs.rmSync(full, { force: true });
+      removed += 1;
+    }
+  }
+  return removed;
 }
 
 const byUtf8 = (a, b) => Buffer.compare(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
@@ -120,6 +145,10 @@ async function afterPack(context) {
   if (context.electronPlatformName !== 'win32') return;
   const appOutDir = context.appOutDir;
   const config = context.packager.config || {};
+  // Before the fingerprints (and before the installer is made from this
+  // folder): no compiled caches in the package.
+  const caches = removeCaches(path.join(appOutDir, 'resources'));
+  if (caches) console.log(`[parts] removed ${caches} Python cache folders/files`);
   const electronVersion = config.electronVersion
     || require(path.join(__dirname, '..', 'node_modules', 'electron', 'package.json')).version;
   const manifest = describeParts({
@@ -139,3 +168,4 @@ module.exports = afterPack;
 module.exports.afterPack = afterPack;
 module.exports.describeParts = describeParts;
 module.exports.contentHash = contentHash;
+module.exports.removeCaches = removeCaches;

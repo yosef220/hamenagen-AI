@@ -43,6 +43,13 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def is_cache(rel: str) -> bool:
+    """Python's compiled caches (``__pycache__``, ``.pyc``): Python writes them
+    next to the code when it runs, so they are never part of a fingerprint or
+    of a part's ZIP (the same rule as scripts/parts.js and make_parts.py)."""
+    return rel.endswith(".pyc") or "__pycache__" in rel.split("/")
+
+
 def content_hash(base: Path, entries: list[str], skip: set[str] | frozenset = frozenset()) -> str:
     """The fingerprint of the files under ``entries`` — one line per file,
     "path<TAB>size<TAB>sha256", sorted by UTF-8 bytes (as scripts/parts.js)."""
@@ -50,7 +57,7 @@ def content_hash(base: Path, entries: list[str], skip: set[str] | frozenset = fr
     for entry in entries:
         p = base / entry
         if p.is_dir():
-            files += [f for f in p.rglob("*") if f.is_file()]
+            files += [f for f in p.rglob("*") if f.is_file() and not is_cache(f.relative_to(base).as_posix())]
         elif p.is_file():
             files.append(p)
     rels = sorted((f.relative_to(base).as_posix() for f in files), key=lambda r: r.encode("utf-8"))

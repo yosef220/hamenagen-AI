@@ -70,6 +70,10 @@ jobs:
     name: Windows — ${{ matrix.edition }}
     needs: test
     runs-on: windows-latest
+    env:
+      # The checks below run the packaged core; Python must not leave compiled
+      # caches in the package (they are not part of the smart update's parts).
+      PYTHONDONTWRITEBYTECODE: '1'
     strategy:
       fail-fast: false
       matrix:
@@ -284,15 +288,68 @@ jobs:
           $label = if ('${{ matrix.edition }}' -eq 'offline') { 'גרסה ניידת עם המודל' } else { 'גרסה ניידת' }
           $src = (Resolve-Path dist/win-unpacked).Path
           $out = Join-Path (Resolve-Path dist).Path $name
-          & 'C:\Program Files (x86)\NSIS\makensis.exe' /NOCD /V2 "/DVERSION=$ver" "/DSRCDIR=$src" "/DOUTFILE=$out" "/DICON=$((Resolve-Path assets/icon.ico).Path)" "/DLABEL=$label" scripts/portable.nsi
+          # 7-Zip 21 or later: it opens LZMA2 made of blocks on several cores at once.
+          $sevenZip = 'C:\Program Files\7-Zip'
+          (& "$sevenZip\7z.exe" i | Select-Object -First 3) -join ' ' | Write-Host
+          $payload = Join-Path $env:RUNNER_TEMP 'hamenagen.7z'
+          Remove-Item $payload -ErrorAction SilentlyContinue
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          & "$sevenZip\7z.exe" a -t7z -mx=7 '-m0=LZMA2:d=64m:c=128m' -mmt=on -mtm=off -mtc=off -mta=off -bso0 -bsp0 $payload "$src\*"
+          if ($LASTEXITCODE -ne 0) { throw "7z failed ($LASTEXITCODE)" }
+          $files = Get-ChildItem $src -Recurse -File
+          $unpacked = ($files | Measure-Object Length -Sum).Sum
+          "7z: {0:N0} MB from {1:N0} MB ({2} files) in {3:N0} s" -f ((Get-Item $payload).Length / 1MB), ($unpacked / 1MB), $files.Count, $sw.Elapsed.TotalSeconds
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' /NOCD /V2 "/DVERSION=$ver" "/DPAYLOAD=$payload" "/DSEVENZIP=$sevenZip" "/DUNPACKED_KB=$([math]::Ceiling($unpacked / 1KB))" "/DOUTFILE=$out" "/DICON=$((Resolve-Path assets/icon.ico).Path)" "/DLABEL=$label" scripts/portable.nsi
           if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
-          # Open it silently into a folder and check the player is there, whole.
+          # Open it silently into a folder, and check that the whole player is there.
           $dest = Join-Path $env:RUNNER_TEMP 'portable-test'
+          $sw.Restart()
           Start-Process -FilePath $out -ArgumentList '/S', "/D=$dest" -Wait
-          foreach ($p in @('Hamenagen.exe', 'resources\app.asar', 'resources\parts.json', 'resources\python\python.exe')) {
+          $opened = $sw.Elapsed.TotalSeconds
+          foreach ($p in @('Hamenagen.exe', 'resources\app.asar', 'resources\parts.json', 'resources\python\python.exe', 'resources\licenses\7-Zip.txt')) {
             if (-not (Test-Path (Join-Path $dest $p))) { throw "the portable EXE did not open $p" }
           }
-          "{0}: {1:N0} MB" -f $name, ((Get-Item $out).Length / 1MB)
+          $got = Get-ChildItem $dest -Recurse -File | Where-Object { $_.FullName -notlike '*\resources\licenses\*' }
+          $gotSize = ($got | Measure-Object Length -Sum).Sum
+          if ($got.Count -ne $files.Count -or $gotSize -ne $unpacked) { throw "opened $($got.Count) files ($gotSize bytes), the build has $($files.Count) ($unpacked bytes)" }
+          "{0}: {1:N0} MB; opens into a folder in {2:N1} s" -f $name, ((Get-Item $out).Length / 1MB), $opened
+          "opened_seconds=$([math]::Round($opened, 1))" >> $env:GITHUB_OUTPUT
+        id: onefile
+
+      - name: How long the previous release took to open (for comparison)
+        if: matrix.edition == 'portable' || matrix.edition == 'offline'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $suffix = if ('${{ matrix.edition }}' -eq 'offline') { '-Portable-Offline.exe' } else { '-Portable.exe' }
+          $rel = gh api "repos/${{ github.repository }}/releases/latest" | ConvertFrom-Json
+          $asset = $rel.assets | Where-Object { $_.name.EndsWith($suffix) } | Select-Object -First 1
+          if (-not $asset) { "the latest release ($($rel.tag_name)) has no $suffix"; exit 0 }
+          $old = Join-Path $env:RUNNER_TEMP $asset.name
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest $asset.browser_download_url -OutFile $old
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          Start-Process -FilePath $old -ArgumentList '/S', "/D=$(Join-Path $env:RUNNER_TEMP 'portable-previous')" -Wait
+          "{0} opened in {1:N1} s; this build in ${{ steps.onefile.outputs.opened_seconds }} s" -f $asset.name, $sw.Elapsed.TotalSeconds
+
+      - name: The installer installs (setup editions), and how long it takes
+        if: matrix.edition == 'setup' || matrix.edition == 'setup-offline'
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist -File -Filter 'Hamenagen-*.exe' | Select-Object -First 1
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          Start-Process -FilePath $exe.FullName -ArgumentList '/S' -Wait
+          $took = $sw.Elapsed.TotalSeconds
+          $installed = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Programs') -Recurse -Depth 2 -Filter 'Hamenagen.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $installed) { throw "the installer did not put Hamenagen.exe under $env:LOCALAPPDATA\Programs" }
+          $dir = $installed.Directory.FullName
+          foreach ($p in @('resources\app.asar', 'resources\parts.json', 'resources\python\python.exe')) {
+            if (-not (Test-Path (Join-Path $dir $p))) { throw "the installer did not install $p" }
+          }
+          "{0}: installed into {1} in {2:N1} s" -f $exe.Name, $dir, $took
+          Get-Process -Name Hamenagen -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
       - name: Each file also in a ZIP of its own (network filters cut large .exe downloads)
         shell: pwsh

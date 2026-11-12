@@ -8,8 +8,10 @@
 | --- | --- | --- |
 | `setup` | `Hamenagen-<v>-Setup.exe` | התקנה למשתמש הנוכחי, בלי הרשאות מנהל: קיצורי דרך, תפריט התחל, הסרה. מודל הסיווג יורד פעם אחת. הנתונים ב-`%APPDATA%\Hamenagen`. |
 | `setup-offline` | `Hamenagen-<v>-Setup-Offline.exe` | אותה התקנה, עם מודל הסיווג ב-`resources/models`. |
-| `portable` | `Hamenagen-<v>-Portable.exe` | קובץ שנפתח פעם אחת לתיקייה שבוחרים ([`scripts/portable.nsi`](../scripts/portable.nsi)), בלי התקנה ובלי רישום. הנתונים ב-`data` שליד התוכנה. |
+| `portable` | `Hamenagen-<v>-Portable.exe` | קובץ שנפתח פעם אחת לתיקייה שבוחרים ([`scripts/portable.nsi`](../scripts/portable.nsi)), בלי התקנה ובלי רישום. מוצעת `%LOCALAPPDATA%\Programs\Hamenagen`, תיקיית התוכנות של המשתמש: בלי הרשאת מנהל, והעדכון החכם יכול לכתוב בה. הנתונים ב-`data` שליד התוכנה. |
 | `offline` | `Hamenagen-<v>-Portable-Offline.exe` | כמו הניידת, עם מודל הסיווג. |
+
+**איך הניידת נפתחת מהר.** התוכנה (כ-1.25GB עם המודל) ארוזה בתוך ה-EXE כקובץ 7z אחד, ב-LZMA2 עם בלוקים של 128MB, בלי דחיסה נוספת של NSIS. בפתיחה, 7-Zip (גרסה 21 ומעלה, מצורף עם הרישיון שלו) פותח את הבלוקים על כל הליבות. עד 1.3.0 הפתיחה הייתה ב-LZMA של NSIS: על ליבה אחת, ובמצב „מוצק” שכותב כל קובץ פעמיים, קודם לקובץ זמני ואחר כך לתיקייה. ה-CI מודד את זמן הפתיחה מול השחרור הקודם, ומתקין בשקט את קובצי ההתקנה ומודד גם אותם.
 
 לכל קובץ יש גם ZIP שמכיל רק אותו, כי סינוני רשת חוסמים לפעמים הורדה של EXE גדול. ההגדרות ב-[`electron-builder.config.js`](../electron-builder.config.js). המהדורה נכתבת לתוך ה-`package.json` הארוז (`hamenagenEdition`), ומשם `electron/main.js` יודע איפה לשמור נתונים.
 
@@ -20,7 +22,8 @@
 3. **בשחרור**: [`scripts/release_notes.py`](../scripts/release_notes.py) מוסיף ל-`update.json`, תחת `app.parts.<מהדורה>`, את הכתובת, הגודל וה-SHA-256 של כל חלק.
 4. **בתוכנה**: [`smart_update.py`](../backend/hamenagen/smart_update.py) משווה את `parts.json` המקומי לזה שבשחרור, ומוריד רק חלקים שהטביעה שלהם השתנתה. ההורדה ממשיכה מאיפה שנעצרה. כל חלק נבדק פעמיים: SHA-256 של ה-ZIP, ואחר כך טביעת הקבצים שנפתחו. אחר כך החלק נפרש ל-`data/update/staging`.
 5. **ההחלפה**: [`electron/update-apply.ps1`](../electron/update-apply.ps1) רץ אחרי שהמנגן נסגר. הוא מחכה שכל תהליך מתיקיית התוכנה ייגמר, מעביר כל חלק ישן הצידה ומכניס את החדש. אם משהו נכשל, הוא מחזיר הכל ממקומו, ובכל מקרה מפעיל את המנגן מחדש. התוצאה נשמרת ב-`result.json`, והמנגן מדווח עליה בהפעלה.
-6. **כדי שחלק ישתנה רק כשבאמת השתנה**: ספריות Python נעולות ב-[`requirements-lock.txt`](../requirements-lock.txt) ומותקנות עם `--no-deps --no-compile`, ו-pip קבוע.
+6. **כדי שחלק ישתנה רק כשבאמת השתנה**: ספריות Python נעולות ב-[`requirements-lock.txt`](../requirements-lock.txt) ומותקנות עם `--no-deps --no-compile`, ו-pip קבוע. קבצי ההפעלה של pip (`Scripts\*.exe`) נמחקים, יחד עם השורות שלהם ב-`RECORD`, כי בכל אחד מוטבע זמן היצירה. המטמון של Python (`__pycache__`) לא נכנס לטביעות ולחלקים: `parts.js` מוחק אותו לפני הטביעה, וה-CI רץ עם `PYTHONDONTWRITEBYTECODE`.
+   `make_parts.py` קורא כל ZIP חזרה ומחשב את טביעת הקבצים שבו בדיוק כמו התוכנה, ועוצר את הבנייה אם היא לא תואמת. ב-1.3.0 בדיקות הבנייה השאירו `__pycache__` בחלקים `python` ו-`backend`, והתוכנה הייתה דוחה אותם.
 7. ה-CI בודק על Windows את ההחלפה ואת ההחזרה כשמשהו נכשל (בתיקייה עם שם עברי). הבדיקות של הליבה מריצות את כל השרשרת על שתי בניות קטנות, ובודקות שהחישוב ב-JavaScript ובפייתון זהה.
 
 גרסה בלי `parts.json` (‏1.2 ומטה), גרסת פיתוח או תיקייה בלי הרשאת כתיבה, מקבלות את ההורדה המלאה כמו קודם.
@@ -50,9 +53,10 @@ $env:HAMENAGEN_EDITION = "setup"; npm run dist          # dist\Hamenagen-<v>-Set
 build\win-python\python.exe backend\scripts\prepare_model.py --out build\models
 $env:HAMENAGEN_EDITION = "setup-offline"; npm run dist
 
-# ניידת: התיקייה, ואז הקובץ האחד (NSIS):
+# ניידת: התיקייה, ה-7z, ואז הקובץ האחד (NSIS):
 $env:HAMENAGEN_EDITION = "portable"; npm run dist        # dist\win-unpacked
-makensis /NOCD /DVERSION=1.3.0 /DSRCDIR=dist\win-unpacked /DOUTFILE=dist\Hamenagen-1.3.0-Portable.exe /DICON=assets\icon.ico "/DLABEL=גרסה ניידת" scripts\portable.nsi
+& "C:\Program Files\7-Zip\7z.exe" a -t7z -mx=7 "-m0=LZMA2:d=64m:c=128m" -mmt=on build\hamenagen.7z .\dist\win-unpacked\*
+makensis /NOCD /DVERSION=1.3.1 /DPAYLOAD=build\hamenagen.7z "/DSEVENZIP=C:\Program Files\7-Zip" /DOUTFILE=dist\Hamenagen-1.3.1-Portable.exe /DICON=assets\icon.ico "/DLABEL=גרסה ניידת" scripts\portable.nsi
 ```
 
 הפייתון המוטמע של Windows מתעלם מ-`PYTHONPATH`, ולכן `backend_bridge.js` מפעיל את הליבה עם `-c` שמוסיף את תיקיית הליבה ל-`sys.path` בעצמו.
