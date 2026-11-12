@@ -100,7 +100,12 @@ contextBridge.exposeInMainWorld('hamenagen', {
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   showInFolder: (filePath) => ipcRenderer.invoke('app:showItemInFolder', filePath),
   clipboardLink: () => ipcRenderer.invoke('app:clipboardLink'),
-  searchWeb: (query) => ipcRenderer.invoke('app:searchWeb', query),
+  // Google inside the window (electron/main.js): open it over the given
+  // rectangle of the page, follow the rectangle, hide it, move in its history.
+  searchOpen: (query, rect) => ipcRenderer.invoke('search:open', query, rect),
+  searchPlace: (rect) => ipcRenderer.invoke('search:place', rect),
+  searchHide: () => ipcRenderer.invoke('search:hide'),
+  searchNav: (action) => ipcRenderer.invoke('search:nav', action),
   applyAppUpdate: (plan) => ipcRenderer.invoke('app:applyUpdate', plan),
   openFolder: (folder) => ipcRenderer.invoke('app:openFolder', folder),
   chooseFolder: (title) => ipcRenderer.invoke('app:chooseFolder', title),
@@ -111,4 +116,6 @@ contextBridge.exposeInMainWorld('hamenagen', {
   onThemeChange: (handler) => listen('app:theme', handler),
   onPlayerCommand: (handler) => listen('player:command', handler),
   onSearchLink: (handler) => listen('search:link', handler),
+  onSearchState: (handler) => listen('search:state', handler),
+  onSearchClosed: (handler) => listen('search:closed', handler),
 });

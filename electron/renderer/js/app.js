@@ -12,19 +12,33 @@
   let lastParams = {};
 
   // ------------------------------------------------------------ navigation
-  H.go = function go(name, params = {}) {
-    if (!views[name]) return;
+  function switchTo(name) {
+    // Leaving the Google search: its page goes away with it (main.js).
+    if (currentView === 'websearch' && name !== 'websearch') api.searchHide();
     currentView = name;
-    lastParams = params;
     for (const section of H.$$('.view')) section.hidden = section.dataset.view !== name;
-    const navName = name === 'results' ? null : name;
+    H.$('#main').classList.toggle('is-websearch', name === 'websearch');
+    const navName = name === 'results' || name === 'websearch' ? null : name;
     for (const item of H.$$('.nav-item')) {
       if (item.dataset.view === navName) item.setAttribute('aria-current', 'page');
       else item.removeAttribute('aria-current');
     }
+  }
+
+  H.go = function go(name, params = {}) {
+    if (!views[name]) return;
+    switchTo(name);
+    lastParams = params;
     H.$('#main').scrollTop = 0;
     views[name].show(params);
   };
+
+  /** Back to a view as it was left, without drawing it again. */
+  H.reveal = function reveal(name) {
+    if (!views[name]) return;
+    switchTo(name);
+  };
+  H.currentView = () => currentView;
 
   for (const item of H.$$('.nav-item')) item.addEventListener('click', () => H.go(item.dataset.view));
 

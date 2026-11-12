@@ -33,6 +33,17 @@ if (!music || !out) {
 
 const errors = [];
 
+// "Google" for the in-window search: a page of results with a YouTube link
+// behind Google's redirect, as the real one has (electron/main.js).
+const http = require('http');
+let searchBase = '';
+const searchServer = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end('<!doctype html><meta charset="utf-8"><title>חיפוש</title><body dir="rtl" style="font:16px Arial;padding:24px">'
+    + '<h3>תוצאות</h3><a class="yt" href="https://www.google.com/url?q=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Ddemo0000001&sa=U">שיר מיוטיוב</a>'
+    + '<p><a class="other" href="https://example.com/">אתר אחר</a></p></body>');
+});
+
 async function launch(dataDir, theme) {
   const settings = {
     scan_roots: [path.resolve(music)],
@@ -56,6 +67,7 @@ async function launch(dataDir, theme) {
       HAMENAGEN_QUIET: '1',
       // YouTube and song details from memory (backend/hamenagen/demo_online.py).
       HAMENAGEN_DEMO_ONLINE: '1',
+      HAMENAGEN_TEST_SEARCH_BASE: searchBase,
     },
   });
   const page = await app.firstWindow();
@@ -81,6 +93,8 @@ async function waitForLibrary(page) {
 }
 
 async function run() {
+  await new Promise((resolve) => searchServer.listen(0, '127.0.0.1', resolve));
+  searchBase = `http://127.0.0.1:${searchServer.address().port}/search`;
   fs.mkdirSync(out, { recursive: true });
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hamenagen-ui-'));
   // What the vocal detector would have heard (the harness has no audio model).
@@ -211,6 +225,52 @@ async function run() {
       await page.waitForSelector('#view-results .notice', { timeout: 15000 });
       await shot(page, `15-netfree${suffix}`);
 
+      // Google inside the player's window (no window of its own): a click on
+      // a YouTube result comes back to the place the search started from.
+      await page.locator('#view-results button', { hasText: 'בגוגל' }).first().click();
+      await page.waitForSelector('#view-websearch:not([hidden]) .websearch-frame');
+      // A picture of it as the window shows it: the page lies over the frame
+      // (a screenshot of the window's own page cannot see it, so it is laid in).
+      const capture = await app.evaluate(async ({ webContents }) => {
+        const base = process.env.HAMENAGEN_TEST_SEARCH_BASE;
+        for (let i = 0; i < 100; i += 1) {
+          const wc = webContents.getAllWebContents().find((w) => w.getURL().startsWith(base) && !w.isLoading());
+          if (wc) {
+            await new Promise((r) => setTimeout(r, 200));
+            return (await wc.capturePage()).toDataURL();
+          }
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        return null;
+      });
+      if (capture) {
+        await page.evaluate((src) => {
+          const img = Object.assign(document.createElement('img'), { id: 'search-capture', src });
+          img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:5';
+          document.querySelector('#view-websearch .websearch-frame').appendChild(img);
+        }, capture);
+        await page.waitForTimeout(150);
+        await shot(page, `23-google-in-window${suffix}`);
+        await page.evaluate(() => document.getElementById('search-capture').remove());
+      }
+      const inWindow = !capture ? null : await app.evaluate(async ({ BrowserWindow, webContents }) => {
+        const base = process.env.HAMENAGEN_TEST_SEARCH_BASE;
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().startsWith(base));
+        const windows = BrowserWindow.getAllWindows().length;
+        // A link to another site stays put; the YouTube one is caught.
+        await wc.executeJavaScript("document.querySelector('a.other').click()");
+        await new Promise((r) => setTimeout(r, 300));
+        const stayed = wc.getURL().startsWith(base);
+        await wc.executeJavaScript("document.querySelector('a.yt').click()");
+        return { windows, stayed };
+      });
+      if (!inWindow) errors.push('the Google search did not open inside the window');
+      else if (inWindow.windows !== 1) errors.push(`the Google search opened ${inWindow.windows - 1} more window(s)`);
+      else if (!inWindow.stayed) errors.push('the Google search left Google');
+      await page.waitForSelector('#view-results:not([hidden]) .link-result .online-item, #view-results:not([hidden]) .link-result .online-error', { timeout: 15000 });
+      if (await page.locator('#view-websearch').isVisible()) errors.push('the Google search stayed open after the link');
+      await shot(page, `24-link-from-google${suffix}`);
+
       // Details and a cover from the web, chosen by the listener.
       await page.evaluate(() => H.go('library'));
       await page.waitForSelector('#view-library .track');
@@ -309,6 +369,7 @@ async function run() {
     }
   }
 
+  searchServer.close();
   const real = errors.filter((e) => !/net::ERR|Failed to load resource|kcm\.fm/.test(e));
   if (real.length) {
     console.error('UI problems:\n' + real.join('\n'));

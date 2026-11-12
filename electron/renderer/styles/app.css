@@ -1363,3 +1363,53 @@ body.at-rest .app { visibility: hidden; }
 .menu-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s2); font-size: var(--fs-sm); color: var(--ink-2); }
 .menu-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .icon-xl { width: 40px; height: 40px; color: var(--ink-3); }
+
+/* ------------------------------------------------------------ Google inside the player */
+/* The bar is drawn here; the page itself is laid over .websearch-frame by
+   electron/main.js, so the frame only has to hold its place. */
+.main.is-websearch { display: flex; flex-direction: column; overflow: hidden; }
+.main.is-websearch > .update-bar { flex: none; }
+.view.view-websearch {
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: var(--s3) var(--s5) 0;
+  gap: var(--s2);
+}
+.websearch-bar { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.websearch-form { flex: 1; min-width: 240px; display: flex; gap: var(--s2); }
+.websearch-input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 var(--s3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+.websearch-input:focus { outline: none; border-color: var(--tekhelet); box-shadow: 0 0 0 3px var(--tekhelet-soft); }
+.websearch-nav { display: flex; gap: var(--s1); }
+.websearch-hint { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }
+.websearch-frame {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: #FFFFFF;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  overflow: hidden;
+}
+.websearch-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  color: #4A5870;
+}

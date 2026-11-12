@@ -11,7 +11,8 @@
  */
 
 const {
-  app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, screen, session, shell,
+  app, BrowserWindow, Menu, WebContentsView, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, screen,
+  session, shell,
 } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -374,11 +375,16 @@ ipcMain.handle('app:applyUpdate', async (_evt, planPath) => {
 
 // --- searching from inside the app ---------------------------------------------------------
 // Where the network blocks programs from searching YouTube (NetFree), the
-// listener searches Google here, with "יוטיוב" added. The window is a plain,
-// sandboxed browser in its own session (no downloads, no permissions); it
-// may only browse Google, and a click on a YouTube result is caught and
-// handed to the player instead of opening.
-let searchWindow = null;
+// listener searches Google, with "יוטיוב" added, inside the player's own
+// window: the page takes the place of the view's content, under a bar the
+// renderer draws (back, the query, forward and back in the search). It is a
+// plain, sandboxed page in its own session (no downloads, no permissions); it
+// may only browse Google, and a click on a YouTube result is caught and handed
+// to the player instead of opening. Esc goes back to the player.
+let searchView = null;
+let searchShown = false;
+// Tests point the search at a page of their own (tests/ui); never set in use.
+const SEARCH_BASE = process.env.HAMENAGEN_TEST_SEARCH_BASE || '';
 
 function youtubeLinkIn(url) {
   try {
@@ -398,6 +404,7 @@ function youtubeLinkIn(url) {
 }
 
 function isGoogle(url) {
+  if (SEARCH_BASE && String(url).startsWith(SEARCH_BASE)) return true;
   try {
     const u = new URL(url);
     return u.protocol === 'https:' && /(^|\.)google\.[a-z.]+$/.test(u.hostname);
@@ -406,24 +413,39 @@ function isGoogle(url) {
   }
 }
 
-function openSearchWindow(query) {
+function googleSearchUrl(query) {
   const q = `${String(query || '').trim()} יוטיוב`.trim();
-  const url = `https://www.google.com/search?hl=iw&q=${encodeURIComponent(q)}`;
-  if (searchWindow && !searchWindow.isDestroyed()) {
-    searchWindow.loadURL(url);
-    searchWindow.focus();
-    return;
-  }
+  if (SEARCH_BASE) return `${SEARCH_BASE}?q=${encodeURIComponent(q)}`;
+  return `https://www.google.com/search?hl=iw&q=${encodeURIComponent(q)}`;
+}
+
+function toWindow(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+}
+
+function searchState() {
+  if (!searchView || searchView.webContents.isDestroyed()) return;
+  const wc = searchView.webContents;
+  toWindow('search:state', {
+    canGoBack: wc.navigationHistory.canGoBack(),
+    canGoForward: wc.navigationHistory.canGoForward(),
+    loading: wc.isLoading(),
+  });
+}
+
+function hideSearch(reason) {
+  if (searchShown && mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(searchView);
+  const was = searchShown;
+  searchShown = false;
+  if (was && reason) toWindow('search:closed', { reason });
+}
+
+function ensureSearchView() {
+  if (searchView && !searchView.webContents.isDestroyed()) return searchView;
   const ses = session.fromPartition('persist:websearch');
   ses.setPermissionRequestHandler((_wc, _perm, done) => done(false));
   ses.on('will-download', (e) => e.preventDefault());
-  searchWindow = new BrowserWindow({
-    parent: mainWindow || undefined,
-    width: 1000,
-    height: 760,
-    title: 'חיפוש בגוגל — לוחצים על תוצאה מיוטיוב',
-    autoHideMenuBar: true,
-    backgroundColor: '#ffffff',
+  searchView = new WebContentsView({
     webPreferences: {
       session: ses,
       sandbox: true,
@@ -433,35 +455,64 @@ function openSearchWindow(query) {
       spellcheck: false,
     },
   });
-  searchWindow.setMenu(null);
-  const wc = searchWindow.webContents;
+  searchView.setBackgroundColor('#ffffff');
+  const wc = searchView.webContents;
   const catchLink = (event, target) => {
     const link = youtubeLinkIn(target);
     if (link) {
       event.preventDefault();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('search:link', { url: link });
-        mainWindow.focus();
-      }
-      if (searchWindow && !searchWindow.isDestroyed()) searchWindow.close();
+      hideSearch();
+      toWindow('search:link', { url: link });
       return;
     }
-    if (!isGoogle(target)) event.preventDefault();   // the window browses Google only
+    if (!isGoogle(target)) event.preventDefault();   // only Google, inside the player
   };
   wc.on('will-navigate', catchLink);
   wc.on('will-redirect', catchLink);
   wc.setWindowOpenHandler(({ url: target }) => {
     catchLink({ preventDefault() {} }, target);
+    if (!youtubeLinkIn(target) && isGoogle(target)) wc.loadURL(target);   // a "new tab" stays in place
     return { action: 'deny' };
   });
-  searchWindow.on('page-title-updated', (e) => e.preventDefault());
-  searchWindow.on('closed', () => { searchWindow = null; });
-  searchWindow.loadURL(url);
+  wc.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'Escape') {
+      event.preventDefault();
+      hideSearch('escape');
+    }
+  });
+  for (const evt of ['did-navigate', 'did-navigate-in-page', 'did-start-loading', 'did-stop-loading']) wc.on(evt, searchState);
+  return searchView;
 }
 
-ipcMain.handle('app:searchWeb', (_evt, query) => {
-  openSearchWindow(query);
+function placeSearch(rect) {
+  if (!searchView || !mainWindow || !rect) return;
+  const z = mainWindow.webContents.getZoomFactor() || 1;   // the page's CSS pixels to the window's
+  searchView.setBounds({
+    x: Math.round(rect.x * z), y: Math.round(rect.y * z),
+    width: Math.max(0, Math.round(rect.width * z)), height: Math.max(0, Math.round(rect.height * z)),
+  });
+}
+
+ipcMain.handle('search:open', (_evt, query, rect) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
+  const view = ensureSearchView();
+  if (!searchShown) {
+    mainWindow.contentView.addChildView(view);
+    searchShown = true;
+  }
+  placeSearch(rect);
+  if (query != null) view.webContents.loadURL(googleSearchUrl(query));
+  view.webContents.focus();
   return { ok: true };
+});
+ipcMain.handle('search:place', (_evt, rect) => { if (searchShown) placeSearch(rect); });
+ipcMain.handle('search:hide', () => hideSearch());
+ipcMain.handle('search:nav', (_evt, action) => {
+  if (!searchView || searchView.webContents.isDestroyed()) return;
+  const history = searchView.webContents.navigationHistory;
+  if (action === 'back' && history.canGoBack()) history.goBack();
+  else if (action === 'forward' && history.canGoForward()) history.goForward();
+  else if (action === 'reload') searchView.webContents.reload();
 });
 
 // A YouTube link the listener copied (in the browser, when the network blocks

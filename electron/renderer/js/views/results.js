@@ -148,17 +148,19 @@
 
   // ------------------------------------------------------------ YouTube
   // Searching where the network blocks the app from searching YouTube: Google,
-  // with "יוטיוב" added, in a window inside the player; a click on a YouTube
-  // result comes back here as a link (electron/main.js).
-  let linkHolder = null;
+  // with "יוטיוב" added, inside the player's window (websearch.js); a click on
+  // a YouTube result comes back here as a link, to the place the search
+  // started from (electron/main.js).
   H.searchWeb = function searchWeb(query, holder) {
-    linkHolder = holder || null;
-    api.searchWeb(query);
+    H.go('websearch', { query, from: { view: H.currentView(), holder: holder || null } });
   };
   api.on('search-link', ({ url }) => {
-    if (linkHolder && linkHolder.isConnected) {
-      openLink(url, linkHolder);
-      linkHolder.scrollIntoView({ block: 'nearest' });
+    const from = H.webSearchFrom();
+    const holder = from && from.holder;
+    if (holder && holder.isConnected && from.view) {
+      H.reveal(from.view);
+      openLink(url, holder);
+      holder.scrollIntoView({ block: 'nearest' });
     } else {
       H.go('results', { link: url });
     }

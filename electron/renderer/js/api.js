@@ -24,7 +24,7 @@
   ];
   const SHELL = [
     'shellInfo', 'setTheme', 'openExternal', 'showInFolder', 'openFolder', 'chooseFolder', 'playerState',
-    'clipboardLink', 'searchWeb', 'applyAppUpdate',
+    'clipboardLink', 'searchOpen', 'searchPlace', 'searchHide', 'searchNav', 'applyAppUpdate',
   ];
 
   const api = {};
@@ -54,6 +54,8 @@
   bridge.onThemeChange((msg) => api.emit('theme', msg));
   bridge.onPlayerCommand((cmd) => api.emit('player-command', cmd));
   bridge.onSearchLink((msg) => api.emit('search-link', msg));
+  bridge.onSearchState((msg) => api.emit('search-state', msg));
+  bridge.onSearchClosed((msg) => api.emit('search-closed', msg));
 
   H.api = api;
 })();

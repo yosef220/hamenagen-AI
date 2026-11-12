@@ -20,9 +20,26 @@ from datetime import date
 from pathlib import Path
 
 
-# What is new, by version (major.minor). The newest version's list goes on
-# the release page; its one-line summary goes into update.json.
+# What is new, by version (major.minor, or a full version for a fix on top of
+# it). The newest version's list goes on the release page; its one-line
+# summary goes into update.json.
 WHATS_NEW: dict[str, tuple[str, list[str]]] = {
+    "1.3.1": (
+        "הגרסה הניידת נפתחת מהר בהרבה ומוצעת בתיקיית התוכנות, החיפוש בגוגל נפתח בתוך חלון המנגן, "
+        "והעדכון החכם מתוקן.",
+        [
+            "**הגרסה הניידת נפתחת מהר בהרבה** — 7-Zip פותח אותה על כל הליבות של המחשב, במקום פתיחה איטית "
+            "על ליבה אחת שכתבה כל קובץ פעמיים.",
+            "**בתיקיית התוכנות** — הגרסה הניידת מציעה את תיקיית התוכנות של המשתמש ב-Windows "
+            "(ולא את שולחן העבודה), בלי צורך בהרשאת מנהל. קיצור דרך מופיע בשולחן העבודה, "
+            "ואפשר עדיין לבחור כל תיקייה, גם בדיסק נייד.",
+            "**החיפוש בגוגל בתוך המנגן** — בלי חלון נוסף: גוגל נפתח בתוך החלון, עם כפתור „חזרה למנגן”, "
+            "חיפוש חדש ואחורה וקדימה. לחיצה על תוצאה מיוטיוב מחזירה את השיר למקום שממנו חיפשת.",
+            "**העדכון החכם מתוקן** — ב-1.3.0 חלק מקבצי העדכון כללו קבצים זמניים של Python, והתוכנה הייתה "
+            "דוחה אותם. מעכשיו כל חלק נבדק בבנייה בדיוק כמו שהתוכנה תבדוק אותו. ממחשב עם 1.3.0 העדכון "
+            "ל-1.3.1 מוריד כ-60MB פעם אחת, ומשם והלאה כמה מגה-בייט.",
+        ],
+    ),
     "1.3": (
         "עדכון חכם שמוריד רק מה שהשתנה, כל הורדה בקובץ אחד, מצב שבת וחג, סטים לשמחות, רשימות שמורות ופרשת השבוע.",
         [
@@ -98,10 +115,23 @@ WHATS_NEW: dict[str, tuple[str, list[str]]] = {
 
 
 def whats_new(version: str) -> tuple[str, str, list[str]]:
-    """(major.minor, one-line summary, bullet list) for ``version``."""
+    """(the version the list is for, one-line summary, bullet list): the
+    version's own list if it has one, otherwise its major.minor's."""
+    if version in WHATS_NEW:
+        summary, bullets = WHATS_NEW[version]
+        return version, summary, bullets
     key = ".".join(version.split(".")[:2])
-    summary, bullets = WHATS_NEW.get(key, WHATS_NEW[max(WHATS_NEW)])
+    minors = [k for k in WHATS_NEW if k.count(".") == 1]
+    summary, bullets = WHATS_NEW.get(key, WHATS_NEW[max(minors, key=lambda k: tuple(map(int, k.split("."))))])
     return key, summary, bullets
+
+
+def earlier_list(version: str) -> tuple[str, list[str]] | None:
+    """For a fix version (1.3.1), its minor version's list, shown under its own."""
+    key = ".".join(version.split(".")[:2])
+    if version in WHATS_NEW and key in WHATS_NEW and key != version:
+        return key, WHATS_NEW[key][1]
+    return None
 
 
 def size_text(n: int) -> str:
@@ -160,6 +190,9 @@ def main(tag: str, repo: str, folder: str) -> int:
 
     minor, summary, bullets = whats_new(version)
     bullet_text = "\n".join(f"- {b}" for b in bullets)
+    earlier = earlier_list(version)
+    if earlier:
+        bullet_text += f"\n\n### ומה שנוסף ב-{earlier[0]}\n" + "\n".join(f"- {b}" for b in earlier[1])
     notes = f"""## המנגן {version}
 
 נגן מוזיקה קהילתי חכם ל-Windows: מבין בקשות בעברית חופשית, מכיר את הלוח העברי, ועובד בלי אינטרנט.
@@ -171,7 +204,7 @@ def main(tag: str, repo: str, folder: str) -> int:
 | --- | --- | --- | --- |
 {row("setup", "התקנה רגילה", "קיצור דרך בשולחן העבודה ובתפריט התחל, והסרה מהגדרות Windows. מודל הסיווג יורד בפעם הראשונה שיש אינטרנט (פעם אחת).")}
 {row("setup_offline", "התקנה עם המודל", "למחשב בלי אינטרנט: הכל בפנים, כולל מודל הסיווג.")}
-{row("portable", "גרסה ניידת", "בלי התקנה: הקובץ נפתח פעם אחת לתיקייה שבוחרים, והמנגן רץ ממנה. הספרייה נשמרת בתיקייה, כך שאפשר להעביר אותה.")}
+{row("portable", "גרסה ניידת", "בלי התקנה: הקובץ נפתח פעם אחת לתיקייה (מוצעת תיקיית התוכנות שלך, ואפשר לבחור כל תיקייה), והמנגן רץ ממנה. הספרייה נשמרת בתיקייה, כך שאפשר להעביר אותה.")}
 {row("offline", "גרסה ניידת עם המודל", "כמו הניידת, עם מודל הסיווג בפנים — בלי אינטרנט בכלל.")}
 
 הגרסאות המותקנות שומרות את הספרייה ב-`%APPDATA%\\Hamenagen`; הניידות — בתיקייה `data` שליד התוכנה.
