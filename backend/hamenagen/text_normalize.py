@@ -129,3 +129,58 @@ def contains_phrase(norm_text: str, norm_phrase: str) -> bool:
         if first in word_variants(words[i]) and words[i + 1 : i + 1 + len(rest)] == rest:
             return True
     return False
+
+
+# ---------------------------------------------------------------- broken Hebrew
+# Old Israeli MP3s carry their tags in Windows-1255 while the tag says
+# "Latin-1", so a reader shows "øöåòä" for "רצועה". Others were saved as UTF-8
+# and read as Latin-1/Windows-1252, which shows "×¨×¦×•×¢×”". Both are undone
+# here; real accented Latin text ("Café", "été") is left alone.
+_WORD_RE = re.compile(r"[^\s\-_.,;:!?()\[\]{}/\\|\"'`0-9]+")
+
+
+def _is_cp1255_letter(code: int) -> bool:
+    # Hebrew letters (0xE0–0xFA) and points (0xC0–0xD2) as Latin-1 code points.
+    return 0xE0 <= code <= 0xFA or 0xC0 <= code <= 0xD2
+
+
+def _hebrew_share(text: str) -> float:
+    letters = [ch for ch in text if ch.isalpha()]
+    if not letters:
+        return 0.0
+    return sum("א" <= ch <= "ת" for ch in letters) / len(letters)
+
+
+def repair_hebrew(text: str) -> str:
+    """Undo the two common ways Hebrew tags get garbled; otherwise return
+    ``text`` unchanged."""
+    if not text or any("֐" <= ch <= "׿" for ch in text):
+        return text
+    # UTF-8 bytes shown as Latin-1/Windows-1252: Hebrew starts with 0xD7 ("×").
+    if text.count("×") >= 1:
+        for encoding in ("cp1252", "latin-1"):
+            try:
+                fixed = text.encode(encoding).decode("utf-8")
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                continue
+            if _hebrew_share(fixed) >= 0.5:
+                return fixed
+    # Windows-1255 shown as Latin-1: a word made only of à…ú letters, and no
+    # word that mixes them with plain Latin letters (that is real French).
+    words = _WORD_RE.findall(text)
+    hebrew_word = False
+    for word in words:
+        high = sum(_is_cp1255_letter(ord(ch)) for ch in word)
+        latin = sum(("a" <= ch.lower() <= "z") for ch in word)
+        if high and latin:
+            return text
+        if high >= 2 and not latin:
+            hebrew_word = True
+    if not hebrew_word:
+        return text
+    for encoding in ("latin-1", "cp1252"):
+        try:
+            return text.encode(encoding).decode("cp1255")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            continue
+    return text

@@ -13,6 +13,7 @@ import os
 import platform
 import random
 import sys
+import threading
 from collections import Counter
 from collections.abc import Callable
 from datetime import date, datetime
@@ -21,10 +22,11 @@ from pathlib import Path
 from . import __version__
 from . import intent as intent_mod
 from . import settings as settings_mod
+from . import metadata as metadata_mod
 from . import topics as topics_mod
 from .classifier import EmbeddingBackend, HybridClassifier
-from .fetcher import OnlineFetcher, ProgressHook, SearchResult
-from .fuzzy import MatchCandidate, search as fuzzy_search
+from .fetcher import OnlineFetcher, ProgressHook, SearchResult, find_ffmpeg
+from .fuzzy import MatchCandidate, near_matches, search as fuzzy_search
 from .hebrew_calendar import VOCAL_TOPIC, detect_occasion, from_gregorian, today_info
 from .index_db import AVERAGE_SONG_SECONDS, MusicIndex, encode_tags
 from .intent import Action, Intent
@@ -32,16 +34,21 @@ from .models import Track
 from .offline_pack import PackError, find_packs, install_pack
 from .radio import RadioProvider
 from .scanner import (
+    SCAN_VERSION,
     default_roots,
+    display_folder,
+    is_placeholder_title,
     is_too_short,
     iter_media_files,
     read_sidecar_lyrics,
     scan_file,
+    store_cover,
     track_id_for,
 )
 from .settings import (
     Settings,
     bundled_audio_models_dir,
+    bundled_ffmpeg_dir,
     bundled_models_dir,
     default_data_dir,
     default_downloads_dir,
@@ -49,6 +56,7 @@ from .settings import (
 from .text_normalize import normalize
 from .updater import Updater, current_ytdlp_version
 from .vocal import MODEL_NAME as VOCAL_MODEL, VocalDetector
+from .ytdlp_runner import YtDlpRunner
 
 ScanProgress = Callable[[dict], None]
 
@@ -82,12 +90,21 @@ class PlayerService:
         self.models_dir = self.data_dir / "models"
         self.bundled_models_dir = bundled_models_dir()
         self.classifier = HybridClassifier(self._build_backend())
-        self.fetcher = OnlineFetcher()
+        # Cover pictures, kept once each by content (scanner.store_cover).
+        self.covers_dir = self.data_dir / "covers"
+        # yt-dlp runs as its own process (ytdlp_runner); a newer copy can live
+        # in data/engine; ffmpeg ships with the app for MP3 downloads.
+        self.ffmpeg = find_ffmpeg(bundled_ffmpeg_dir())
+        self.runner = YtDlpRunner(engine_dir=self.data_dir / "engine", ffmpeg=self.ffmpeg)
+        self.fetcher = OnlineFetcher(runner=self.runner)
+        self.download_stop = threading.Event()
+        self.downloading = False
         self.radio = RadioProvider(
             self.settings.radio_list_url,
             cache_path=self.data_dir / "radio_cache.json",
         )
         self.updater = Updater(self.settings.update_manifest_url, self.data_dir, edition=self.edition)
+        self.updater.engine_updater = self.runner.update_engine
         # Listening for a cappella songs: the model ships in every edition;
         # a dev run can put it in data/models (prepare_audio_model.py).
         self.vocal = VocalDetector([bundled_audio_models_dir() or "", self.models_dir])
@@ -176,15 +193,22 @@ class PlayerService:
             known = idx.file_state()
             overrides = idx.overrides()
             analyses = idx.analyses()
+            details = idx.details()
+            # A library scanned by an older version is read again once, so
+            # what this version reads better (Hebrew in old encodings, WMA
+            # tags, covers) reaches every song.
+            force = not partial and bool(known) and idx.get_meta("scan_version") != SCAN_VERSION
+            folder_cache: dict = {}
             seen: set[str] = set()
             added = updated = files = 0
             for path, st in iter_media_files(use_roots, include_video=self.settings.include_video):
                 files += 1
                 tid = track_id_for(path)
                 previous = known.get(tid)
-                if previous and previous == (st.st_mtime, st.st_size):
+                if previous and previous == (st.st_mtime, st.st_size) and not force:
                     seen.add(tid)
-                elif (track := scan_file(path, include_video=self.settings.include_video, stat=st)) is not None \
+                elif (track := scan_file(path, include_video=self.settings.include_video, stat=st,
+                                         covers_dir=self.covers_dir, folder_cache=folder_cache)) is not None \
                         and not is_too_short(track):
                     seen.add(tid)
                     if previous:
@@ -194,6 +218,10 @@ class PlayerService:
                             track.title, track.artist = old.title or track.title, old.artist or track.artist
                             track.source, track.release_date = old.source, old.release_date
                             track.download_date = old.download_date or track.download_date
+                        if old is not None:
+                            track.cover = track.cover or old.cover
+                            track.duration = track.duration or old.duration
+                    self._apply_details(track, details.get(tid))
                     self._classify_track(track, override=overrides.get(tid), analysis=analyses.get(tid))
                     idx.upsert(track, commit=False)
                     if previous:
@@ -209,6 +237,8 @@ class PlayerService:
             propagated = self._propagate(idx)
             finished = datetime.now()
             idx.set_meta("last_scan_at", finished.isoformat(timespec="seconds"))
+            if not partial:
+                idx.set_meta("scan_version", SCAN_VERSION)
             return {
                 "scanned_roots": use_roots,
                 "files": files,
@@ -257,6 +287,19 @@ class PlayerService:
             if name and normalize(name) not in self._GENERIC_FOLDERS and not name.endswith(":"):
                 names.append(name)
         return " ".join(names)
+
+    @staticmethod
+    def _apply_details(track: Track, chosen: dict | None) -> Track:
+        """Lay the details the listener chose from the web over the file's tags."""
+        if chosen:
+            for key in ("title", "artist", "album"):
+                if chosen.get(key):
+                    setattr(track, key, chosen[key])
+            if chosen.get("year") and not track.release_date:
+                track.release_date = chosen["year"]
+            if chosen.get("cover"):
+                track.cover = chosen["cover"]
+        return track
 
     def _classify_track(self, track: Track, *, override: dict | None = None,
                         analysis: dict | None = None) -> Track:
@@ -544,27 +587,34 @@ class PlayerService:
     def online_available(self) -> bool:
         return self.fetcher.available()
 
-    def download_and_add(self, result: SearchResult, on_progress: ProgressHook | None = None) -> dict:
+    def download_and_add(self, result: SearchResult, on_progress: ProgressHook | None = None,
+                         cancel: threading.Event | None = None) -> dict:
         """Download a chosen result, add it to the library, and return its Track.
 
         Implements the tail of the spec §11 flow: the file lands in the local
         library, gets indexed + classified, and the caller (UI) auto-plays it
         unless the user opted out.
         """
-        outcome = self.fetcher.download(result, self.downloads_dir, on_progress=on_progress)
+        outcome = self.fetcher.download(result, self.downloads_dir, on_progress=on_progress, cancel=cancel)
         if not outcome.ok or not outcome.path:
-            return {"ok": False, "message": outcome.message, "track": None}
+            return {"ok": False, "message": outcome.message, "track": None,
+                    "code": getattr(outcome, "code", ""), "blocked": bool(getattr(outcome, "blocked", False))}
 
-        track = scan_file(outcome.path, include_video=self.settings.include_video)
+        track = scan_file(outcome.path, include_video=self.settings.include_video, covers_dir=self.covers_dir)
         if track is None:
             return {"ok": True, "message": outcome.message, "track": None, "path": outcome.path}
 
-        # Prefer metadata from the source over filename parsing (spec §10).
+        # Prefer metadata from the source over filename parsing (spec §10):
+        # the clean song name and artist the fetcher took from the video.
         src = outcome.result or result
-        if src.title:
-            track.title = src.title
-        if src.uploader:
-            track.artist = track.artist or src.uploader
+        title = getattr(outcome, "title", "") or src.title
+        if title:
+            track.title = title
+        artist = getattr(outcome, "artist", "") or src.uploader
+        if artist:
+            track.artist = artist if not track.artist or track.artist == src.uploader else track.artist
+        if not track.cover and getattr(outcome, "cover", None):
+            track.cover = store_cover(outcome.cover, self.covers_dir)
         if src.duration and not track.duration:
             track.duration = float(src.duration)
         track.source = "youtube"
@@ -577,12 +627,103 @@ class PlayerService:
         self._classify_track(track)
         self.index.upsert(track)
         return {"ok": True, "message": outcome.message, "track": self._tracks_payload([track])[0],
-                "path": outcome.path}
+                "path": outcome.path, "code": "", "blocked": False}
+
+    def download_many(self, items: list[SearchResult], on_event: Callable[[dict], None] | None = None) -> dict:
+        """Download songs one after another (a channel, a playlist, a pick
+        from the search). Songs already in the library are skipped; a song
+        the network blocks is reported and the rest go on."""
+        emit = on_event or (lambda e: None)
+        self.download_stop.clear()
+        self.downloading = True
+        have = self.index.video_ids()
+        done = skipped = failed = blocked = 0
+        try:
+            for i, item in enumerate(items):
+                if self.download_stop.is_set():
+                    break
+                if item.id and item.id in have:
+                    skipped += 1
+                    emit({"type": "item", "index": i, "id": item.id, "status": "skipped"})
+                    continue
+                emit({"type": "item", "index": i, "id": item.id, "status": "started", "title": item.title})
+                out = self.download_and_add(
+                    item, cancel=self.download_stop,
+                    on_progress=lambda p, i=i, vid=item.id: emit({"type": "progress", "index": i, "id": vid, **p}))
+                if out["ok"]:
+                    done += 1
+                    have.add(item.id)
+                    emit({"type": "item", "index": i, "id": item.id, "status": "done", "track": out.get("track")})
+                else:
+                    failed += 1
+                    blocked += bool(out.get("blocked"))
+                    emit({"type": "item", "index": i, "id": item.id, "status": "failed",
+                          "message": out.get("message", ""), "blocked": bool(out.get("blocked"))})
+        finally:
+            self.downloading = False
+        return {"total": len(items), "downloaded": done, "skipped": skipped, "failed": failed,
+                "blocked": blocked, "stopped": self.download_stop.is_set()}
+
+    def stop_downloads(self) -> dict:
+        self.download_stop.set()
+        self.runner.stop_all()
+        return {"ok": True}
+
+    # -- details and covers from the web (asked for, one song at a time) ---------
+    def lookup_details(self, track_id: str) -> dict:
+        track = self.index.get(track_id)
+        if track is None:
+            return {"ok": False, "message": "השיר לא נמצא", "candidates": []}
+        title = track.title if not is_placeholder_title(track.title) else Path(track.filename).stem
+        candidates, error = metadata_mod.search(title, track.artist, track.duration)
+        message = {"blocked": "החיפוש חסום ברשת הזו (נטפרי או סינון דומה).",
+                   "network": "אין כרגע חיבור לרשת.", "bad_answer": "השירות לא ענה כמו שצריך."}.get(error, "")
+        return {"ok": not error, "message": message, "error": error,
+                "candidates": [c.to_dict() for c in candidates], "track": self._tracks_payload([track])[0]}
+
+    def apply_details(self, track_id: str, chosen: dict, *, propagate: bool = True) -> dict:
+        """Keep what the listener chose (never written to the file) and give
+        the songs beside it that have no cover the same picture."""
+        track = self.index.get(track_id)
+        if track is None:
+            return {"ok": False, "message": "השיר לא נמצא"}
+        current = {"title": track.title, "artist": track.artist, "album": track.album,
+                   "release_date": track.release_date}
+        values = metadata_mod.merge(current, chosen or {})
+        cover = ""
+        data = metadata_mod.fetch_image((chosen or {}).get("cover_url", ""))
+        if data:
+            cover = store_cover(data, self.covers_dir)
+        previous = self.index.details().get(track_id) or {}
+        row = {**previous, **values, "source": (chosen or {}).get("source", "itunes"),
+               "source_url": (chosen or {}).get("url", "")}
+        if cover:
+            row["cover"] = cover
+        self.index.set_details(track_id, row)
+        self._apply_details(track, row)
+        self._classify_track(track, override=self.index.get_override(track_id),
+                             analysis=self.index.analyses_for([track_id]).get(track_id))
+        self.index.upsert(track)
+        spread = 0
+        if cover and propagate and track.path:
+            everything = self.index.details()
+            for other in self.index.tracks_in_folder(str(Path(track.path).parent)):
+                if other.id == track.id or other.cover:
+                    continue
+                self.index.set_details(other.id, {**everything.get(other.id, {}), "cover": cover,
+                                                  "source": "folder"}, commit=False)
+                self.index.set_cover(other.id, cover, commit=False)
+                spread += 1
+            self.index.commit()
+        return {"ok": True, "track": self._tracks_payload([track])[0], "applied": sorted(values),
+                "cover": bool(cover), "propagated": spread,
+                "message": "" if values or cover else "לא היה מה להוסיף מהפרטים שנבחרו."}
 
     def _candidates(self) -> list[MatchCandidate]:
         return [
             MatchCandidate(
-                id=t.id, title=t.title, artist=t.artist, album=t.album, filename=t.filename
+                id=t.id, title=t.title, artist=t.artist, album=t.album, filename=t.filename,
+                folder=self._folder_hint(t.path) if t.path else "",
             )
             for t in self.index.iter_tracks()
         ]
@@ -595,6 +736,7 @@ class PlayerService:
         d["favorite"] = track.id in (favorites if favorites is not None else self.index.favorite_ids())
         d.pop("mtime", None)
         d.pop("size", None)
+        d["folder"] = display_folder(track.path) if track.path else ""
         # What the listener decided and what the detector heard, for the menu
         # and the "found by listening" marks.
         vocal = override.get("vocal") if override else None
@@ -637,6 +779,7 @@ class PlayerService:
             "seconds": round(sum(t.duration or AVERAGE_SONG_SECONDS for t in tracks)),
             "note": note,
             "found_local": bool(tracks),
+            "near": bool(intent.params.get("near")),
             "query": _display_query(intent.raw) if intent.action == Action.SEARCH_SONG else "",
         }
 
@@ -682,14 +825,26 @@ class PlayerService:
             tracks = self.index.by_topic(intent.topic, None if minutes else intent.limit, shuffle=bool(minutes))
             understood = topics_mod.topic_phrase(intent.topic)
         else:
-            # SEARCH_SONG (or fallback).
+            # SEARCH_SONG (or fallback): every word of the request must match.
             query = intent.query or intent.raw
-            found = fuzzy_search(query, self._candidates(), limit=limit)
+            candidates = self._candidates()
+            found = fuzzy_search(query, candidates, limit=limit)
+            near = False
+            if not found:
+                found = near_matches(query, candidates, limit=limit)
+                near = bool(found)
             by_id = {t.id: t for t in self.index.get_many([r.candidate.id for r in found])}
             tracks = [by_id[r.candidate.id] for r in found if r.candidate.id in by_id]
-            understood = f"חיפוש: {_display_query(intent.raw) or query}"
+            shown = _display_query(intent.raw) or query
+            understood = f"חיפוש: {shown}"
+            artists = [t.artist for t, r in zip(tracks, found) if r.by_artist and t.artist]
+            if tracks and not near and len(artists) >= max(1, 0.6 * len(tracks)):
+                understood = f"השירים של {Counter(artists).most_common(1)[0][0]}"
             if not tracks:
-                return [], understood, "השיר לא נמצא במחשב. אפשר לחפש אותו ברשת."
+                return [], understood, f"„{shown}” לא נמצא במחשב."
+            if near:
+                intent.params["near"] = True
+                return tracks, understood, "אין במחשב שיר שמתאים לכל המילים. אלה הכי קרובים:"
             return tracks, understood, ""
 
         if minutes:
@@ -829,7 +984,8 @@ class PlayerService:
             "model_bundled": bool(model.get("bundled")),
             "python": platform.python_version(),
             "platform": f"{platform.system()} {platform.release()}",
-            "ytdlp": current_ytdlp_version(),
+            "ytdlp": self.runner.version() or current_ytdlp_version(),
+            "ffmpeg": bool(self.ffmpeg),
             "online_source": self.fetcher.available(),
             "executable": sys.executable,
         }
