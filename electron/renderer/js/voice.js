@@ -210,7 +210,23 @@
   const LOOKUP = new Map();
   for (const [name, phrases] of COMMANDS) for (const ph of phrases) LOOKUP.set(clean(ph) || ph, name);
 
-  V.commandFor = (text) => LOOKUP.get(clean(text)) || LOOKUP.get(String(text || '').trim()) || null;
+  // "תכבה בעוד חצי שעה", "טיימר שינה עשרים דקות", "תכבה בסוף השיר", "בטל את הטיימר".
+  const NUMBERS = { 'חמש': 5, 'עשר': 10, 'רבע שעה': 15, 'עשרים': 20, 'חצי שעה': 30, 'ארבעים': 40,
+    'ארבעים וחמש': 45, 'שלושת רבעי שעה': 45, 'שעה': 60, 'שעה וחצי': 90, 'שעתיים': 120 };
+  V.sleepFor = function sleepFor(text) {
+    const t = clean(text);
+    if (!/(טיימר|תכבה|כבה|לכבות|תפסיק|להפסיק|לישון|שינה)/.test(t)) return null;
+    if (/(בטל|תבטל|לבטל)/.test(t)) return 'off';
+    if (/(סוף|אחרי) ה?שיר/.test(String(text)) || /(בסוף|אחרי)$/.test(t)) return 'track';
+    const digits = t.match(/(\d+)\s*(דקות|דק|שעות|שעה)?/);
+    if (digits) return Number(digits[1]) * (/שע/.test(digits[2] || '') ? 60 : 1);
+    const words = Object.keys(NUMBERS).sort((a, b) => b.length - a.length);
+    const hit = words.find((w) => t.includes(w));
+    return hit ? NUMBERS[hit] : null;
+  };
+
+  V.commandFor = (text) => LOOKUP.get(clean(text)) || LOOKUP.get(String(text || '').trim())
+    || (V.sleepFor(text) !== null ? 'sleep' : null);
 
   V.command = function command(text) {
     const name = V.commandFor(text);
@@ -229,6 +245,10 @@
     else if (name === 'radio-song') {
       if (cur) H.radioFrom(cur);
       else H.radioFrom(null);
+    } else if (name === 'sleep') {
+      const v = V.sleepFor(text);
+      P.setSleep(v);
+      say(v === 'off' ? 'טיימר השינה בוטל' : v === 'track' ? 'יכבה בסוף השיר' : `יכבה בעוד ${v} דקות`, 'moon');
     } else if (name === 'what') {
       say(cur ? `מתנגן: ${H.trackTitle(cur)}${cur.artist ? ` · ${cur.artist}` : ''}` : 'כרגע לא מתנגן כלום', 'music-2');
     }

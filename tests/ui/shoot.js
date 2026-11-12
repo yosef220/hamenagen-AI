@@ -409,6 +409,33 @@ async function run() {
       await page.waitForSelector('#set-voice');
       await shot(page, `27-settings-sound-voice${suffix}`);
 
+      // Spoken commands work the player rather than being searched for.
+      const commands = await page.evaluate(async () => {
+        const P = H.player;
+        const { tracks } = await H.api.ask('שירי שבת');
+        P.playList(tracks.slice(0, 4), 0, { shuffle: false });
+        await new Promise((r) => setTimeout(r, 500));
+        const out = {};
+        H.voice.command('שיר הבא בבקשה');
+        out.next = P.index;
+        const vol = P.volume();
+        H.voice.command('תנמיך');
+        out.quieter = P.volume() < vol;
+        H.voice.command('תכבה בעוד חצי שעה');
+        out.sleep = P.sleep && P.sleep.minutes;
+        H.voice.command('בטל את הטיימר');
+        out.sleepOff = P.sleep === null;
+        H.voice.command('עצור');
+        await new Promise((r) => setTimeout(r, 200));
+        out.paused = !P.isPlaying();
+        out.song = H.voice.command('ירושלים של זהב');
+        P.setVolume(vol);
+        return out;
+      });
+      if (commands.next !== 1 || !commands.quieter || commands.sleep !== 30 || !commands.sleepOff || !commands.paused || commands.song) {
+        errors.push(`spoken commands: ${JSON.stringify(commands)}`);
+      }
+
       if (voiceArgs.length) {
         await page.evaluate(() => H.go('home'));
         await page.waitForSelector('.mic-btn');
