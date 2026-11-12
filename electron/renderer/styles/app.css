@@ -367,6 +367,7 @@ select.select {
   line-height: 1.1;
 }
 .luach-civil { color: var(--mantle-ink-2); font-size: var(--fs-sm); }
+.luach-parasha { color: var(--thread); font-size: var(--fs-sm); font-weight: 600; margin-top: 2px; }
 
 .luach-occasion {
   display: flex;

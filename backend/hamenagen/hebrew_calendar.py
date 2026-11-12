@@ -341,6 +341,8 @@ def occasions_on(g: date | None = None, *, vocal_suggestions: bool = True) -> li
     if h.month == 7 and 15 <= h.day <= 21:
         found.append(Occasion("sukkot", "סוכות", "סוכות", 90,
                               detail=f"יום {_ORDINAL_DAYS[h.day - 15]} של סוכות"))
+    if h.month == 7 and h.day == 22:
+        found.append(Occasion("simchat_torah", "שמחת תורה", "סוכות", 90, detail="שמיני עצרת"))
     cday = chanukah_day(h)
     if cday:
         found.append(Occasion("chanukah", "חנוכה", "חנוכה", 90,
@@ -355,6 +357,15 @@ def occasions_on(g: date | None = None, *, vocal_suggestions: bool = True) -> li
         found.append(Occasion("lag_baomer", "ל״ג בעומר", "ל״ג בעומר", 90, detail="הילולת רשב״י"))
     if h.month == 3 and h.day in (6, 7):
         found.append(Occasion("shavuot", "שבועות", "שבועות", 90))
+    if h.month == 11 and h.day == 15:
+        found.append(Occasion("tu_bishvat", "ט״ו בשבט", "ט״ו בשבט", 90, detail="ראש השנה לאילנות"))
+    # Rosh Chodesh: the 30th of a full month and the 1st of the next (the 1st
+    # of Tishrei is Rosh Hashana). Below the weekly Shabbat suggestion, and
+    # "monthly" so it never takes over the countdown to the next festival.
+    if h.day == 30 or (h.day == 1 and h.month != 7):
+        month = fixed_to_hebrew(fixed + 1 if h.day == 30 else fixed).month_name
+        found.append(Occasion("rosh_chodesh", "ראש חודש", "ראש חודש", 70, "monthly",
+                              f"ראש חודש {month}"))
 
     # Seasons.
     # The Omer and the Three Weeks suggest a cappella music every day (above
@@ -425,5 +436,124 @@ def today_info(g: date | None = None, *, vocal_suggestions: bool = True) -> dict
         "occasions": [o.to_dict() for o in found],
         "primary": primary.to_dict() if primary else None,
         "omer": omer_day(h),
+        "parasha": parasha_of_week(g),
         "next": next_occasion(g),
     }
+
+
+# --------------------------------------------------------------------------
+# The weekly Torah portion (Israel), computed offline
+# --------------------------------------------------------------------------
+
+#: The 53 portions read on Shabbat, Bereshit … Ha'azinu (V'Zot HaBracha is
+#: read on Simchat Torah, never on a Shabbat).
+PARASHIYOT = (
+    "בראשית", "נח", "לך לך", "וירא", "חיי שרה", "תולדות", "ויצא", "וישלח", "וישב", "מקץ",
+    "ויגש", "ויחי", "שמות", "וארא", "בא", "בשלח", "יתרו", "משפטים", "תרומה", "תצוה",
+    "כי תשא", "ויקהל", "פקודי", "ויקרא", "צו", "שמיני", "תזריע", "מצורע", "אחרי מות", "קדושים",
+    "אמור", "בהר", "בחוקותי", "במדבר", "נשא", "בהעלותך", "שלח לך", "קרח", "חוקת", "בלק",
+    "פנחס", "מטות", "מסעי", "דברים", "ואתחנן", "עקב", "ראה", "שופטים", "כי תצא", "כי תבוא",
+    "נצבים", "וילך", "האזינו",
+)
+
+# Pairs that are read together when a stretch of the year has fewer Shabbatot
+# than portions — in the order they are joined (the first is joined first).
+_JOIN_BEFORE_PESACH = ((21, 22),)                     # ויקהל-פקודי
+_JOIN_BEFORE_SHAVUOT = ((26, 27), (28, 29), (31, 32))  # תזריע-מצורע, אחרי מות-קדושים, בהר-בחוקותי
+_JOIN_BEFORE_TISHA_BAV = ((41, 42), (38, 39))          # מטות-מסעי, חוקת-בלק
+
+
+def _shabbatot(start: int, end: int) -> list[int]:
+    """Fixed days of every Shabbat with ``start <= day < end``."""
+    first = start + (6 - start % 7) % 7   # fixed % 7 == 6 is Saturday
+    return list(range(first, end, 7))
+
+
+def _assign(days: list[int], first: int, last: int, joins: tuple, out: dict) -> None:
+    """Spread portions ``first..last`` over ``days``, joining pairs as needed."""
+    need = (last - first + 1) - len(days)
+    joined = {a for a, _ in sorted(joins[:max(need, 0)])}
+    readings: list[tuple[int, ...]] = []
+    i = first
+    while i <= last:
+        if i in joined:
+            readings.append((i, i + 1))
+            i += 2
+        else:
+            readings.append((i,))
+            i += 1
+    # A stretch never has more Shabbatot than portions; if the arithmetic
+    # ever disagrees, leave the extra Shabbatot unnamed rather than guess.
+    for day, reading in zip(days, readings):
+        out[day] = reading
+
+
+def _torah_cycle(year: int) -> dict[int, tuple[int, ...]]:
+    """Shabbat (fixed day) → portion indexes, for the cycle that starts after
+    Simchat Torah of Hebrew ``year`` and ends before Sukkot of ``year + 1``."""
+    simchat_torah = hebrew_to_fixed(year, 7, 22)
+    pesach = hebrew_to_fixed(year, 1, 15)
+    shavuot = hebrew_to_fixed(year, 3, 6)
+    tisha_bav = hebrew_to_fixed(year, 5, 9)
+    rosh_hashana = hebrew_to_fixed(year + 1, 7, 1)
+    sukkot = hebrew_to_fixed(year + 1, 7, 15)
+    leap = hebrew_leap_year(year)
+
+    out: dict[int, tuple[int, ...]] = {}
+    festival = lambda d: pesach <= d < pesach + 7 or d == shavuot
+    if leap:
+        # A leap year has room for every portion; in some years Israel even
+        # reads אחרי מות before Pesach and נשא before Shavuot. Only מטות-מסעי
+        # may be joined, to reach דברים on Shabbat Chazon.
+        days = [d for d in _shabbatot(simchat_torah + 1, tisha_bav + 1) if not festival(d)]
+        _assign(days, 0, 43, _JOIN_BEFORE_TISHA_BAV, out)
+    else:
+        # A plain year reads צו before Pesach, במדבר before Shavuot and דברים
+        # on Shabbat Chazon, joining pairs inside each stretch.
+        _assign(_shabbatot(simchat_torah + 1, pesach), 0, 24, _JOIN_BEFORE_PESACH, out)
+        _assign(_shabbatot(pesach + 7, shavuot), 25, 33, _JOIN_BEFORE_SHAVUOT, out)
+        _assign(_shabbatot(shavuot + 1, tisha_bav + 1), 34, 43, _JOIN_BEFORE_TISHA_BAV, out)
+    # Seven Shabbatot of consolation to Rosh Hashana, then Shabbat Shuva and
+    # the Shabbat before Sukkot: נצבים-וילך are joined when only one is left.
+    consolation = _shabbatot(tisha_bav + 1, rosh_hashana)
+    after_rh = [d for d in _shabbatot(rosh_hashana + 2, sukkot) if d != rosh_hashana + 9]
+    if len(after_rh) >= 2:
+        _assign(consolation, 44, 50, (), out)
+        _assign(after_rh[:2], 51, 52, (), out)
+    else:
+        _assign(consolation, 44, 51, ((50, 51),), out)
+        _assign(after_rh, 52, 52, (), out)
+    return out
+
+
+def _cycle_year(fixed: int) -> int:
+    """The Hebrew year whose Simchat Torah opened the cycle that ``fixed`` is in."""
+    h = fixed_to_hebrew(fixed)
+    year = h.year
+    # Before Simchat Torah, the cycle is the one that began last year.
+    if fixed <= hebrew_to_fixed(year, 7, 22):
+        year -= 1
+    return year
+
+
+def parasha_of_shabbat(shabbat: date) -> str | None:
+    """The portion read on the Shabbat ``shabbat`` in Israel.
+
+    ``None`` when a festival's reading replaces it (Pesach, Shavuot, Rosh
+    Hashana, Yom Kippur, Sukkot).
+    """
+    fixed = gregorian_to_fixed(shabbat.year, shabbat.month, shabbat.day)
+    reading = _torah_cycle(_cycle_year(fixed)).get(fixed)
+    if not reading:
+        return None
+    return "-".join(PARASHIYOT[i] for i in reading)
+
+
+def coming_shabbat(g: date) -> date:
+    """The Shabbat of the week ``g`` is in (``g`` itself on a Shabbat)."""
+    return g + timedelta(days=(5 - g.weekday()) % 7)
+
+
+def parasha_of_week(g: date | None = None) -> str | None:
+    """The portion of the coming Shabbat — what a luach shows all week."""
+    return parasha_of_shabbat(coming_shabbat(g or date.today()))
