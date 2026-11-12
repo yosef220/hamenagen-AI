@@ -12,6 +12,7 @@
 
   const SUGGESTIONS = [
     'שעה של שירי שבת',
+    'סט לשמחה',
     'השירים האחרונים שהורדתי',
     'השירים שאהבתי',
     'חצי שעה של מוזיקה ווקאלית',
@@ -26,7 +27,8 @@
       h('div', { class: 'luach-day', 'aria-hidden': 'true' }, heb.day_text),
       h('div', { class: 'luach-rest' },
         h('div', { class: 'luach-month' }, `ב${heb.month_name} ${heb.year_text}`),
-        h('div', { class: 'luach-civil' }, `${t.weekday} · ${H.civilDate(t.gregorian)}`)));
+        h('div', { class: 'luach-civil' }, `${t.weekday} · ${H.civilDate(t.gregorian)}`),
+        t.parasha ? h('div', { class: 'luach-parasha' }, `פרשת ${t.parasha}`) : null));
 
     const occasionBox = h('div', { class: 'luach-occasion' });
     const primary = t.primary;

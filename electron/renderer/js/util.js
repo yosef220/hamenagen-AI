@@ -132,6 +132,8 @@ H.TOPIC_TINTS = {
   'פסח': 'stone',
   'ל״ג בעומר': 'ember',
   'שבועות': 'cedar',
+  'ראש חודש': 'tekhelet',
+  'ט״ו בשבט': 'cedar',
   'אלול': 'slate',
   'חתונה': 'wine',
   'ירושלים': 'stone',

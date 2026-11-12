@@ -409,6 +409,41 @@ class YouTubeSource:
                             artist=artist, cover=cover)
 
 
+    def fetch_audio(self, result: SearchResult, dest_dir: str | Path, *,
+                    cancel: threading.Event | None = None) -> FetchOutcome:
+        """The song's audio as it is (no conversion, no tags), to listen to
+        without adding it to the library. Saved as ``<id>.<ext>``."""
+        if not self.available():
+            return self._failed("not_installed")
+        dest = Path(dest_dir)
+        dest.mkdir(parents=True, exist_ok=True)
+        for old in dest.glob(f"{result.id}.*"):
+            if old.suffix not in (".part", ".ytdl") and old.stat().st_size > 0:
+                return FetchOutcome(True, "", path=str(old), result=result)
+        args = [result.url, "-o", str(dest / "%(id)s.%(ext)s"), "--no-simulate", "--no-playlist", "--no-mtime",
+                "--retries", "3", "--concurrent-fragments", "4", "--fixup", "never",
+                "-f", "bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio",
+                "--print", "after_move:HMFILE:%(filepath)s"]
+        state: dict = {"file": None}
+
+        def on_line(line: str) -> None:
+            if line.startswith("HMFILE:"):
+                state["file"] = line[7:].strip()
+
+        last = None
+        for client in CLIENT_SETS:
+            res = self.runner.stream(args, on_line, stall=60, timeout=240, client=client, cancel=cancel)
+            if state["file"] and Path(state["file"]).exists():
+                return FetchOutcome(True, "", path=state["file"], result=result)
+            last = res
+            if res.code != "extract":
+                break
+        code = last.code if last is not None else "other"
+        if code == "netfree":
+            return FetchOutcome(False, "הסרטון הזה חסום ברשת שלך (נטפרי או סינון דומה).", code="netfree", blocked=True)
+        return self._failed(code, last.err if last is not None else "")
+
+
 class OnlineFetcher:
     """Facade over the currently-selected source plugin."""
 
@@ -437,6 +472,13 @@ class OnlineFetcher:
         if "cancel" in inspect.signature(self.source.download).parameters:
             return self.source.download(result, dest_dir, on_progress=on_progress, cancel=cancel)
         return self.source.download(result, dest_dir, on_progress=on_progress)
+
+    def fetch_audio(self, result: SearchResult, dest_dir: str | Path, *,
+                    cancel: threading.Event | None = None) -> FetchOutcome:
+        fn = getattr(self.source, "fetch_audio", None)
+        if fn is None:
+            return FetchOutcome(False, MESSAGES["not_installed"], code="not_installed")
+        return fn(result, dest_dir, cancel=cancel)
 
     @property
     def runner(self) -> YtDlpRunner | None:

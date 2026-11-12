@@ -5,12 +5,15 @@
 Produces, next to the built files in ``dist``:
 
 * ``RELEASE_NOTES.md``  — the Hebrew release page, with real file sizes
-* ``update.json``       — what 1.x installs check (releases/latest/download)
+* ``update.json``       — what 1.x installs check (releases/latest/download),
+  with each edition's parts for the smart update (sizes and checksums of
+  dist/parts/hamenagen-part-*.zip, from parts-<edition>.json)
 * ``legacy/update.json``— the old 0.1 format, so 0.1 installs see 1.0
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from datetime import date
@@ -20,6 +23,27 @@ from pathlib import Path
 # What is new, by version (major.minor). The newest version's list goes on
 # the release page; its one-line summary goes into update.json.
 WHATS_NEW: dict[str, tuple[str, list[str]]] = {
+    "1.3": (
+        "עדכון חכם שמוריד רק מה שהשתנה, כל הורדה בקובץ אחד, מצב שבת וחג, סטים לשמחות, רשימות שמורות ופרשת השבוע.",
+        [
+            "**עדכון חכם** — מכאן והלאה העדכון מוריד רק את החלקים שהשתנו (בדרך כלל כמה מגה-בייט), "
+            "והמודל של הגרסה האופליין לא יורד שוב. „לעדכן עכשיו”, והמנגן נסגר לרגע וחוזר מעודכן. "
+            "אם משהו נכשל — הגרסה הקודמת נשארת.",
+            "**כל הורדה בקובץ אחד** — התקנה רגילה, התקנה עם המודל (אופליין), וגרסה ניידת (גם עם המודל) "
+            "שנפתחת פעם אחת לתיקייה שבוחרים. בלי ZIP של אלפי קבצים.",
+            "**מצב שבת וחג** — לפי זמני העיר: המוזיקה נחלשת ונעצרת לפני הדלקת נרות, ו„שבת שלום” מוצג עד צאת "
+            "השבת או החג. הזמנים מזמנים טובא (כתר תורה), אחר כך מ-Hebcal, ובלי אינטרנט — מחישוב במחשב.",
+            "**סטים** — „תפעיל לי סט שירים לברית”, „סט לשמחה”, „מוזיקה לריקודים”: סט שמתחמם, מגיע לשיא ונרגע, "
+            "עם מעבר רך בין השירים. המנגן מקשיב ברקע לקצב ולאנרגיה של כל שיר. כשחסרים שירים — מיוטיוב, "
+            "בסגנון של הזמרים שאתה שומע, להשמעה בלי לשמור או להורדה.",
+            "**רשימות השמעה שמורות** — בשם, עם גרירה לסידור; „תשמיע את הרשימה שבת בבוקר”.",
+            "**כל שיר פעם אחת** — שיר שנמצא בכמה תיקיות או פורמטים מוצג פעם אחת, בעותק הטוב ביותר.",
+            "**בלוח** — פרשת השבוע (מחושבת בלי אינטרנט), ראש חודש, ט״ו בשבט ושמחת תורה.",
+            "**חיפוש בגוגל בתוך המנגן** — כשהרשת חוסמת חיפוש ביוטיוב: גוגל עם „יוטיוב”, ולחיצה על תוצאה "
+            "מביאה את השיר למנגן.",
+            "**השלמת פרטים ותמונות לכל הספרייה** — ברקע, ורק כשההתאמה ודאית.",
+        ],
+    ),
     "1.2": (
         "חיפוש מדויק לפי זמר, תמונות אלבום, שמות בעברית תקינים, והורדה מיוטיוב שעובדת גם מאחורי נטפרי.",
         [
@@ -85,6 +109,28 @@ def size_text(n: int) -> str:
     return f"{mb:,.0f}MB" if mb >= 10 else f"{mb:.1f}MB"
 
 
+def sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(1 << 20):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def parts_for(dist: Path, base: str) -> dict:
+    """Every edition's parts, with the address, size and checksum of each ZIP."""
+    out: dict = {}
+    for manifest_file in sorted((dist / "parts").glob("parts-*.json")):
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        for name, part in manifest["parts"].items():
+            z = dist / "parts" / part["file"]
+            if not z.exists():
+                raise SystemExit(f"missing part file: {z}")
+            part.update(url=f"{base}/{part['file']}", size=z.stat().st_size, sha256=sha256_of(z))
+        out[manifest["edition"]] = manifest
+    return out
+
+
 def main(tag: str, repo: str, folder: str) -> int:
     version = tag.lstrip("v")
     dist = Path(folder)
@@ -92,16 +138,25 @@ def main(tag: str, repo: str, folder: str) -> int:
     page = f"https://github.com/{repo}/releases/tag/{tag}"
 
     files = {
-        "portable": f"Hamenagen-{version}-Windows.zip",
-        "offline": f"Hamenagen-{version}-Windows-Offline.zip",
-        "setup_zip": f"Hamenagen-{version}-Setup.zip",
         "setup_exe": f"Hamenagen-{version}-Setup.exe",
+        "setup": f"Hamenagen-{version}-Setup.zip",
+        "setup_offline_exe": f"Hamenagen-{version}-Setup-Offline.exe",
+        "setup_offline": f"Hamenagen-{version}-Setup-Offline.zip",
+        "portable_exe": f"Hamenagen-{version}-Portable.exe",
+        "portable": f"Hamenagen-{version}-Portable.zip",
+        "offline_exe": f"Hamenagen-{version}-Portable-Offline.exe",
+        "offline": f"Hamenagen-{version}-Portable-Offline.zip",
     }
-    sizes = {k: size_text((dist / v).stat().st_size) if (dist / v).exists() else "—" for k, v in files.items()}
     missing = [v for v in files.values() if not (dist / v).exists()]
     if missing:
         print("missing:", ", ".join(missing), file=sys.stderr)
         return 1
+    sizes = {k: size_text((dist / v).stat().st_size) for k, v in files.items()}
+    parts = parts_for(dist, base)
+
+    def row(key: str, title: str, text: str) -> str:
+        return (f"| **[{files[key + '_exe']}]({base}/{files[key + '_exe']})** | {title}: {text} "
+                f"| {sizes[key + '_exe']} | [ZIP]({base}/{files[key]}) |")
 
     minor, summary, bullets = whats_new(version)
     bullet_text = "\n".join(f"- {b}" for b in bullets)
@@ -110,15 +165,20 @@ def main(tag: str, repo: str, folder: str) -> int:
 נגן מוזיקה קהילתי חכם ל-Windows: מבין בקשות בעברית חופשית, מכיר את הלוח העברי, ועובד בלי אינטרנט.
 
 ### איזה קובץ להוריד
+כל אחד מהם הוא קובץ אחד. אם סינון הרשת לא מאפשר להוריד EXE גדול — אותו קובץ בתוך ZIP.
 
-| קובץ | למי זה מתאים | גודל |
-| --- | --- | --- |
-| **[{files['portable']}]({base}/{files['portable']})** | הגרסה הניידת — בלי התקנה. מחלצים את ה-ZIP לתיקייה ומריצים `Hamenagen.exe`. בפעם הראשונה שיש אינטרנט היא מורידה את מודל הסיווג (פעם אחת). | {sizes['portable']} |
-| **[{files['offline']}]({base}/{files['offline']})** | למחשב בלי אינטרנט בכלל: הכל בפנים, כולל מודל הסיווג. מחלצים ומריצים. | {sizes['offline']} |
-| **[{files['setup_zip']}]({base}/{files['setup_zip']})** | התקנה רגילה: קיצור דרך בשולחן העבודה ובתפריט התחל, והסרה מהגדרות Windows. בתוך ה-ZIP נמצא קובץ ההתקנה. | {sizes['setup_zip']} |
-| [{files['setup_exe']}]({base}/{files['setup_exe']}) | אותה התקנה ישירות כקובץ EXE (סינון רשת עלול לחסום הורדה של EXE גדול — אז ה-ZIP). | {sizes['setup_exe']} |
+| קובץ | למי זה מתאים | גודל | גם כ-ZIP |
+| --- | --- | --- | --- |
+{row("setup", "התקנה רגילה", "קיצור דרך בשולחן העבודה ובתפריט התחל, והסרה מהגדרות Windows. מודל הסיווג יורד בפעם הראשונה שיש אינטרנט (פעם אחת).")}
+{row("setup_offline", "התקנה עם המודל", "למחשב בלי אינטרנט: הכל בפנים, כולל מודל הסיווג.")}
+{row("portable", "גרסה ניידת", "בלי התקנה: הקובץ נפתח פעם אחת לתיקייה שבוחרים, והמנגן רץ ממנה. הספרייה נשמרת בתיקייה, כך שאפשר להעביר אותה.")}
+{row("offline", "גרסה ניידת עם המודל", "כמו הניידת, עם מודל הסיווג בפנים — בלי אינטרנט בכלל.")}
 
-הגרסה הניידת שומרת את הספרייה בתיקייה `data` שליד התוכנה, כך שאפשר להעביר אותה עם התיקייה. הגרסה המותקנת שומרת ב-`%APPDATA%\\Hamenagen`.
+הגרסאות המותקנות שומרות את הספרייה ב-`%APPDATA%\\Hamenagen`; הניידות — בתיקייה `data` שליד התוכנה.
+
+### עדכונים
+מגרסה 1.3 העדכון מוריד רק את החלקים של התוכנה שהשתנו — בדרך כלל כמה מגה-בייט — והמודל לא יורד שוב.
+מגרסה קודמת (1.2 ומטה) מורידים את 1.3 פעם אחת בשלמותה.
 
 ### מה חדש ב-{minor}
 {bullet_text}
@@ -134,11 +194,16 @@ def main(tag: str, repo: str, folder: str) -> int:
             "published": date.today().isoformat(),
             "notes": summary,
             "page": page,
+            # Installs up to 1.2 open this address; it is one file (a ZIP
+            # holding the one-file EXE of their edition).
             "downloads": {
                 "portable": f"{base}/{files['portable']}",
                 "offline": f"{base}/{files['offline']}",
-                "setup": f"{base}/{files['setup_zip']}",
+                "setup": f"{base}/{files['setup']}",
+                "setup-offline": f"{base}/{files['setup_offline']}",
             },
+            # From 1.3: the parts of each edition, for the smart update.
+            "parts": parts,
         }
     }
     (dist / "update.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -151,7 +216,7 @@ def main(tag: str, repo: str, folder: str) -> int:
         "zip_url": f"{base}/{files['portable']}",
         "notes": f"גרסה {version} יצאה. {summary}",
     }, ensure_ascii=False), encoding="utf-8")
-    print(f"notes + manifests for {version} written")
+    print(f"notes + manifests for {version} written ({', '.join(sorted(parts))} with parts)")
     return 0
 
 

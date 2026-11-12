@@ -167,6 +167,22 @@ async function run() {
       await shot(page, `06-settings${suffix}`);
       await page.evaluate(() => document.querySelector('#set-vocal').scrollIntoView({ block: 'start' }));
       await shot(page, `12-settings-vocal${suffix}`);
+      await page.evaluate(() => document.querySelector('#set-shabbat').scrollIntoView({ block: 'start' }));
+      await page.waitForFunction(() => /הדלקת נרות/.test(document.querySelector('#set-shabbat .set-times').textContent || ''), null, { timeout: 10000 })
+        .catch(() => errors.push('the Shabbat card shows no times'));
+      await shot(page, `17-settings-shabbat${suffix}`);
+
+      // Shabbat mode: the screen that covers the player until Shabbat goes out.
+      await page.locator('#set-shabbat button', { hasText: 'להציג' }).click();
+      await page.waitForSelector('#rest:not([hidden]) .rest-greeting');
+      const greeting = await page.textContent('#rest .rest-greeting');
+      if (!/שלום|חג|שנה טובה|חתימה/.test(greeting)) errors.push(`Shabbat screen says: ${greeting}`);
+      await shot(page, `18-shabbat${suffix}`);
+      await page.locator('#rest button', { hasText: 'חזרה' }).click();
+      // The real thing: the window has begun, the player is held.
+      await page.evaluate(() => H.shabbat.show(H.shabbat.status().next));
+      if (!(await page.evaluate(() => H.player.blocked && !H.player.isPlaying()))) errors.push('the player is not held during Shabbat');
+      await page.evaluate(() => H.shabbat.hide());
 
       await page.evaluate(() => H.openDrawer('queue'));
       await page.waitForSelector('#drawer .track');
@@ -204,6 +220,83 @@ async function run() {
       await page.waitForSelector('dialog.dialog[open] .cand', { timeout: 15000 });
       await shot(page, `16-details${suffix}`);
       await page.evaluate(() => document.querySelector('dialog.dialog').close());
+
+      // Each song once: a copy in another folder hides behind the shown one.
+      await page.evaluate(() => H.go('library'));
+      await page.waitForSelector('#view-library .track');
+      const copies = await page.$$eval('#view-library .track .track-title', (els) => els.filter((e) => e.textContent.trim() === 'מנוחה ושמחה').length);
+      if (copies !== 1) errors.push(`a song kept in two folders shows ${copies} times`);
+      await page.locator('#view-library .track', { hasText: 'מנוחה ושמחה' }).first().click({ button: 'right' });
+      await page.waitForSelector('#track-menu:not([hidden]) .menu-copies', { timeout: 10000 })
+        .catch(() => errors.push('the song menu does not show the other copy'));
+
+      // Saved playlists: a new one from the song menu, more songs, a reorder.
+      await page.evaluate(async () => {
+        for (const p of (await H.api.playlists()).playlists) await H.api.playlistDelete(p.id);
+      });
+      await page.locator('#track-menu .menu-item', { hasText: 'הוספה לרשימה' }).click();
+      await page.waitForSelector('dialog.dialog[open] .pl-form input');
+      await page.fill('dialog.dialog[open] .pl-form input', 'שבת בבוקר');
+      await page.click('dialog.dialog[open] .pl-form button[type=submit]');
+      await page.waitForFunction(() => !document.querySelector('dialog.dialog[open]'));
+      for (const title of ['יה ריבון', 'צור משלו', 'ידיד נפש', 'שלום עליכם']) {
+        await page.locator('#view-library .track', { hasText: title }).first().click({ button: 'right' });
+        await page.locator('#track-menu .menu-item', { hasText: 'הוספה לרשימה' }).click();
+        await page.locator('dialog.dialog[open] .pl-choice', { hasText: 'שבת בבוקר' }).click();
+        await page.waitForFunction(() => !document.querySelector('dialog.dialog[open]'));
+      }
+      await page.evaluate(async () => {
+        const res = await H.api.ask('השירים של קול ברמה');
+        await H.api.playlistCreate('קול ברמה', res.tracks.map((t) => t.id));
+      });
+      await page.evaluate(() => H.go('playlists'));
+      await page.waitForSelector('#view-playlists .pl-card');
+      await page.waitForTimeout(600);
+      await shot(page, `19-playlists${suffix}`);
+      await page.locator('#view-playlists .pl-card', { hasText: 'שבת בבוקר' }).click();
+      await page.waitForSelector('#view-playlists .pl-row');
+      const firstTitle = (await page.textContent('#view-playlists .pl-row .track-title')).trim();
+      await page.focus('#view-playlists .pl-row');
+      await page.keyboard.press('Alt+ArrowDown');
+      await page.waitForTimeout(400);
+      const saved = await page.evaluate(async () => {
+        const { playlists } = await H.api.playlists();
+        const p = playlists.find((x) => x.name === 'שבת בבוקר');
+        return (await H.api.playlistGet(p.id)).tracks.map((t) => t.title);
+      });
+      if (saved.length !== 5 || saved[1] !== firstTitle) errors.push(`playlist order after a move: ${saved.join(', ')}`);
+      await shot(page, `20-playlist${suffix}`);
+
+      // A set for an occasion: the brit's songs from the library, and YouTube
+      // in the listener's style, to play without saving.
+      await page.evaluate(() => H.ask('תפעיל לי סט שירים לברית'));
+      await page.waitForSelector('#view-results .set-online .online-item', { timeout: 15000 });
+      const setTitle = await page.textContent('.results-title');
+      if (!/סט לברית/.test(setTitle)) errors.push(`a set request understood as: ${setTitle}`);
+      await shot(page, `21-set-brit${suffix}`);
+      await page.locator('#view-results .set-online .results-actions .btn-primary').click();
+      await page.waitForFunction(() => H.player.isPlaying(), null, { timeout: 15000 })
+        .catch(() => errors.push('the set did not start playing'));
+      await page.evaluate(() => { const P = H.player; P.jump(P.queue.findIndex((t) => t.listen)); });
+      await page.waitForFunction(() => { const c = H.player.current(); return c && c.listen && c.path && H.player.isPlaying(); }, null, { timeout: 20000 })
+        .catch(() => errors.push('a song from YouTube did not play without saving'));
+      await page.waitForTimeout(500);
+      await shot(page, `22-listening${suffix}`);
+      await page.evaluate(() => H.player.toggle(false));
+
+      // A soft transition: near the end of a song, the next one comes in.
+      const crossfaded = await page.evaluate(async () => {
+        const P = H.player;
+        const { tracks } = await H.api.ask('שירי חנוכה');
+        P.playList(tracks.slice(0, 2), 0, { crossfade: 4 });
+        await new Promise((r) => setTimeout(r, 800));
+        P.seekTo(P.audio.duration - 5);
+        await new Promise((r) => setTimeout(r, 2500));
+        const handed = P.index === 1 && P.isPlaying();
+        P.toggle(false);
+        return handed;
+      });
+      if (!crossfaded) errors.push('the crossfade did not move on to the next song');
 
       await page.evaluate(() => H.go('downloads'));
       await page.waitForTimeout(300);

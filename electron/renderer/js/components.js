@@ -260,6 +260,7 @@
       h('div', { class: 'menu-group' },
         item('list-start', 'לנגן אחרי השיר הזה', () => { closeTrackMenu(); H.player.playNext(track); H.toast('יתנגן אחרי השיר הזה', { icon: 'list-start' }); }),
         item('list-plus', 'להוסיף לסוף התור', () => { closeTrackMenu(); H.player.enqueue([track]); H.toast('נוסף לתור', { icon: 'list-plus' }); }),
+        item('list-music', 'הוספה לרשימה…', () => { closeTrackMenu(); H.addToPlaylist([track]); }),
         track.path ? item('folder-open', 'להציג בתיקייה', () => { closeTrackMenu(); api.showInFolder(track.path); }) : null,
         item('image', 'פרטים ותמונה מהרשת…', () => { closeTrackMenu(); H.openDetails(track); })),
       h('div', { class: 'menu-group' },
@@ -275,6 +276,15 @@
             h('button', { type: 'button', role: 'menuitemradio', 'aria-pressed': vocalState === key ? 'true' : 'false', 'aria-checked': vocalState === key ? 'true' : 'false', onclick: () => chooseVocal(track, value) }, label))),
         heard ? h('p', { class: 'menu-note' }, icon('ear', 'icon-sm'), heard) : null),
     );
+    // Other files of the same song (another folder or format), shown once.
+    api.trackCopies(track.id).then(({ copies }) => {
+      if (!copies || !copies.length || songMenu.hidden) return;
+      songMenu.appendChild(h('div', { class: 'menu-group' },
+        h('div', { class: 'menu-label' }, copies.length === 1 ? 'לשיר יש עוד עותק במחשב' : `לשיר יש עוד ${copies.length} עותקים במחשב`),
+        h('div', { class: 'menu-copies' }, copies.map((c) => h('div', { class: 'menu-copy' },
+          h('span', { title: c.path }, `${c.folder || c.path} · ${c.format}`),
+          h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => { closeTrackMenu(); api.showInFolder(c.path); } }, 'להציג'))))));
+    }).catch(() => {});
   }
 
   // ------------------------------------------------------------ details from the web
@@ -479,6 +489,8 @@
       const left = P.queue.slice(P.index + 1).reduce((s, t) => s + (t.duration || 240), 0);
       body.appendChild(h('p', { class: 'queue-note' },
         `${H.songs(P.queue.length)} · עוד ${H.span(left)} אחרי השיר הזה${P.shuffle ? ' · בערבוב' : ''}`));
+      body.appendChild(h('button', { class: 'btn btn-quiet btn-sm queue-save', type: 'button', onclick: () => H.saveAsPlaylist(P.queue.slice(), 'התור שלי') },
+        icon('list-music', 'icon-sm'), 'שמירת התור כרשימה'));
       const list = h('div', { class: 'tracks tracks-compact', role: 'list' });
       P.queue.forEach((t, i) => {
         const row = h('div', { class: `track${i === P.index ? ' active' : ''}`, role: 'listitem', tabindex: '0', 'data-id': t.id },

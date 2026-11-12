@@ -97,7 +97,12 @@
         h('div', { style: { display: 'flex', gap: '8px' } }, allBtn, addBtn), { wide: list }),
       row('לסרוק עכשיו', `${stats ? `${H.songs(stats.tracks)} · ` : ''}${last}`,
         h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: () => H.rescan(true) }, icon('refresh-cw', 'icon-sm'), 'לסרוק')),
-      toggle('include_video', 'לכלול קובצי וידאו', 'קבצי MP4 ודומיהם יופיעו בספרייה ויתנגנו כשמע.', () => H.rescan()));
+      toggle('include_video', 'לכלול קובצי וידאו', 'קבצי MP4 ודומיהם יופיעו בספרייה ויתנגנו כשמע.', () => H.rescan()),
+      toggle('hide_duplicates', 'להציג כל שיר פעם אחת',
+        stats && stats.duplicates
+          ? `${H.n(stats.duplicates)} עותקים של שירים שכבר יש (בתיקייה אחרת או בפורמט אחר) מוסתרים, ומוצג העותק הטוב ביותר. את העותקים רואים בתפריט ⋯ של השיר.`
+          : 'שיר שנמצא בכמה תיקיות או בכמה פורמטים יוצג פעם אחת, בעותק הטוב ביותר.',
+        () => { render({ focus: 'library' }); H.refreshRail && H.refreshRail(); }));
   }
 
   function modelPill(st) {
@@ -179,15 +184,105 @@
         'המנגן מקשיב לשלושה קטעים קצרים מכל שיר (כחמישית שנייה לשיר), ברקע ובלי אינטרנט. המודל קטן ונמצא בתוך התוכנה.',
         () => render({ focus: 'vocal' })),
       row('המצב', null, h('div', { style: { display: 'flex', gap: '8px', 'align-items': 'center' } }, review, run), { wide: vocalLine }),
+      toggle('rhythm_analysis', 'להקשיב גם לקצב ולאנרגיה של כל שיר',
+        'בשביל „סט לשמחה” וסטים לאירועים: הסט מתחמם, מגיע לשיא ונרגע, ושירים סמוכים קרובים בקצב. באותה הקשבה, בלי אינטרנט.'),
+      row('מעבר רך בין שירים', 'השיר הבא נכנס בהדרגה בזמן שהקודם נחלש. בסטים יש תמיד מעבר רך של 6 שניות לפחות.',
+        segmented([['0', 'כבוי'], ['3', '3 שניות'], ['6', '6 שניות'], ['10', '10 שניות']], String(H.settings.crossfade_seconds || 0),
+          async (v) => { if (await save({ crossfade_seconds: Number(v) })) H.player.setCrossfade(Number(v)); }, 'מעבר רך')),
       toggle('vocal_auto_include', 'לצרף מיד שירים שזוהו בוודאות',
         'כבוי: שירים שזוהו מחכים לאישור שלך בעמוד „ווקאלי”, ורק שירים שאושרו מוצעים בימי הספירה ובין המצרים. הזיהוי אוטומטי ויכול לטעות — בעיקר בשירה עם ליווי חלש מאוד.'));
   }
+
+  function shabbat() {
+    const s = H.settings;
+    const st = H.shabbat ? H.shabbat.status() : null;
+    const cities = (st && st.cities) || [s.shabbat_city];
+    const line = h('div', { class: 'set-times' });
+    const describe = (r) => {
+      if (!r || !r.enabled) return 'מצב השבת כבוי.';
+      const w = r.current || r.next;
+      if (!w) return '';
+      const what = w.kind === 'shabbat' ? (w.detail || 'שבת') : w.title;
+      return `${what}: הדלקת נרות ב${w.eve_weekday} ${w.candle_text}, המוזיקה נעצרת ${w.stop_text}, ${w.end_label} ${w.end_text}. מקור הזמנים: ${w.source_label}.`;
+    };
+    const refreshLine = async () => { line.textContent = describe(await H.shabbat.refresh()); };
+    refreshLine();
+    const select = (key, label, options, value, numeric) => {
+      const el = h('select', { class: 'select', 'aria-label': label },
+        options.map(([v, text]) => h('option', { value: String(v), selected: String(v) === String(value) }, text)));
+      el.addEventListener('change', async () => {
+        if (await save({ [key]: numeric ? Number(el.value) : el.value })) {
+          if (key === 'shabbat_city') render({ focus: 'shabbat' });
+          else refreshLine();
+        }
+      });
+      return el;
+    };
+    const cityMinutes = st ? st.city_minutes : 18;
+    return h('section', { class: 'set-group', id: 'set-shabbat' },
+      h('h2', {}, 'שבת וחג'),
+      toggle('shabbat_mode', 'מצב שבת וחג',
+        'לפני הדלקת נרות המוזיקה נחלשת ונעצרת, ועד צאת השבת או החג מוצג „שבת שלום” ושום דבר לא מתנגן. הזמנים מאתר זמנים טובא (כתר תורה); אם אין אליו גישה — מ-Hebcal, ובלי אינטרנט בכלל — מחישוב במחשב.',
+        () => refreshLine()),
+      row('העיר', null, select('shabbat_city', 'העיר', cities.map((c) => [c, c]), s.shabbat_city)),
+      row('הדלקת נרות', 'כמה דקות לפני השקיעה',
+        select('candle_minutes', 'הדלקת נרות', [[0, `כמנהג העיר (${cityMinutes} דקות)`], [18, '18 דקות'], [20, '20 דקות'], [22, '22 דקות'], [30, '30 דקות'], [40, '40 דקות']], s.candle_minutes, true)),
+      row('עצירת המוזיקה', 'כמה זמן לפני הדלקת נרות',
+        select('shabbat_stop_before', 'עצירת המוזיקה', [[0, 'בזמן הדלקת נרות'], [5, '5 דקות לפני'], [10, '10 דקות לפני'], [15, '15 דקות לפני'], [20, '20 דקות לפני'], [30, 'חצי שעה לפני']], s.shabbat_stop_before, true)),
+      row('צאת השבת', null,
+        segmented([['tzeit', 'צאת הכוכבים'], ['rt', 'רבנו תם']], s.havdalah, async (v) => { if (await save({ havdalah: v })) refreshLine(); }, 'צאת השבת'),
+        { wide: line }),
+      row('המסך בשבת', 'כך ייראה המנגן מהדלקת נרות ועד צאת השבת.',
+        h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: () => {
+          const r = H.shabbat.status();
+          H.shabbat.preview(r && (r.current || r.next));
+        } }, icon('eye', 'icon-sm'), 'להציג')));
+  }
+
+  // Details and covers for the whole library, filled in only for a sure match.
+  let detailsRunning = false;
+  let detailsLine = null;
+  function detailsRow() {
+    detailsLine = h('div', { class: 'set-help' }, detailsRunning ? 'מחפש פרטים…' : '');
+    const button = h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: async () => {
+      if (detailsRunning) {
+        await api.stopCompleteDetails().catch(() => {});
+        detailsLine.textContent = 'נעצר אחרי השיר הנוכחי.';
+        return;
+      }
+      const r = await api.completeDetails().catch((err) => ({ started: false, reason: err.message }));
+      if (r.started) {
+        detailsRunning = true;
+        button.textContent = 'לעצור';
+        detailsLine.textContent = 'מחפש פרטים ותמונות ברשת…';
+      } else {
+        detailsLine.textContent = r.reason === 'already running' ? 'כבר מחפש.' : `לא התחיל: ${r.reason || ''}`;
+      }
+    } }, icon('image', 'icon-sm'), detailsRunning ? 'לעצור' : 'להשלים');
+    return row('פרטים ותמונות לכל הספרייה',
+      'לשירים בלי תמונה או בלי זמר: המנגן מחפש ברשת, וממלא רק כשההתאמה ודאית — אותו שם, אותו זמר ואותו אורך. השאר נשאר לבחירה מהתפריט של השיר („פרטים ותמונה מהרשת”). הקבצים עצמם לא משתנים. איטי בכוונה, ברקע.',
+      button, { wide: detailsLine });
+  }
+  api.on('details_progress', (p) => {
+    detailsRunning = true;
+    if (detailsLine) detailsLine.textContent = `עבר על ${H.n(p.done)} מתוך ${H.n(p.total)} שירים · נמצאו פרטים ל-${H.n(p.found)}`;
+  });
+  api.on('details_done', (r) => {
+    detailsRunning = false;
+    const text = r && r.message ? r.message
+      : r && r.total === 0 ? 'אין שירים שחסרים להם פרטים (או שכבר חיפשתי אותם).'
+        : `הסתיים: נמצאו פרטים ותמונה ל-${H.n((r && r.found) || 0)} מתוך ${H.n((r && r.done) || 0)} שירים.`;
+    if (detailsLine) detailsLine.textContent = text;
+    H.toast(text, { icon: 'image' });
+    if (!root.hidden) render({ focus: 'online' });
+  });
 
   function online(info) {
     const folder = (info && info.downloads_dir) || '';
     return h('section', { class: 'set-group', id: 'set-online' },
       h('h2', {}, 'השלמה מהרשת'),
       toggle('autoplay_after_download', 'לנגן שיר מיד כשההורדה מסתיימת', null),
+      detailsRow(),
       row('תיקיית ההורדות', folder || '—',
         h('div', { style: { display: 'flex', gap: '8px' } },
           h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => api.openFolder(folder) }, icon('folder-open', 'icon-sm'), 'לפתוח'),
@@ -210,8 +305,12 @@
           result.textContent = 'לא ניתן לבדוק עכשיו — אין חיבור לרשת.';
         } else {
           if (r.app && r.app.newer) {
+            const smart = r.app.smart || {};
             result.append(h('div', {}, `גרסה ${r.app.latest} זמינה (מותקנת ${r.app.current}). `,
-              h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => api.openExternal(r.app.url) }, 'להורדה')));
+              smart.possible
+                ? h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: () => H.startAppUpdate(r.app) },
+                  `לעדכן עכשיו (${smart.download_text})`)
+                : h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => api.openExternal(r.app.url) }, 'להורדה')));
           } else {
             result.append(h('div', {}, `המנגן מעודכן (גרסה ${info ? info.version : ''}).`));
           }
@@ -239,7 +338,7 @@
 
     return h('section', { class: 'set-group', id: 'set-updates' },
       h('h2', {}, 'עדכונים'),
-      toggle('auto_update', 'לבדוק עדכונים בכל הפעלה', 'רק בדיקה: התוכנה לא מתעדכנת לבד בלי לשאול.'),
+      toggle('auto_update', 'לבדוק עדכונים בכל הפעלה', 'רק בדיקה: התוכנה לא מתעדכנת לבד בלי לשאול. כשמעדכנים, יורדים רק החלקים שהשתנו — בדרך כלל כמה מגה-בייט, והמודל לא יורד שוב.'),
       row('בדיקה ידנית', null, check, { wide: result }),
       row('חבילת אופליין', 'למחשב בלי אינטרנט: מניחים קובץ ‎.pack ליד התוכנה והיא מתקינה ממנו.', packBtn));
   }
@@ -266,13 +365,14 @@
     const [settings, status, overview, info, shell, vocal] = await Promise.all([
       api.getSettings(), api.classifierStatus().catch(() => null), api.overview().catch(() => null),
       api.appInfo().catch(() => null), api.shellInfo(), api.vocalStatus().catch(() => null),
+      H.shabbat ? H.shabbat.refresh() : null,
     ]);
     H.settings = settings;
     H.appInfo = info;
     H.clear(root).append(
       h('header', { class: 'page-head' }, h('h1', {}, 'הגדרות')),
       h('div', { class: 'settings' },
-        appearance(), library(overview), ai(status, info), suggestions(), listening(vocal), online(info), updates(info),
+        appearance(), library(overview), ai(status, info), suggestions(), shabbat(), listening(vocal), online(info), updates(info),
         about(info, shell)));
     if (params.focus) {
       const target = H.$(`#set-${params.focus}`);

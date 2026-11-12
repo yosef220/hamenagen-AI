@@ -93,6 +93,13 @@ def edition() -> str:
     return os.environ.get("HAMENAGEN_EDITION", "dev")
 
 
+def _clamp(value, low: int, high: int) -> int:
+    try:
+        return max(low, min(int(value), high))
+    except (TypeError, ValueError):
+        return low
+
+
 @dataclass
 class Settings:
     # §16 — playback source: use the built-in player.
@@ -127,6 +134,10 @@ class Settings:
     # a list for the listener to confirm, and only confirmed songs are
     # suggested in the Omer count and the Three Weeks.
     vocal_auto_include: bool = False
+    # Hear each song's tempo and energy (rhythm.py), for the "סט לשמחה".
+    rhythm_analysis: bool = True
+    # A soft transition between songs: seconds of crossfade (0 = none).
+    crossfade_seconds: int = 0
     # Appearance: "system" | "light" | "dark", and the text size.
     theme: str = "system"
     text_size: str = "normal"
@@ -134,6 +145,18 @@ class Settings:
     radio_list_url: str = "https://kcm.fm/Live/"
     # Update manifest URL (spec §14): the update.json of the latest release.
     update_manifest_url: str = DEFAULT_UPDATE_MANIFEST
+    # Show each song once when it is in several folders or formats.
+    hide_duplicates: bool = True
+    # Shabbat and festival mode: the music fades out and stops before candle
+    # lighting, and "שבת שלום" stays on screen until Shabbat ends (zmanim.py).
+    shabbat_mode: bool = True
+    shabbat_city: str = "ירושלים"
+    # Candle lighting, minutes before sunset; 0 = the city's custom.
+    candle_minutes: int = 0
+    # Stop the music this many minutes before candle lighting.
+    shabbat_stop_before: int = 10
+    # The end of Shabbat: "tzeit" (nightfall, 8.5°) or "rt" (Rabbeinu Tam).
+    havdalah: str = "tzeit"
 
     @classmethod
     def load(cls, path: str | Path) -> "Settings":
@@ -161,6 +184,14 @@ class Settings:
         if self.text_size not in TEXT_SIZES:
             self.text_size = "normal"
         self.scan_roots = [str(r) for r in (self.scan_roots or []) if str(r).strip()]
+        from .zmanim import CITIES, DEFAULT_CITY, HAVDALAH_CHOICES
+        if self.shabbat_city not in CITIES:
+            self.shabbat_city = DEFAULT_CITY
+        self.candle_minutes = _clamp(self.candle_minutes, 0, 90)
+        self.shabbat_stop_before = _clamp(self.shabbat_stop_before, 0, 120)
+        self.crossfade_seconds = _clamp(self.crossfade_seconds, 0, 12)
+        if self.havdalah not in HAVDALAH_CHOICES:
+            self.havdalah = "tzeit"
         return self
 
     def update(self, values: dict) -> list[str]:

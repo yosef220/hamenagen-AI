@@ -28,6 +28,9 @@ from .classifier import EmbeddingBackend, HybridClassifier
 from .fetcher import OnlineFetcher, ProgressHook, SearchResult, find_ffmpeg
 from .fuzzy import MatchCandidate, near_matches, search as fuzzy_search
 from .hebrew_calendar import VOCAL_TOPIC, detect_occasion, from_gregorian, today_info
+from .zmanim import ZmanimService
+from .smart_update import SmartUpdater
+from . import sets as sets_mod
 from .index_db import AVERAGE_SONG_SECONDS, MusicIndex, encode_tags
 from .intent import Action, Intent
 from .models import Track
@@ -87,6 +90,7 @@ class PlayerService:
         topics_mod.load_override(self.data_dir / "topics_override.json")
         self.db_path = self.data_dir / "library.db"
         self.index = MusicIndex(self.db_path)
+        self.index.hide_duplicates = self.settings.hide_duplicates
         self.models_dir = self.data_dir / "models"
         self.bundled_models_dir = bundled_models_dir()
         self.classifier = HybridClassifier(self._build_backend())
@@ -108,11 +112,19 @@ class PlayerService:
             cache_path=self.data_dir / "radio_cache.json",
         )
         self.updater = Updater(self.settings.update_manifest_url, self.data_dir, edition=self.edition)
+        # Updates that download only the parts of the app that changed.
+        self.smart = SmartUpdater(self.data_dir)
+        self._release: dict | None = None
         self.updater.engine_updater = self.runner.update_engine
         # Listening for a cappella songs: the model ships in every edition;
         # a dev run can put it in data/models (prepare_audio_model.py).
         self.vocal = VocalDetector([bundled_audio_models_dir() or "", self.models_dir])
+        # Shabbat mode: times for the city, cached; the harness stays offline.
+        offline = bool(os.environ.get("HAMENAGEN_DEMO_ONLINE"))
+        self.zmanim = ZmanimService(self.data_dir / "zmanim.json", sources=[] if offline else None)
+        self._configure_zmanim()
         self.vocal_running = False
+        self.details_stop = False
         self.vocal_stop = False
         self.scanning = False
         # First-run offline install: pick up any *.pack sitting next to the app.
@@ -160,6 +172,10 @@ class PlayerService:
             self._apply_vocal_verdicts()
         if "update_manifest_url" in changed:
             self.updater.manifest_url = self.settings.update_manifest_url
+        if "hide_duplicates" in changed:
+            self.index.hide_duplicates = self.settings.hide_duplicates
+        if {"shabbat_city", "candle_minutes", "shabbat_stop_before", "havdalah"} & set(changed):
+            self._configure_zmanim()
         if "radio_list_url" in changed:
             self.radio.source_url = self.settings.radio_list_url
         return {**self.settings.to_dict(), "_changed": changed}
@@ -239,6 +255,7 @@ class PlayerService:
             idx.commit()
             removed = self._remove_missing(idx, known, seen, use_roots if partial else None)
             propagated = self._propagate(idx)
+            duplicates = idx.mark_duplicates()
             finished = datetime.now()
             idx.set_meta("last_scan_at", finished.isoformat(timespec="seconds"))
             if not partial:
@@ -250,6 +267,7 @@ class PlayerService:
                 "updated": updated,
                 "removed": removed,
                 "propagated": propagated,
+                "duplicates": duplicates,
                 "total": idx.count(),
                 "seconds": round((finished - started).total_seconds(), 1),
             }
@@ -504,44 +522,67 @@ class PlayerService:
             "to_review": len(self.vocal_review(limit=1000)["tracks"]),
         }
 
-    def _needs_listening(self, idx: MusicIndex) -> list[Track]:
+    def _listening_plan(self) -> tuple[bool, bool]:
+        """(listen for singing, hear the tempo) — what this pass can do."""
+        listen = self.settings.vocal_detection and self.vocal.available()
+        rhythm = self.settings.rhythm_analysis and self.vocal.readers_present()
+        return listen, rhythm
+
+    def _needs_listening(self, idx: MusicIndex) -> list[tuple[Track, bool]]:
+        """Songs to hear, each with whether to listen for singing too (or
+        only to the tempo, for songs heard before 1.3)."""
+        listen, rhythm = self._listening_plan()
         done = idx.analyses()
         out = []
         for t in idx.all_tracks():
             if t.is_video or not t.path:
                 continue
             a = done.get(t.id)
-            if a is None or a.get("model") != VOCAL_MODEL or (a.get("mtime"), a.get("size")) != (t.mtime, t.size):
-                out.append(t)
+            changed = a is None or (a.get("mtime"), a.get("size")) != (t.mtime, t.size)
+            unreadable = not changed and a.get("verdict") == "unreadable"
+            need_listen = listen and (changed or a.get("model") != VOCAL_MODEL)
+            need_rhythm = rhythm and not unreadable and (changed or a.get("energy") is None)
+            if need_listen or need_rhythm:
+                out.append((t, need_listen))
         return out
 
     def analyze_vocal(self, on_progress: ScanProgress | None = None) -> dict:
-        """Listen to every song not yet heard (or changed since). Runs on its
-        own connection, a song at a time, and stops when asked."""
-        if not self.settings.vocal_detection:
-            return {"ok": False, "reason": "disabled", **self.vocal.status()}
-        if not self.vocal.available():
-            return {"ok": False, "reason": "unavailable", **self.vocal.status()}
+        """Listen to every song not yet heard (or changed since): singing
+        without instruments, and the tempo and energy. Runs on its own
+        connection, a song at a time, and stops when asked."""
+        listen, rhythm = self._listening_plan()
+        if not listen and not rhythm:
+            reason = "disabled" if not self.settings.vocal_detection else "unavailable"
+            return {"ok": False, "reason": reason, **self.vocal.status()}
         self.vocal_running, self.vocal_stop = True, False
         idx = MusicIndex(self.db_path)
         found = done = 0
         try:
             todo = self._needs_listening(idx)
             overrides = idx.overrides()
-            for n, track in enumerate(todo, 1):
+            previous = idx.analyses()
+            for n, (track, with_listening) in enumerate(todo, 1):
                 if self.vocal_stop:
                     break
-                result = self.vocal.analyze(track.path)
-                row = {
-                    "model": VOCAL_MODEL, "verdict": result.verdict, "acapella": round(result.acapella, 4),
-                    "instrument": round(result.instrument, 4),
-                    "windows": json.dumps([w.as_list() for w in result.windows]),
-                    "mtime": track.mtime, "size": track.size,
-                    "analyzed_at": datetime.now().isoformat(timespec="seconds"),
-                }
+                result = self.vocal.analyze(track.path, listen=with_listening)
+                row = {"mtime": track.mtime, "size": track.size,
+                       "analyzed_at": datetime.now().isoformat(timespec="seconds")}
+                if with_listening or result.verdict == "unreadable":
+                    row.update({
+                        "model": VOCAL_MODEL, "verdict": result.verdict, "acapella": round(result.acapella, 4),
+                        "instrument": round(result.instrument, 4),
+                        "windows": json.dumps([w.as_list() for w in result.windows]),
+                    })
+                elif (previous.get(track.id) or {}).get("mtime") != track.mtime:
+                    # The file changed and only its tempo was heard: forget the
+                    # old verdict, so singing is listened for again later.
+                    row.update({"model": None, "verdict": None})
+                rh = result.rhythm or {}
+                row.update({"tempo": rh.get("tempo"), "energy": rh.get("energy", 0.0),
+                            "pulse": rh.get("pulse"), "loudness": rh.get("loudness")})
                 idx.save_analysis(track.id, row, commit=False)
                 done += 1
-                if result.verdict == "vocal":
+                if with_listening and result.verdict == "vocal":
                     found += 1
                     self._classify_track(track, override=overrides.get(track.id), analysis=row)
                     idx.set_topic(track.id, track.topic, track.topic_source, track.tags, track.topic_note,
@@ -630,6 +671,7 @@ class PlayerService:
         track.download_date = datetime.now().isoformat()
         self._classify_track(track)
         self.index.upsert(track)
+        self.index.mark_duplicates()
         return {"ok": True, "message": outcome.message, "track": self._tracks_payload([track])[0],
                 "path": outcome.path, "code": "", "blocked": False}
 
@@ -674,6 +716,55 @@ class PlayerService:
         return {"ok": True}
 
     # -- details and covers from the web (asked for, one song at a time) ---------
+    def complete_details(self, on_progress=None, *, pause: float = 4.0, fetch=None) -> dict:
+        """Details and a cover for every song that lacks a cover or a singer,
+        from the web, filled in only for a sure match (metadata.sure_match);
+        the rest waits for "פרטים ותמונה מהרשת" in the song's menu. Never
+        changes the files. Slow on purpose: the service allows about twenty
+        requests a minute. A song looked up once is not looked up again."""
+        import time as _time
+
+        self.details_stop = False
+        tried = self.index.details()
+        todo = [t for t in self.index.all_tracks()
+                if not t.is_video and not t.dup_of and (not t.cover or not t.artist) and t.id not in tried
+                and t.duration]
+        found = done = 0
+        error = ""
+        for t in todo:
+            if self.details_stop:
+                break
+            title = t.title if not is_placeholder_title(t.title) else Path(t.filename).stem
+            if os.environ.get("HAMENAGEN_DEMO_ONLINE") and fetch is None:
+                from .demo_online import demo_details
+
+                candidates, error = demo_details(title), ""
+            else:
+                kwargs = {"fetch": fetch} if fetch else {}
+                candidates, error = metadata_mod.search(title, t.artist, t.duration, **kwargs)
+            if error in ("blocked", "network"):
+                break
+            error = ""
+            sure = next((c for c in candidates if metadata_mod.sure_match(c, title, t.artist, t.duration)), None)
+            if sure is not None:
+                self.apply_details(t.id, sure.to_dict(), propagate=True)
+                found += 1
+            else:
+                self.index.set_details(t.id, {"source": "looked-up"})   # remember: nothing sure
+            done += 1
+            if on_progress:
+                on_progress({"done": done, "total": len(todo), "found": found})
+            if pause:
+                _time.sleep(pause)
+        message = {"blocked": "החיפוש חסום ברשת הזו (נטפרי או סינון דומה).",
+                   "network": "אין כרגע חיבור לרשת."}.get(error, "")
+        return {"ok": not error, "done": done, "found": found, "total": len(todo),
+                "stopped": self.details_stop, "message": message}
+
+    def stop_complete_details(self) -> dict:
+        self.details_stop = True
+        return {"ok": True}
+
     def lookup_details(self, track_id: str) -> dict:
         track = self.index.get(track_id)
         if track is None:
@@ -730,12 +821,13 @@ class PlayerService:
                 "message": "" if values or cover else "לא היה מה להוסיף מהפרטים שנבחרו."}
 
     def _candidates(self) -> list[MatchCandidate]:
+        hide = self.index.hide_duplicates
         return [
             MatchCandidate(
                 id=t.id, title=t.title, artist=t.artist, album=t.album, filename=t.filename,
                 folder=self._folder_hint(t.path) if t.path else "",
             )
-            for t in self.index.iter_tracks()
+            for t in self.index.iter_tracks() if not (hide and t.dup_of)
         ]
 
     # -- shaping tracks for the UI -------------------------------------------
@@ -766,8 +858,267 @@ class PlayerService:
     # -- the main request path --------------------------------------------
     def handle_request(self, text: str) -> dict:
         """Turn a free Hebrew request into a playlist + explanation."""
+        saved = self._saved_playlist_request(text)
+        if saved is not None:
+            return self.play_playlist(saved)
         intent = intent_mod.parse(text)
         return self._respond(intent)
+
+    _PLAY_VERBS = ("תשמיע ", "תנגן ", "נגן ", "השמע ", "תפעיל ", "שים ", "תשים ")
+    _LIST_WORDS = ("את הרשימה ", "הרשימה ", "את רשימת ", "רשימת ", "רשימה ", "את הפלייליסט ", "הפלייליסט ",
+                   "פלייליסט ")
+
+    def _saved_playlist_request(self, text: str) -> int | None:
+        """"תשמיע את הרשימה של שבת בבוקר" — or just the playlist's name."""
+        t = " ".join((text or "").split())
+        for verb in self._PLAY_VERBS:
+            if t.startswith(verb):
+                t = t[len(verb):]
+                break
+        for word in self._LIST_WORDS:
+            if t.startswith(word):
+                t = t[len(word):]
+                if t.startswith("של "):
+                    t = t[3:]
+                break
+        name = t.strip(" \"'״”„“")
+        return self.index.playlist_by_name(name) if name else None
+
+    # -- sets for an occasion ---------------------------------------------------
+    SET_MIN_SECONDS, SET_MAX_SECONDS = 75, 12 * 60
+    SET_CROSSFADE = 6
+
+    def style_artists(self, limit: int = 4) -> list[str]:
+        """The singers the listener plays most: plays, hearts, and how many
+        of their songs are on the computer."""
+        tracks = [t for t in self.index.all_tracks() if t.artist and not t.is_video]
+        plays = self.index.play_counts([t.id for t in tracks])
+        hearts = self.index.favorite_ids()
+        rows = [(t.artist, 0.3 + plays.get(t.id, 0) + (3.0 if t.id in hearts else 0.0)) for t in tracks]
+        return sets_mod.top_artists(rows, limit)
+
+    def play_set(self, intent: Intent) -> dict:
+        """A set that warms up, builds and eases off, for a celebration
+        ("סט לברית"), for dancing, or of a topic ("סט שירי שבת")."""
+        event = sets_mod.EVENTS.get(intent.params.get("event") or "")
+        topic = intent.topic
+        if event is None and topic is None:
+            event = sets_mod.EVENTS[sets_mod.DEFAULT_EVENT]
+        minutes = intent.minutes or 45
+        analyses = self.index.analyses()
+        hide = self.index.hide_duplicates
+        pool: list[sets_mod.SetSong] = []
+        for t in self.index.all_tracks():
+            if t.is_video or (hide and t.dup_of) or t.topic in sets_mod.SOLEMN_TOPICS:
+                continue
+            if t.duration and not self.SET_MIN_SECONDS <= t.duration <= self.SET_MAX_SECONDS:
+                continue
+            a = analyses.get(t.id) or {}
+            song = sets_mod.SetSong(t, a.get("tempo"), a.get("energy"))
+            if topic:
+                if t.topic != topic and topic not in t.tag_list:
+                    continue
+                song.score = 1.0 + 0.5 * (song.energy or 0.0)
+            else:
+                song.score = sets_mod.score_song(song, event, title=f"{t.title} {t.album}", topic=t.topic,
+                                                 tags=t.tag_list, lively=event.lively)
+                if t.topic in sets_mod.SEASONAL_TOPICS and not song.marked:
+                    continue
+            pool.append(song)
+        if topic:
+            chosen = sorted(pool, key=lambda x: -x.score)
+            own = len(chosen)
+        else:
+            fitting = [x for x in pool if x.marked or x.fits]
+            lively = [x for x in pool if x not in fitting and x.energy is not None and x.energy >= 0.55
+                      and (x.tempo is None or x.tempo >= 95)]
+            chosen = sorted(fitting, key=lambda x: -x.score) + sorted(lively, key=lambda x: -x.score)
+            own = sum(1 for x in chosen if x.marked)
+        picked: list[sets_mod.SetSong] = []
+        total = 0.0
+        for x in chosen:
+            if total >= minutes * 60:
+                break
+            picked.append(x)
+            total += x.track.duration or AVERAGE_SONG_SECONDS
+        ordered = sets_mod.arrange(picked)
+        tracks = [x.track for x in ordered]
+        heard = sum(1 for x in picked if x.energy is not None)
+        understood = event.phrase if event else f"סט {topics_mod.topic_phrase(topic)}"
+        notes = []
+        if tracks and heard < len(tracks) / 2:
+            notes.append("המנגן עוד לא הקשיב לקצב של רוב השירים, לכן הסדר כאן לפי הנושא. "
+                         "אחרי שיקשיב להם ברקע, הסט יתחמם ויגיע לשיא.")
+        elif tracks:
+            notes.append("הסט מתחמם, מגיע לשיא ונרגע מעט בסוף, עם מעבר רך בין השירים.")
+        online = None
+        few = len(tracks) < 8 or (event is not None and event.key != sets_mod.DEFAULT_EVENT and own < 3)
+        if few:
+            artists = self.style_artists()
+            label = event.label if event else topics_mod.TOPIC_LABELS.get(topic, topic)
+            online = {
+                "event": event.key if event else None, "topic": topic, "label": label, "artists": artists,
+                "queries": sets_mod.online_queries(event or sets_mod.EVENTS[sets_mod.DEFAULT_EVENT], artists,
+                                                   topic_phrase=topics_mod.topic_phrase(topic) if topic else ""),
+            }
+            if not tracks:
+                notes = [f"אין במחשב שירים שמתאימים ל{label}."]
+        return {
+            "intent": intent.to_dict(),
+            "understood": understood,
+            "tracks": self._tracks_payload(tracks),
+            "count": len(tracks),
+            "seconds": round(sum(t.duration or AVERAGE_SONG_SECONDS for t in tracks)),
+            "note": " ".join(notes),
+            "found_local": bool(tracks),
+            "near": False,
+            "query": "",
+            "set": {"event": event.key if event else None, "topic": topic, "own": own,
+                    "crossfade": max(self.settings.crossfade_seconds, self.SET_CROSSFADE)},
+            "online": online,
+        }
+
+    def online_set(self, event_key: str | None, topic: str | None, limit: int = 18) -> dict:
+        """Songs from YouTube for a set the computer cannot fill, in the
+        listener's style: the occasion, and the singers they play most."""
+        event = sets_mod.EVENTS.get(event_key or "") or sets_mod.EVENTS[sets_mod.DEFAULT_EVENT]
+        artists = self.style_artists()
+        queries = sets_mod.online_queries(event, artists,
+                                          topic_phrase=topics_mod.topic_phrase(topic) if topic else "")
+        have = self.index.video_ids()
+        seen: set[str] = set()
+        found: list[tuple[float, SearchResult]] = []
+        blocked = None
+        for q in queries:
+            outcome = self.fetcher.search(q, limit=6)
+            if not outcome.ok:
+                if getattr(outcome, "blocked", False) or getattr(outcome, "code", "") in ("netfree", "network"):
+                    blocked = outcome
+                    break
+                continue
+            for r in outcome.results:
+                if r.id in seen or (r.duration and (r.duration < 60 or r.duration > 75 * 60)):
+                    continue
+                seen.add(r.id)
+                text = normalize(f"{r.title} {r.channel or r.uploader}")
+                score = 1.0
+                score += 0.6 * any(normalize(a) and normalize(a) in text for a in artists)
+                score += 0.4 * any(normalize(m) and normalize(m) in text for m in event.marks)
+                score -= 0.3 * bool(r.duration and r.duration > 12 * 60)   # a long medley goes last
+                found.append((score, r))
+        found.sort(key=lambda sr: -sr[0])
+        results = [r for _, r in found[:limit]]
+        out = {"ok": bool(results), "artists": artists, "queries": queries, "label": event.label,
+               "results": [dict(r.__dict__, in_library=r.id in have) for r in results],
+               "blocked": bool(blocked and getattr(blocked, "blocked", False)),
+               "code": getattr(blocked, "code", "") if blocked else ("" if results else "empty"),
+               "message": blocked.message if blocked else ("" if results else "לא נמצאו שירים ביוטיוב."),
+               "search_url": self.fetcher.search_url(queries[0]) if queries else ""}
+        return out
+
+    # -- listening without saving ------------------------------------------------
+    LISTEN_CACHE_MB = 400
+
+    @property
+    def listen_dir(self) -> Path:
+        return self.data_dir / "listen-cache"
+
+    def listen_prepare(self, result: SearchResult) -> dict:
+        """A song from YouTube made ready to play, kept only in a small cache
+        (not in the library, not in the music folder)."""
+        outcome = self.fetcher.fetch_audio(result, self.listen_dir)
+        if not outcome.ok:
+            return {"ok": False, "message": outcome.message, "code": getattr(outcome, "code", ""),
+                    "blocked": bool(getattr(outcome, "blocked", False))}
+        self._trim_listen_cache(keep=outcome.path)
+        return {"ok": True, "path": outcome.path}
+
+    def _trim_listen_cache(self, keep: str = "") -> None:
+        try:
+            files = sorted((p for p in self.listen_dir.iterdir() if p.is_file()), key=lambda p: p.stat().st_mtime)
+        except OSError:
+            return
+        total = sum(p.stat().st_size for p in files)
+        for p in files:
+            if total <= self.LISTEN_CACHE_MB * 1024 * 1024:
+                break
+            if str(p) == keep:
+                continue
+            try:
+                size = p.stat().st_size
+                p.unlink()
+                total -= size
+            except OSError:
+                pass
+
+    # -- saved playlists -------------------------------------------------------
+    def playlists(self) -> dict:
+        return {"playlists": self.index.playlists()}
+
+    def _unique_name(self, name: str, keep: int | None = None) -> str:
+        base = " ".join((name or "").split()) or "רשימה חדשה"
+        taken = {normalize(p["name"]) for p in self.index.playlists() if p["id"] != keep}
+        candidate, n = base, 2
+        while normalize(candidate) in taken:
+            candidate, n = f"{base} ({n})", n + 1
+        return candidate
+
+    def playlist_get(self, playlist_id: int) -> dict:
+        name = self.index.playlist_name(int(playlist_id))
+        if name is None:
+            return {"ok": False, "message": "הרשימה לא נמצאה."}
+        tracks = self.index.playlist_tracks(int(playlist_id))
+        return {"ok": True, "id": int(playlist_id), "name": name, "tracks": self._tracks_payload(tracks),
+                "count": len(tracks), "seconds": round(sum(t.duration or AVERAGE_SONG_SECONDS for t in tracks))}
+
+    def playlist_create(self, name: str, track_ids: list[str] | None = None) -> dict:
+        pid = self.index.create_playlist(self._unique_name(name), list(track_ids or []))
+        return self.playlist_get(pid)
+
+    def playlist_rename(self, playlist_id: int, name: str) -> dict:
+        if self.index.playlist_name(int(playlist_id)) is None:
+            return {"ok": False, "message": "הרשימה לא נמצאה."}
+        self.index.rename_playlist(int(playlist_id), self._unique_name(name, keep=int(playlist_id)))
+        return {"ok": True, "name": self.index.playlist_name(int(playlist_id))}
+
+    def playlist_delete(self, playlist_id: int) -> dict:
+        self.index.delete_playlist(int(playlist_id))
+        return {"ok": True}
+
+    def playlist_add(self, playlist_id: int, track_ids: list[str]) -> dict:
+        name = self.index.playlist_name(int(playlist_id))
+        if name is None:
+            return {"ok": False, "message": "הרשימה לא נמצאה."}
+        added = self.index.add_to_playlist(int(playlist_id), list(track_ids or []))
+        return {"ok": True, "added": added, "name": name}
+
+    def playlist_set_order(self, playlist_id: int, track_ids: list[str]) -> dict:
+        if self.index.playlist_name(int(playlist_id)) is None:
+            return {"ok": False, "message": "הרשימה לא נמצאה."}
+        return {"ok": True, "count": self.index.set_playlist_order(int(playlist_id), list(track_ids or []))}
+
+    def play_playlist(self, playlist_id: int) -> dict:
+        """A saved playlist as the answer to a request."""
+        name = self.index.playlist_name(int(playlist_id)) or ""
+        tracks = self.index.playlist_tracks(int(playlist_id))
+        return {
+            "intent": {"action": "saved_playlist", "playlist_id": int(playlist_id), "raw": name},
+            "understood": f"הרשימה „{name}”",
+            "tracks": self._tracks_payload(tracks),
+            "count": len(tracks),
+            "seconds": round(sum(t.duration or AVERAGE_SONG_SECONDS for t in tracks)),
+            "note": "" if tracks else "הרשימה ריקה. אפשר להוסיף אליה שירים מהתפריט של כל שיר.",
+            "found_local": bool(tracks),
+            "near": False,
+            "query": "",
+            "playlist_id": int(playlist_id),
+        }
+
+    def track_copies(self, track_id: str) -> dict:
+        """The other files of the same song, for the song menu."""
+        return {"copies": [{"id": t.id, "path": t.path, "folder": display_folder(t.path),
+                            "format": Path(t.path).suffix.lstrip(".").upper()}
+                           for t in self.index.copies_of(track_id)]}
 
     def playlist(self, kind: str, *, topic: str | None = None, minutes: int | None = None,
                  limit: int | None = None) -> dict:
@@ -780,6 +1131,8 @@ class PlayerService:
         return self._respond(Intent(action, topic=topic, limit=limit, raw="", params=params))
 
     def _respond(self, intent: Intent) -> dict:
+        if intent.action == Action.SET:
+            return self.play_set(intent)
         tracks, understood, note = self._execute(intent)
         return {
             "intent": intent.to_dict(),
@@ -917,6 +1270,19 @@ class PlayerService:
             "roots": self._roots(),
         }
 
+    # -- Shabbat mode ---------------------------------------------------------
+    def _configure_zmanim(self) -> None:
+        s = self.settings
+        self.zmanim.configure(city=s.shabbat_city, candle_minutes=s.candle_minutes,
+                              stop_before=s.shabbat_stop_before, havdalah=s.havdalah)
+
+    def shabbat_status(self) -> dict:
+        """The coming (or current) Shabbat or festival for the player's clock.
+        Fresh times are fetched in the background about once a week."""
+        if self.settings.shabbat_mode:
+            self.zmanim.refresh_in_background()
+        return self.zmanim.status(enabled=self.settings.shabbat_mode)
+
     # -- the calendar (spec §7) ------------------------------------------------
     def today(self, on: date | None = None) -> dict:
         # HAMENAGEN_TODAY=YYYY-MM-DD shows another day (screenshots, testing).
@@ -963,7 +1329,29 @@ class PlayerService:
     def check_updates(self, *, manual: bool = False) -> dict:
         if not manual and not self.settings.auto_update:
             return {"online": False, "reason": "auto-update disabled", "updates": [], "app": None}
-        return self.updater.check()
+        result = self.updater.check()
+        app = result.get("app")
+        if app:
+            self._release = dict(app)
+            app["smart"] = self.smart.plan(self._release)
+            app.pop("parts", None)   # long; the interface needs only the plan
+        return result
+
+    def app_update_download(self, on_progress=None) -> dict:
+        """Download the changed parts of the newest release (after a check)."""
+        if not self._release:
+            self.check_updates(manual=True)
+        if not self._release:
+            return {"ok": False, "message": "אין כרגע חיבור לבדיקת עדכונים."}
+        return self.smart.download(dict(self._release), on_progress)
+
+    def app_update_cancel(self) -> dict:
+        self.smart.cancel.set()
+        return {"ok": True}
+
+    def app_update_result(self) -> dict:
+        """What the last smart update did, once, after the app came back."""
+        return {"result": self.smart.result()}
 
     def apply_update(self, component: str, *, url: str | None = None, version: str = "") -> dict:
         result = self.updater.apply(component, url=url, version=version)

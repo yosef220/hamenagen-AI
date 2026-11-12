@@ -32,6 +32,7 @@ class Track:
     mtime: float | None = None      # file modification time at the last scan
     size: int | None = None         # file size in bytes at the last scan
     cover: str = ""                 # key of the cover picture in data/covers ("" = none)
+    dup_of: str = ""                # another copy of this song is the one shown ("" = shown)
 
     @property
     def tag_list(self) -> list[str]:

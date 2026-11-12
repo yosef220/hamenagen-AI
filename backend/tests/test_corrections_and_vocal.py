@@ -226,5 +226,32 @@ def test_vocal_status_without_the_model(tmp_path):
     service = _service(tmp_path)
     st = service.vocal_status()
     assert st["enabled"] is True and st["available"] is False and st["model_found"] is False
+    # Without the model nothing listens for singing; the tempo needs only the
+    # audio readers (numpy, soundfile), so with those the pass still runs.
+    assert service._listening_plan() == (False, service.vocal.readers_present())
+    service.settings.rhythm_analysis = False
     assert service.analyze_vocal()["reason"] == "unavailable"
+    service.close()
+
+
+def test_without_the_model_the_pass_hears_only_the_tempo(tmp_path, monkeypatch):
+    from hamenagen.models import Track
+    from hamenagen.vocal import VocalResult
+
+    service = _service(tmp_path)
+    monkeypatch.setattr(service.vocal, "readers_present", lambda: True)
+    heard = []
+
+    def analyze(path, listen=True):
+        heard.append(listen)
+        return VocalResult("", [], rhythm={"tempo": 120.0, "energy": 0.7, "pulse": 0.5, "loudness": -12.0})
+    monkeypatch.setattr(service.vocal, "analyze", analyze)
+    service.index.upsert(Track(id="t", path=str(tmp_path / "a.mp3"), title="שיר", duration=200.0,
+                               filename="a.mp3", mtime=1.0, size=10))
+    out = service.analyze_vocal()
+    assert out["ok"] and out["analyzed"] == 1 and heard == [False]
+    row = service.index.analyses()["t"]
+    assert row["energy"] == 0.7 and row["tempo"] == 120.0 and row["verdict"] is None
+    assert service.vocal_status()["analyzed"] == 0        # not counted as checked for singing
+    assert service.analyze_vocal()["analyzed"] == 0        # heard once is enough
     service.close()

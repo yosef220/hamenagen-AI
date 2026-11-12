@@ -35,6 +35,7 @@ from .service import PlayerService
 _SLOW = {
     "online_search", "online_download", "online_link", "radio_list", "check_updates", "apply_update",
     "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
+    "online_set", "listen_prepare",
 }
 
 
@@ -119,6 +120,9 @@ class RpcServer:
     def rpc_today(self, params):
         return self.service.today()
 
+    def rpc_shabbat_status(self, params):
+        return self.service.shabbat_status()
+
     def rpc_opening_suggestion(self, params):
         return self.service.opening_suggestion()
 
@@ -146,6 +150,31 @@ class RpcServer:
     # -- library -----------------------------------------------------------
     def rpc_library_overview(self, params):
         return self.service.library_overview()
+
+    # -- saved playlists and copies -------------------------------------------
+    def rpc_playlists(self, params):
+        return self.service.playlists()
+
+    def rpc_playlist_get(self, params):
+        return self.service.playlist_get(params.get("id", 0))
+
+    def rpc_playlist_create(self, params):
+        return self.service.playlist_create(params.get("name", ""), params.get("track_ids") or [])
+
+    def rpc_playlist_rename(self, params):
+        return self.service.playlist_rename(params.get("id", 0), params.get("name", ""))
+
+    def rpc_playlist_delete(self, params):
+        return self.service.playlist_delete(params.get("id", 0))
+
+    def rpc_playlist_add(self, params):
+        return self.service.playlist_add(params.get("id", 0), params.get("track_ids") or [])
+
+    def rpc_playlist_set_order(self, params):
+        return self.service.playlist_set_order(params.get("id", 0), params.get("track_ids") or [])
+
+    def rpc_track_copies(self, params):
+        return self.service.track_copies(params.get("id", ""))
 
     def rpc_list_tracks(self, params):
         return self.service.list_tracks(**params)
@@ -195,9 +224,10 @@ class RpcServer:
     def rpc_analyze_vocal_async(self, params):
         """Listen to the songs not heard yet, on a background thread.
         Emits ``vocal_progress`` and ``vocal_done``."""
-        status = self.service.vocal.status()
-        if not self.service.settings.vocal_detection or not status.get("available"):
-            return {"started": False, "reason": "disabled" if status.get("available") else "unavailable"}
+        listen, rhythm = self.service._listening_plan()
+        if not listen and not rhythm:
+            available = self.service.vocal.status().get("available")
+            return {"started": False, "reason": "disabled" if available else "unavailable"}
 
         def work():
             return self.service.analyze_vocal(on_progress=lambda p: self._emit("vocal_progress", p))
@@ -291,6 +321,44 @@ class RpcServer:
             "results": [_shown(r) for r in outcome.results],
             "auto_selected": outcome.result.__dict__ if outcome.result else None,
         }
+
+    def rpc_online_set(self, params):
+        """YouTube songs for a set, in the listener's style."""
+        out = self.service.online_set(params.get("event"), params.get("topic"), int(params.get("limit", 18)))
+        out["results"] = [_shown(_result_from(r), in_library=r.get("in_library", False)) for r in out["results"]]
+        return out
+
+    def rpc_listen_prepare(self, params):
+        """Make a YouTube song ready to play without saving it."""
+        return self.service.listen_prepare(_result_from(params.get("result") or {}))
+
+    # -- details for the whole library -------------------------------------------
+    def rpc_complete_details_async(self, params):
+        """Fill in details and covers where the match is sure, in the background.
+        Emits ``details_progress`` and ``details_done``."""
+        def work():
+            return self.service.complete_details(on_progress=lambda p: self._emit("details_progress", p))
+
+        return self._start_job("details", work, "details_done")
+
+    def rpc_stop_complete_details(self, params):
+        return self.service.stop_complete_details()
+
+    # -- the smart update ------------------------------------------------------
+    def rpc_app_update_download_async(self, params):
+        """Download the changed parts of the new version in the background.
+        Emits ``app_update_progress`` and ``app_update_done``."""
+        def work():
+            return self.service.app_update_download(
+                on_progress=lambda p: self._emit("app_update_progress", p))
+
+        return self._start_job("app_update", work, "app_update_done")
+
+    def rpc_app_update_cancel(self, params):
+        return self.service.app_update_cancel()
+
+    def rpc_app_update_result(self, params):
+        return self.service.app_update_result()
 
     def rpc_online_link(self, params):
         """What a pasted link is (a song, a playlist, a channel) and its songs."""

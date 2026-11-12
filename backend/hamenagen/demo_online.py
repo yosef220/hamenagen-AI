@@ -85,6 +85,25 @@ class DemoSource:
         return FetchOutcome(True, "ההורדה הושלמה.", path=str(path), result=result, title=title, artist=artist)
 
 
+def _write_demo_audio(path: Path, seconds: int = 30) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(1)
+        w.setframerate(8000)
+        w.writeframes(b"\x80" * 8000 * seconds)
+
+
+def _fetch_audio(self, result: SearchResult, dest_dir, *, cancel=None) -> FetchOutcome:
+    path = Path(dest_dir) / f"{result.id}.wav"
+    if not path.exists():
+        _write_demo_audio(path)
+    return FetchOutcome(True, "", path=str(path), result=result)
+
+
+DemoSource.fetch_audio = _fetch_audio
+
+
 def demo_details(title: str) -> list[Candidate]:
     return [
         Candidate(title=title, artist="Kol B'Rama", album="שירי שבת", year="2019", duration=214),

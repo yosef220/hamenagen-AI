@@ -11,8 +11,9 @@
  */
 
 const {
-  app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, screen, shell,
+  app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, screen, session, shell,
 } = require('electron');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -23,14 +24,17 @@ const pkg = require('../package.json');
 const APP_ID = 'org.community.hamenagen';
 
 // --- edition and folders ----------------------------------------------------
-// "portable" (ZIP), "offline" (ZIP with the AI model inside), "setup" (installer).
+// "portable" and "offline" (one EXE that opens into a folder; offline has the
+// AI model inside), "setup" and "setup-offline" (installers).
 const EDITION = app.isPackaged ? (pkg.hamenagenEdition || 'portable') : 'dev';
 const EDITION_LABELS = {
   portable: 'גרסה ניידת',
-  offline: 'גרסה מלאה לאופליין',
+  offline: 'גרסה ניידת עם המודל (אופליין)',
   setup: 'גרסה מותקנת',
+  'setup-offline': 'גרסה מותקנת עם המודל (אופליין)',
   dev: 'גרסת פיתוח',
 };
+const INSTALLED = EDITION === 'setup' || EDITION === 'setup-offline';
 
 function isWritable(dir) {
   try {
@@ -49,7 +53,7 @@ function resolveDataDir() {
   if (process.env.HAMENAGEN_DATA_DIR) return process.env.HAMENAGEN_DATA_DIR;
   if (!app.isPackaged) return path.join(__dirname, '..', 'data');
   const appData = path.join(app.getPath('appData'), 'Hamenagen');
-  if (EDITION === 'setup') return appData;
+  if (INSTALLED) return appData;
   // The ZIP editions keep their data beside the program, so the folder can be
   // carried to another computer — unless that place is read-only.
   const beside = path.join(path.dirname(process.execPath), 'data');
@@ -282,7 +286,7 @@ bridge.onEvent((msg) => {
 
 // --- IPC: requests to the Python core ------------------------------------------------
 const BACKEND_METHODS = new Set([
-  'ping', 'app_info', 'today', 'opening_suggestion',
+  'ping', 'app_info', 'today', 'opening_suggestion', 'shabbat_status',
   'handle_request', 'playlist', 'set_favorite', 'record_play', 'track_lyrics',
   'library_overview', 'list_tracks', 'topics', 'rescan_async',
   'classifier_status', 'install_model_async', 'reclassify_async',
@@ -291,6 +295,10 @@ const BACKEND_METHODS = new Set([
   'online_available', 'online_search', 'online_download', 'online_link',
   'download_batch_async', 'stop_downloads', 'lookup_details', 'apply_details',
   'set_track_topic', 'set_track_vocal', 'confirm_vocal',
+  'playlists', 'playlist_get', 'playlist_create', 'playlist_rename', 'playlist_delete', 'playlist_add',
+  'playlist_set_order', 'track_copies', 'online_set', 'listen_prepare',
+  'app_update_download_async', 'app_update_cancel', 'app_update_result',
+  'complete_details_async', 'stop_complete_details',
   'vocal_status', 'vocal_review', 'analyze_vocal_async', 'stop_vocal',
 ]);
 
@@ -334,6 +342,128 @@ ipcMain.handle('app:openExternal', async (_evt, url) => {
   return { ok: false, error: 'invalid url' };
 });
 
+// --- the smart update: swap the downloaded parts in after the app closes ------------------
+// The core downloaded and checked the changed parts (smart_update.py) and wrote
+// a plan in data/update. A small PowerShell script waits for the app to exit,
+// swaps the parts (putting the old ones back if anything fails) and starts
+// the app again; the outcome waits in data/update/result.json.
+ipcMain.handle('app:applyUpdate', async (_evt, planPath) => {
+  if (process.platform !== 'win32' || !app.isPackaged) {
+    return { ok: false, message: 'העדכון החכם פועל רק בתוכנה עצמה ב-Windows.' };
+  }
+  const work = path.join(DATA_DIR, 'update');
+  const plan = typeof planPath === 'string' ? path.resolve(planPath) : '';
+  if (!plan || path.dirname(plan) !== path.resolve(work) || !fs.existsSync(plan)) {
+    return { ok: false, message: 'אין עדכון מוכן.' };
+  }
+  try {
+    const script = path.join(work, 'apply.ps1');
+    fs.writeFileSync(script, fs.readFileSync(path.join(__dirname, 'update-apply.ps1')));
+    const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    const child = spawn(powershell, [
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+      '-File', script, '-Plan', plan, '-WaitPid', String(process.pid), '-Relaunch', process.execPath,
+    ], { detached: true, stdio: 'ignore', windowsHide: true });
+    child.unref();
+  } catch (err) {
+    return { ok: false, message: String(err && err.message ? err.message : err) };
+  }
+  setTimeout(() => app.quit(), 400);
+  return { ok: true };
+});
+
+// --- searching from inside the app ---------------------------------------------------------
+// Where the network blocks programs from searching YouTube (NetFree), the
+// listener searches Google here, with "יוטיוב" added. The window is a plain,
+// sandboxed browser in its own session (no downloads, no permissions); it
+// may only browse Google, and a click on a YouTube result is caught and
+// handed to the player instead of opening.
+let searchWindow = null;
+
+function youtubeLinkIn(url) {
+  try {
+    const u = new URL(url);
+    // Google's redirect: /url?q=<the result>
+    if (/(^|\.)google\.[a-z.]+$/.test(u.hostname) && u.pathname === '/url') {
+      const target = u.searchParams.get('q') || u.searchParams.get('url');
+      return target ? youtubeLinkIn(target) : null;
+    }
+    const host = u.hostname.replace(/^(www|m|music)\./, '');
+    if (host === 'youtu.be' || host === 'youtube.com') {
+      if (host === 'youtube.com' && /^\/(results|feed|signin|account)/.test(u.pathname)) return null;
+      return u.toString();
+    }
+  } catch { /* not a URL */ }
+  return null;
+}
+
+function isGoogle(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && /(^|\.)google\.[a-z.]+$/.test(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function openSearchWindow(query) {
+  const q = `${String(query || '').trim()} יוטיוב`.trim();
+  const url = `https://www.google.com/search?hl=iw&q=${encodeURIComponent(q)}`;
+  if (searchWindow && !searchWindow.isDestroyed()) {
+    searchWindow.loadURL(url);
+    searchWindow.focus();
+    return;
+  }
+  const ses = session.fromPartition('persist:websearch');
+  ses.setPermissionRequestHandler((_wc, _perm, done) => done(false));
+  ses.on('will-download', (e) => e.preventDefault());
+  searchWindow = new BrowserWindow({
+    parent: mainWindow || undefined,
+    width: 1000,
+    height: 760,
+    title: 'חיפוש בגוגל — לוחצים על תוצאה מיוטיוב',
+    autoHideMenuBar: true,
+    backgroundColor: '#ffffff',
+    webPreferences: {
+      session: ses,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: true,
+      spellcheck: false,
+    },
+  });
+  searchWindow.setMenu(null);
+  const wc = searchWindow.webContents;
+  const catchLink = (event, target) => {
+    const link = youtubeLinkIn(target);
+    if (link) {
+      event.preventDefault();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('search:link', { url: link });
+        mainWindow.focus();
+      }
+      if (searchWindow && !searchWindow.isDestroyed()) searchWindow.close();
+      return;
+    }
+    if (!isGoogle(target)) event.preventDefault();   // the window browses Google only
+  };
+  wc.on('will-navigate', catchLink);
+  wc.on('will-redirect', catchLink);
+  wc.setWindowOpenHandler(({ url: target }) => {
+    catchLink({ preventDefault() {} }, target);
+    return { action: 'deny' };
+  });
+  searchWindow.on('page-title-updated', (e) => e.preventDefault());
+  searchWindow.on('closed', () => { searchWindow = null; });
+  searchWindow.loadURL(url);
+}
+
+ipcMain.handle('app:searchWeb', (_evt, query) => {
+  openSearchWindow(query);
+  return { ok: true };
+});
+
 // A YouTube link the listener copied (in the browser, when the network blocks
 // searching from the app). Only such a link is handed to the window.
 ipcMain.handle('app:clipboardLink', () => {
@@ -372,7 +502,7 @@ ipcMain.on('player:state', (_evt, state) => {
 
 // --- Windows: desktop shortcut for the ZIP editions (spec §4) ----------------------------
 function ensureDesktopShortcut() {
-  if (process.platform !== 'win32' || !app.isPackaged || EDITION === 'setup') return;
+  if (process.platform !== 'win32' || !app.isPackaged || INSTALLED) return;
   try {
     const shortcut = path.join(app.getPath('desktop'), 'המנגן.lnk');
     let current = null;

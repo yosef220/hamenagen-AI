@@ -64,6 +64,7 @@
     }
   };
 
+  H.refreshRail = () => refreshRail();
   async function refreshRail() {
     try { H.updateRail(await api.overview()); } catch { /* ignore */ }
   }
@@ -171,12 +172,95 @@
     if (settings.auto_update === false) return;
     try {
       const r = await api.checkUpdates(false);
-      if (r.online && r.app && r.app.newer) {
-        H.$('#update-text').textContent = `גרסה ${r.app.latest} של המנגן זמינה.${r.app.notes ? ` ${r.app.notes}` : ''}`;
-        H.$('#update-download').onclick = () => api.openExternal(r.app.url || r.app.page);
-        H.$('#update-bar').hidden = false;
-      }
+      if (r.online && r.app && r.app.newer) H.showAppUpdate(r.app);
     } catch { /* offline: nothing to say */ }
+  }
+
+  // ------------------------------------------------------------ the smart update
+  // Only the parts of the app that changed are downloaded (the AI model, Python
+  // and Electron usually stay); then the app closes for a moment and comes back.
+  const MB = (n) => `${Math.max(0.1, n / 1048576).toFixed(n > 10 * 1048576 ? 0 : 1)}MB`;
+  let updating = false;
+
+  H.showAppUpdate = function showAppUpdate(info) {
+    const text = H.$('#update-text');
+    const button = H.$('#update-download');
+    const smart = info.smart || {};
+    button.disabled = false;
+    if (smart.possible) {
+      const saved = smart.full > smart.download * 1.5 ? ` (במקום ${smart.full_text})` : '';
+      text.textContent = `גרסה ${info.latest} זמינה: עדכון של ${smart.download_text}${saved}.${info.notes ? ` ${info.notes}` : ''}`;
+      button.textContent = 'לעדכן עכשיו';
+      button.onclick = () => H.startAppUpdate(info);
+    } else {
+      text.textContent = `גרסה ${info.latest} של המנגן זמינה.${info.notes ? ` ${info.notes}` : ''}`;
+      button.textContent = 'להורדה';
+      button.onclick = () => api.openExternal(info.url || info.page);
+    }
+    H.$('#update-bar').hidden = false;
+  };
+
+  H.startAppUpdate = async function startAppUpdate(info) {
+    if (updating) return;
+    updating = true;
+    const text = H.$('#update-text');
+    const button = H.$('#update-download');
+    H.$('#update-bar').hidden = false;
+    button.disabled = true;
+    text.textContent = 'מוריד את החלקים שהשתנו…';
+    const off = [];
+    const finish = () => { off.forEach((f) => f()); updating = false; };
+    off.push(api.on('app_update_progress', (p) => {
+      if (p.status === 'downloading' && p.total) {
+        text.textContent = `מוריד את העדכון… ${Math.floor((100 * p.done) / p.total)}% (${MB(p.done)} מתוך ${MB(p.total)})`;
+      } else if (p.status === 'checking') {
+        text.textContent = 'בודק שהקבצים שלמים…';
+      }
+    }));
+    off.push(api.on('app_update_done', (res) => {
+      finish();
+      if (res && res.ok) {
+        text.textContent = `גרסה ${res.version || info.latest} מוכנה. המנגן ייסגר לרגע ויחזור מעודכן.`;
+        button.textContent = 'להפעיל מחדש ולעדכן';
+        button.disabled = false;
+        button.onclick = async () => {
+          button.disabled = true;
+          const r = await api.applyAppUpdate(res.plan).catch((err) => ({ ok: false, message: err.message }));
+          if (!r.ok) {
+            text.textContent = `העדכון לא הופעל: ${r.message}`;
+            button.textContent = 'להורדה מלאה';
+            button.disabled = false;
+            button.onclick = () => api.openExternal(info.url || info.page);
+          }
+        };
+      } else {
+        text.textContent = `העדכון לא הצליח${res && res.message ? `: ${res.message}` : ''}. אפשר להוריד את הגרסה המלאה.`;
+        button.textContent = 'להורדה מלאה';
+        button.disabled = false;
+        button.onclick = () => api.openExternal(info.url || info.page);
+      }
+    }));
+    try {
+      const started = await api.appUpdateDownload();
+      if (!started.started) throw new Error(started.reason === 'already running' ? 'כבר מוריד' : (started.reason || ''));
+    } catch (err) {
+      finish();
+      text.textContent = `העדכון לא התחיל: ${err.message}`;
+      button.disabled = false;
+    }
+  };
+
+  /** After an update the app comes back: say how it went (once). */
+  async function reportAppUpdate() {
+    try {
+      const { result } = await api.appUpdateResult();
+      if (!result) return;
+      if (result.ok) {
+        H.toast(`המנגן עודכן לגרסה ${result.version}`, { icon: 'circle-check' });
+      } else {
+        H.toast(`העדכון לא הושלם והגרסה הקודמת נשארה${result.error ? ` (${result.error})` : ''}.`, { kind: 'bad' });
+      }
+    } catch { /* nothing to report */ }
   }
   H.$('#update-dismiss').addEventListener('click', () => { H.$('#update-bar').hidden = true; });
 
@@ -241,6 +325,7 @@
       return;
     }
     H.settings = settings;
+    H.player.setCrossfade(settings.crossfade_seconds || 0);
     H.applyTheme(settings.theme);
     H.applyTextSize(settings.text_size);
     api.appInfo().then((info) => { H.appInfo = info; }).catch(() => {});
@@ -249,6 +334,7 @@
     // ready, then look for a newer version.
     H.rescan(false);
     setTimeout(checkAppUpdate, 4000);
+    setTimeout(reportAppUpdate, 1500);
   }
 
   // The luach turns over at midnight even when the app stays open all night.

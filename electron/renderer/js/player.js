@@ -55,6 +55,7 @@
   P.playList = function playList(tracks, start = 0, opts = {}) {
     if (!tracks || !tracks.length) return;
     P.original = tracks.slice();
+    P.listCrossfade = Number.isFinite(opts.crossfade) ? opts.crossfade : null;
     if (opts.shuffle !== undefined) setShuffleFlag(!!opts.shuffle);
     if (P.shuffle) {
       const first = opts.shuffle ? tracks[Math.floor(Math.random() * tracks.length)] : tracks[start];
@@ -145,18 +146,60 @@
   }
   P.stop = stop;
 
-  function playIndex(i) {
+  // Songs from YouTube played without saving: made ready (a small cache in the
+  // core) just before they play, and the next one while this one plays.
+  const preparing = new WeakMap();
+  let loadToken = 0;
+  function prepareListen(track) {
+    if (!track || !track.listen || track.path) return Promise.resolve(true);
+    if (preparing.has(track)) return preparing.get(track);
+    const job = api.listenPrepare(track.result).then((r) => {
+      if (r && r.ok) { track.path = r.path; return true; }
+      track.failed = (r && r.message) || 'השיר לא זמין כרגע';
+      return false;
+    }).catch((err) => { track.failed = err.message; return false; })
+      .finally(() => preparing.delete(track));
+    preparing.set(track, job);
+    return job;
+  }
+  P.prepareListen = prepareListen;
+
+  function playIndex(i, opts = {}) {
     if (i < 0 || i >= P.queue.length) return;
+    if (xfade && !opts.keepFade) endCrossfade();
+    const track = P.queue[i];
+    if (track.listen && !track.path) {
+      const token = ++loadToken;
+      stopHls();
+      audio.pause();
+      P.mode = 'track';
+      P.station = null;
+      P.index = i;
+      P.loading = true;
+      changed('track');
+      prepareListen(track).then((ok) => {
+        if (token !== loadToken) return;   // the listener moved on meanwhile
+        P.loading = false;
+        if (ok) { playIndex(i); return; }
+        H.toast(`„${H.trackTitle(track)}” לא הושמע: ${track.failed}`, { kind: 'bad' });
+        if (i + 1 < P.queue.length) playIndex(i + 1);
+        else changed('end');
+      });
+      return;
+    }
+    loadToken += 1;
+    P.loading = false;
     stopHls();
     P.mode = 'track';
     P.station = null;
     P.index = i;
     counted = false;
-    const track = P.queue[i];
     audio.src = api.fileUrl(track.path);
     applyVolume();
     audio.play().catch(() => { /* reported by the error event */ });
     changed('track');
+    const next = P.queue[i + 1];
+    if (next && next.listen && !next.path) setTimeout(() => prepareListen(next), 1500);
   }
 
   P.next = function next(auto = false) {
@@ -288,9 +331,105 @@
   }
   setInterval(sleepTick, 1000);
 
+  // ------------------------------------------------------------ soft transitions
+  // At the end of a song the next one starts quietly and rises while the
+  // leaving one, handed to a second element, fades away. The main element
+  // simply moves on to the next song, so everything else works as usual.
+  const ghost = new Audio();
+  ghost.preload = 'auto';
+  let xfade = null;          // { t0, ms, from, timer }
+  P.crossfade = Number(H.storage.get('crossfade', 0)) || 0;
+  P.listCrossfade = null;
+  P.setCrossfade = (seconds) => { P.crossfade = Number(seconds) || 0; H.storage.set('crossfade', P.crossfade); };
+  const fadeSeconds = () => (P.listCrossfade != null ? Math.max(P.listCrossfade, P.crossfade) : P.crossfade);
+
+  function endCrossfade() {
+    if (!xfade) return;
+    clearInterval(xfade.timer);
+    xfade = null;
+    ghost.pause();
+    ghost.removeAttribute('src');
+    ghost.load();
+    fading = false;
+    applyVolume();
+  }
+
+  function startCrossfade(nextIndex, seconds) {
+    const nextTrack = P.queue[nextIndex];
+    if (!nextTrack || (nextTrack.listen && !nextTrack.path)) return false;
+    ghost.src = audio.src;
+    ghost.currentTime = audio.currentTime;
+    ghost.volume = audio.volume;
+    ghost.play().catch(() => {});
+    const from = audio.volume;
+    fading = true;
+    xfade = { t0: Date.now(), ms: seconds * 1000, from, timer: null };
+    playIndex(nextIndex, { keepFade: true });
+    audio.volume = 0;
+    xfade.timer = setInterval(() => {
+      if (!xfade) return;
+      const k = Math.min(1, (Date.now() - xfade.t0) / xfade.ms);
+      ghost.volume = Math.max(0, xfade.from * (1 - k) * (1 - k));
+      audio.volume = (muted ? 0 : volume) * Math.sqrt(k);
+      if (k >= 1) endCrossfade();
+    }, 50);
+    return true;
+  }
+
+  function maybeCrossfade() {
+    const seconds = fadeSeconds();
+    if (!seconds || xfade || P.mode !== 'track' || audio.paused || P.repeat === 'one' || P.blocked) return;
+    if (P.sleep && P.sleep.endOfTrack) return;
+    if (!Number.isFinite(audio.duration) || audio.duration < seconds * 3) return;
+    const left = audio.duration - audio.currentTime;
+    if (left > seconds) return;
+    const nextIndex = P.index + 1 < P.queue.length ? P.index + 1 : (P.repeat === 'all' && P.queue.length > 1 ? 0 : -1);
+    if (nextIndex >= 0) startCrossfade(nextIndex, Math.max(1, left));
+  }
+
+  // ------------------------------------------------------------ Shabbat mode
+  // While Shabbat mode holds the player nothing plays — not a click, a media
+  // key or a download that finished. Before that the music fades to silence.
+  let restFade = null;
+  P.blocked = false;
+  P.setBlocked = function setBlocked(on) {
+    P.blocked = !!on;
+    if (P.blocked) {
+      endCrossfade();
+      audio.pause();
+      if (P.sleep) { P.sleep = null; renderSleep(); }
+    }
+    changed('blocked');
+  };
+  P.fadeOutAndStop = function fadeOutAndStop(ms) {
+    if (restFade) return Promise.resolve();
+    endCrossfade();
+    if (!P.isPlaying()) { audio.pause(); return Promise.resolve(); }
+    return new Promise((resolve) => {
+      const from = audio.volume;
+      const t0 = Date.now();
+      fading = true;
+      restFade = setInterval(() => {
+        const k = Math.min(1, (Date.now() - t0) / Math.max(ms, 1));
+        audio.volume = from * (1 - k) * (1 - k);
+        if (k >= 1) {
+          clearInterval(restFade);
+          restFade = null;
+          audio.pause();
+          fading = false;
+          applyVolume();
+          resolve();
+        }
+      }, 200);
+    });
+  };
+
   // ------------------------------------------------------------ audio events
-  audio.addEventListener('play', () => changed('play'));
-  audio.addEventListener('pause', () => changed('pause'));
+  audio.addEventListener('play', () => {
+    if (P.blocked) { audio.pause(); return; }
+    changed('play');
+  });
+  audio.addEventListener('pause', () => { if (xfade) endCrossfade(); changed('pause'); });
   audio.addEventListener('playing', () => { errorsInARow = 0; });
   audio.addEventListener('ended', () => {
     if (P.sleep && P.sleep.endOfTrack) {
@@ -304,8 +443,9 @@
   });
   audio.addEventListener('timeupdate', () => {
     renderProgress();
+    maybeCrossfade();
     const cur = P.current();
-    if (cur && !counted && audio.currentTime >= Math.min(30, (audio.duration || 60) * 0.5)) {
+    if (cur && !cur.listen && !counted && audio.currentTime >= Math.min(30, (audio.duration || 60) * 0.5)) {
       counted = true;
       api.recordPlay(cur.id).then(() => api.emit('played', cur)).catch(() => {});
     }
@@ -352,6 +492,12 @@
       H.$('#dock-sub').textContent = P.station.now_playing || 'קול חי · שידור חי';
       coverHost.classList.add('cover-radio');
       coverHost.textContent = H.letter(P.station.title);
+      heart.disabled = true;
+      heart.setAttribute('aria-pressed', 'false');
+    } else if (cur && cur.listen) {
+      H.$('#dock-title').textContent = H.trackTitle(cur);
+      H.$('#dock-sub').textContent = P.loading ? 'מכין את השיר מיוטיוב…' : [cur.artist, 'מיוטיוב, בלי לשמור'].filter(Boolean).join(' · ');
+      coverHost.textContent = H.letter(H.trackTitle(cur));
       heart.disabled = true;
       heart.setAttribute('aria-pressed', 'false');
     } else if (cur) {

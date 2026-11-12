@@ -1,7 +1,8 @@
 name: בדיקה, בנייה ושחרור
 
 # Every pull request to main: core tests + an interface smoke test (the real
-# app driven against a demo library) + the three Windows editions.
+# app driven against a demo library) + the four Windows editions, each one
+# file, with the app split into parts for the smart update.
 # A tag v* — or a manual run with "release" ticked, which creates the tag from
 # package.json — additionally publishes them as the latest GitHub release, with
 # Hebrew notes and update.json, and points 0.1 installs at the new version.
@@ -49,7 +50,7 @@ jobs:
         run: npm ci
 
       - name: Check every script parses
-        run: for f in electron/*.js electron/renderer/js/*.js electron/renderer/js/views/*.js electron-builder.config.js; do node --check "$f"; done
+        run: for f in electron/*.js electron/renderer/js/*.js electron/renderer/js/views/*.js electron-builder.config.js scripts/parts.js scripts/copy-vendor.js; do node --check "$f"; done
 
       - name: Interface smoke test (real app, real core, demo library)
         run: |
@@ -72,7 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        edition: [portable, offline, setup]
+        edition: [portable, offline, setup, setup-offline]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -102,9 +103,18 @@ jobs:
 
       - name: ffmpeg for MP3 downloads with the cover inside (every edition)
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # An LGPL build; only ffmpeg.exe is kept (yt-dlp needs neither ffprobe nor ffplay).
-          $url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip'
+          # An LGPL build of the newest release branch (its version changes only
+          # with a point release, so the smart update rarely sends it again);
+          # only ffmpeg.exe is kept (yt-dlp needs neither ffprobe nor ffplay).
+          $names = gh api repos/BtbN/FFmpeg-Builds/releases/latest --jq '.assets[].name' 2>$null
+          $branch = $names | Where-Object { $_ -match '^ffmpeg-n(\d+)\.(\d+)-latest-win64-lgpl-[\d.]+\.zip$' } |
+            Sort-Object { [version]($_ -replace '^ffmpeg-n(\d+\.\d+)-.*$', '$1') } | Select-Object -Last 1
+          $asset = if ($branch) { $branch } else { 'ffmpeg-master-latest-win64-lgpl.zip' }
+          "ffmpeg build: $asset"
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$asset"
           curl.exe -L --fail --retry 5 --retry-delay 10 -o ffmpeg.zip $url
           if ($LASTEXITCODE -ne 0 -or (Get-Item ffmpeg.zip).Length -lt 10MB) { throw "ffmpeg could not be downloaded" }
           7z x ffmpeg.zip -offmpeg_tmp | Out-Null
@@ -115,7 +125,9 @@ jobs:
           if ($license) { Copy-Item $license.FullName build/ffmpeg/LICENSE.txt }
           "ffmpeg (LGPL build by BtbN/FFmpeg-Builds): https://github.com/BtbN/FFmpeg-Builds — source: https://ffmpeg.org/download.html" |
             Set-Content -Encoding utf8 build/ffmpeg/README.txt
-          & build/ffmpeg/ffmpeg.exe -hide_banner -version | Select-Object -First 1
+          $versionLine = & build/ffmpeg/ffmpeg.exe -hide_banner -version | Select-Object -First 1
+          $versionLine
+          $versionLine | Set-Content -Encoding utf8 build/ffmpeg/VERSION.txt
           "{0:N1} MB" -f ((Get-Item build/ffmpeg/ffmpeg.exe).Length / 1MB)
 
       - name: Stamp the build
@@ -126,8 +138,8 @@ jobs:
           "window.__BUILD__ = " + (@{ version = $ver; build = $sha; edition = '${{ matrix.edition }}' } | ConvertTo-Json -Compress) + ";" |
             Set-Content -Encoding utf8 electron/renderer/build-info.js
 
-      - name: Put the AI model inside the app (offline edition)
-        if: matrix.edition == 'offline'
+      - name: Put the AI model inside the app (offline editions)
+        if: matrix.edition == 'offline' || matrix.edition == 'setup-offline'
         shell: pwsh
         env:
           PYTHONUTF8: '1'
@@ -198,8 +210,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "the packaged core cannot find ffmpeg or truststore" }
           & "$res/ffmpeg/ffmpeg.exe" -hide_banner -version | Select-Object -First 1
 
-      - name: Check the bundled model works with no network (offline edition)
-        if: matrix.edition == 'offline'
+      - name: Check the bundled model works with no network (offline editions)
+        if: matrix.edition == 'offline' || matrix.edition == 'setup-offline'
         shell: pwsh
         env:
           PYTHONUTF8: '1'
@@ -211,12 +223,83 @@ jobs:
           $env:MODELS = (Resolve-Path "$res/models").Path
           & "$res/python/python.exe" -c "import os, sys; sys.path.insert(0, os.environ['HAMENAGEN_BACKEND_DIR']); from hamenagen.classifier import EmbeddingBackend; b = EmbeddingBackend(cache_dir=os.environ['MODELS'], allow_download=False); assert b.load(), b.load_error; c = b.classify('\u05e1\u05d5\u05e4\u05d2\u05e0\u05d9\u05d5\u05ea \u05d7\u05de\u05d5\u05ea'); print('model ok:', c); assert c is not None and c.topic == '\u05d7\u05e0\u05d5\u05db\u05d4'"
 
-      - name: Wrap the installer in a ZIP (network filters cut large .exe downloads)
-        if: matrix.edition == 'setup'
+      - name: The parts of the app, for the smart update
         shell: pwsh
         run: |
-          $exe = Get-ChildItem dist/Hamenagen-*-Setup.exe | Select-Object -First 1
-          Compress-Archive -Path $exe.FullName -DestinationPath ($exe.FullName -replace '\.exe$', '.zip') -Force
+          if (-not (Test-Path dist/win-unpacked/resources/parts.json)) { throw "resources/parts.json is missing (scripts/parts.js)" }
+          build/win-python/python.exe scripts/make_parts.py dist/win-unpacked dist/parts
+          if ($LASTEXITCODE -ne 0) { throw "the parts could not be made" }
+          Get-ChildItem dist/parts | Format-Table Name, @{ n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) } }
+
+      - name: The smart update's swap works on Windows (and puts everything back if it fails)
+        if: matrix.edition == 'portable'
+        shell: pwsh
+        run: |
+          # A Hebrew folder name, like a Windows user name in Hebrew.
+          $t = Join-Path $env:RUNNER_TEMP 'בדיקת-עדכון'
+          $inst = Join-Path $t 'inst'
+          $work = Join-Path $t 'work'
+          New-Item -ItemType Directory -Force $t | Out-Null
+          Copy-Item dist/win-unpacked $inst -Recurse
+          function Stage([string]$marker) {
+            Remove-Item (Join-Path $work 'staging') -Recurse -Force -ErrorAction SilentlyContinue
+            $stage = Join-Path $work 'staging\backend\backend'
+            New-Item -ItemType Directory -Force $stage | Out-Null
+            Copy-Item (Join-Path $inst 'resources\backend\*') $stage -Recurse
+            Set-Content (Join-Path $stage $marker) 'yes'
+            Copy-Item (Join-Path $inst 'resources\parts.json') (Join-Path $work 'parts.json')
+            $plan = @{ version = '9.9.9'; root = $inst; resources = (Join-Path $inst 'resources'); work = $work
+                       result = (Join-Path $work 'result.json'); parts_json = (Join-Path $work 'parts.json')
+                       parts = @(@{ name = 'backend'; kind = 'dir'; staging = (Join-Path $work 'staging\backend'); old = @('backend'); new = @('backend') }) }
+            [IO.File]::WriteAllText((Join-Path $work 'plan.json'), ($plan | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding $false))
+          }
+          Stage 'FIRST.txt'
+          powershell -NoProfile -ExecutionPolicy Bypass -File electron/update-apply.ps1 -Plan (Join-Path $work 'plan.json')
+          $r = Get-Content (Join-Path $work 'result.json') -Raw | ConvertFrom-Json
+          if (-not $r.ok) { throw "the swap failed: $($r.error)" }
+          if (-not (Test-Path (Join-Path $inst 'resources\backend\FIRST.txt'))) { throw "the new part is not in place" }
+          "swap: ok"
+          Stage 'SECOND.txt'
+          powershell -NoProfile -ExecutionPolicy Bypass -File electron/update-apply.ps1 -Plan (Join-Path $work 'plan.json') -FailAfter 2
+          $r = Get-Content (Join-Path $work 'result.json') -Raw | ConvertFrom-Json
+          if ($r.ok) { throw "a failing swap reported success" }
+          if (Test-Path (Join-Path $inst 'resources\backend\SECOND.txt')) { throw "the failed swap was not undone" }
+          if (-not (Test-Path (Join-Path $inst 'resources\backend\FIRST.txt'))) { throw "the old part did not come back" }
+          "rollback: ok ($($r.error))"
+          Get-Content (Join-Path $work 'apply.log')
+
+      - name: NSIS, for the one-file portable editions
+        if: matrix.edition == 'portable' || matrix.edition == 'offline'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe')) { choco install nsis -y --no-progress | Out-Null }
+          if (-not (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe')) { throw "NSIS was not installed" }
+
+      - name: One file for the portable editions (opens itself into a folder)
+        if: matrix.edition == 'portable' || matrix.edition == 'offline'
+        shell: pwsh
+        run: |
+          $ver = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $name = if ('${{ matrix.edition }}' -eq 'offline') { "Hamenagen-$ver-Portable-Offline.exe" } else { "Hamenagen-$ver-Portable.exe" }
+          $label = if ('${{ matrix.edition }}' -eq 'offline') { 'גרסה ניידת עם המודל' } else { 'גרסה ניידת' }
+          $src = (Resolve-Path dist/win-unpacked).Path
+          $out = Join-Path (Resolve-Path dist).Path $name
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' /NOCD /V2 "/DVERSION=$ver" "/DSRCDIR=$src" "/DOUTFILE=$out" "/DICON=$((Resolve-Path assets/icon.ico).Path)" "/DLABEL=$label" scripts/portable.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
+          # Open it silently into a folder and check the player is there, whole.
+          $dest = Join-Path $env:RUNNER_TEMP 'portable-test'
+          Start-Process -FilePath $out -ArgumentList '/S', "/D=$dest" -Wait
+          foreach ($p in @('Hamenagen.exe', 'resources\app.asar', 'resources\parts.json', 'resources\python\python.exe')) {
+            if (-not (Test-Path (Join-Path $dest $p))) { throw "the portable EXE did not open $p" }
+          }
+          "{0}: {1:N0} MB" -f $name, ((Get-Item $out).Length / 1MB)
+
+      - name: Each file also in a ZIP of its own (network filters cut large .exe downloads)
+        shell: pwsh
+        run: |
+          Get-ChildItem dist -File -Filter 'Hamenagen-*.exe' | ForEach-Object {
+            Compress-Archive -Path $_.FullName -DestinationPath ($_.FullName -replace '\.exe$', '.zip') -Force
+          }
 
       - name: List the files
         shell: pwsh
@@ -227,7 +310,8 @@ jobs:
           name: hamenagen-${{ matrix.edition }}
           path: |
             dist/Hamenagen-*.zip
-            dist/Hamenagen-*-Setup.exe
+            dist/Hamenagen-*.exe
+            dist/parts/*
           if-no-files-found: error
 
   release:
@@ -264,7 +348,8 @@ jobs:
           make_latest: 'true'
           files: |
             dist/Hamenagen-*.zip
-            dist/Hamenagen-*-Setup.exe
+            dist/Hamenagen-*.exe
+            dist/parts/hamenagen-part-*.zip
             dist/update.json
 
       - name: Tell 0.1 installs about the new version
