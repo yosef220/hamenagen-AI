@@ -36,6 +36,8 @@ class Station:
     category: int = 0
     order: int = 0
     editor: str = ""
+    group: str = ""          # the radio page's section ("" = by Kol Chai's category)
+    custom: bool = False     # added by the listener
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -80,6 +82,33 @@ def stations_from_model(model: dict, *, pics_url: str = DEFAULT_PICS_URL) -> lis
     return stations
 
 
+# More stations beside Kol Chai Music's channels: public streams, each checked
+# to answer with audio (https only — the window plays secure addresses).
+MORE_STATIONS_GROUP = "תחנות נוספות"
+TALK_GROUP = "דיבור וחדשות"
+MORE_STATIONS: tuple[Station, ...] = (
+    Station(id=9001, title="קול פליי", url="https://cdn.cybercdn.live/Kol_Barama/Music/icecast.audio",
+            description="מוזיקה יהודית, של קול ברמה", group=MORE_STATIONS_GROUP),
+    Station(id=9002, title="Chabad.org Jewish Music", url="https://stream.radio.co/sdfd68a101/listen",
+            description="מוזיקה יהודית וניגוני חב״ד", group=MORE_STATIONS_GROUP),
+    Station(id=9101, title="קול ברמה", url="https://cdn.cybercdn.live/Kol_Barama/Live_Audio/icecast.audio",
+            description="השידור החי", group=TALK_GROUP),
+    Station(id=9102, title="קול חי", url="https://media2.93fm.co.il/live-new",
+            description="93FM, השידור החי", group=TALK_GROUP),
+)
+
+
+def custom_stations(entries) -> list[Station]:
+    """The stations the listener added (settings.custom_stations)."""
+    out = []
+    for i, e in enumerate(entries or []):
+        url = str((e or {}).get("url") or "")
+        if url.lower().startswith("https://"):
+            out.append(Station(id=9500 + i, title=str(e.get("title") or url), url=url,
+                               description="תחנה שהוספת", group="התחנות שלי", custom=True))
+    return out
+
+
 def fetch_stations(url: str = DEFAULT_SOURCE_URL, *, timeout: float = 8.0) -> list[Station]:
     """Fetch the live page and return its channels. Raises on network error."""
     from . import __version__
@@ -99,6 +128,7 @@ class RadioProvider:
         seed_path: str | Path | None = None,
     ):
         self.source_url = source_url or DEFAULT_SOURCE_URL
+        self.custom: list = []   # settings.custom_stations
         self.cache_path = Path(cache_path) if cache_path else None
         self.seed_path = (
             Path(seed_path)
@@ -138,12 +168,12 @@ class RadioProvider:
                 stations = fetch_stations(self.source_url)
                 if stations:
                     self._save_cache(stations)
-                    return {
+                    return self._with_more({
                         "online": True,
                         "source": self.source_url,
                         "count": len(stations),
                         "stations": [s.to_dict() for s in stations],
-                    }
+                    })
             except Exception as exc:  # offline / unreachable / parse error
                 error = str(exc)
             else:
@@ -153,8 +183,16 @@ class RadioProvider:
 
         cached = self._load_json(self.cache_path)
         if cached:
-            return {"online": False, "source": "cache", "error": error,
-                    "count": len(cached), "stations": [s.to_dict() for s in cached]}
+            return self._with_more({"online": False, "source": "cache", "error": error,
+                                    "count": len(cached), "stations": [s.to_dict() for s in cached]})
         seed = self._load_json(self.seed_path)
-        return {"online": False, "source": "seed", "error": error,
-                "count": len(seed), "stations": [s.to_dict() for s in seed]}
+        return self._with_more({"online": False, "source": "seed", "error": error,
+                                "count": len(seed), "stations": [s.to_dict() for s in seed]})
+
+    def _with_more(self, out: dict) -> dict:
+        """Kol Chai's channels, then the other stations and the listener's own."""
+        extra = [s.to_dict() for s in (*MORE_STATIONS, *custom_stations(self.custom))]
+        out["kcm_count"] = out["count"]
+        out["stations"] = out["stations"] + extra
+        out["count"] = len(out["stations"])
+        return out

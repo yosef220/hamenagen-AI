@@ -49,3 +49,24 @@ def test_no_refresh_uses_seed_when_no_cache(tmp_path):
     result = provider.list(refresh=False)
     assert result["source"] == "seed"
     assert result["count"] > 0
+
+
+def test_more_stations_and_the_listeners_own(tmp_path):
+    from hamenagen.radio import MORE_STATIONS, RadioProvider
+
+    rp = RadioProvider(cache_path=tmp_path / "c.json", seed_path=tmp_path / "none.json")
+    rp.custom = [{"title": "שלי", "url": "https://example.org/live"}, {"title": "x", "url": "http://insecure"}]
+    out = rp.list(refresh=False)
+    titles = [s["title"] for s in out["stations"]]
+    assert all(s.title in titles for s in MORE_STATIONS)
+    mine = [s for s in out["stations"] if s["custom"]]
+    assert [s["title"] for s in mine] == ["שלי"] and mine[0]["group"] == "התחנות שלי"
+    assert all(s["url"].startswith("https://") for s in out["stations"] if s["group"])
+
+
+def test_custom_stations_are_cleaned_in_settings():
+    from hamenagen.settings import Settings
+
+    s = Settings()
+    s.update({"custom_stations": [{"title": " א ", "url": "https://a.example/live"}, {"url": "ftp://x"}, "junk"]})
+    assert s.custom_stations == [{"title": "א", "url": "https://a.example/live"}]

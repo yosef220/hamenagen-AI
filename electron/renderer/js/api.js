@@ -19,13 +19,15 @@
     'setTrackTopic', 'setTrackVocal', 'confirmVocal', 'vocalStatus', 'vocalReview', 'analyzeVocal', 'stopVocal',
     'setTrackSpeech', 'setTrackDisliked', 'station', 'artistGroups', 'setArtistChoice',
     'voiceStatus', 'voicePrepare', 'voiceRecognize', 'installVoice',
+    'writeTags', 'writeAllTags', 'exportDrives', 'exportPlan', 'exportRun', 'exportStop',
+    'ringtoneInfo', 'makeRingtone', 'importSingers', 'clearSingers', 'singersStatus',
     'onlineLink', 'downloadBatch', 'stopDownloads', 'lookupDetails', 'applyDetails',
     'appUpdateDownload', 'appUpdateCancel', 'appUpdateResult', 'completeDetails', 'stopCompleteDetails',
     'shabbatStatus', 'playlists', 'playlistGet', 'playlistCreate', 'playlistRename', 'playlistDelete',
     'playlistAdd', 'playlistSetOrder', 'trackCopies', 'onlineSet', 'listenPrepare',
   ];
   const SHELL = [
-    'shellInfo', 'setTheme', 'openExternal', 'showInFolder', 'openFolder', 'chooseFolder', 'playerState',
+    'shellInfo', 'setTheme', 'openExternal', 'showInFolder', 'openFolder', 'chooseFolder', 'chooseFile', 'playerState',
     'clipboardLink', 'searchOpen', 'searchPlace', 'searchHide', 'searchNav', 'applyAppUpdate',
   ];
 

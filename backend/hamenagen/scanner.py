@@ -35,6 +35,8 @@ _SKIP_DIR_NAMES = {
     "$windows.~bt", "$windows.~ws", "program files", "program files (x86)",
     "programdata", "appdata", "recovery", "msocache", "node_modules",
     ".git", "__pycache__", ".cache", "site-packages",
+    # Ringtones the player cut from songs (ringtone.py) are not songs.
+    "צלצולים", "ringtones",
 }
 
 # Files this small are notification sounds and voice clips, not songs. Only

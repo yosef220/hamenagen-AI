@@ -35,7 +35,8 @@ from .service import PlayerService
 _SLOW = {
     "online_search", "online_download", "online_link", "radio_list", "check_updates", "apply_update",
     "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
-    "online_set", "listen_prepare", "station", "voice_recognize", "voice_prepare",
+    "online_set", "listen_prepare", "station", "voice_recognize", "voice_prepare", "write_tags",
+    "export_drives", "export_plan", "make_ringtone", "import_singers",
 }
 
 
@@ -283,6 +284,61 @@ class RpcServer:
             return {"status": "done" if result.get("ok") else "error", **result}
 
         return self._start_job("model", work, "model_install")
+
+    # -- details into the files (1.5) -------------------------------------
+    def rpc_write_tags(self, params):
+        return self.service.write_track_tags(list(params.get("ids") or []), cover=params.get("cover", True) is not False)
+
+    def rpc_write_all_tags_async(self, params):
+        def work():
+            return self.service.write_all_tags(on_progress=lambda p: self._emit("tags_progress", p))
+
+        return self._start_job("tags", work, "tags_done")
+
+    # -- to an MP3 player, a ringtone (1.5) --------------------------------
+    @staticmethod
+    def _export_args(params) -> dict:
+        return {"folder": params.get("folder") or "המנגן", "layout": params.get("layout") or "flat",
+                "numbered": params.get("numbered", True) is not False,
+                "convert": params.get("convert", True) is not False,
+                "limit_mb": params.get("limit_mb") or None}
+
+    def rpc_export_drives(self, params):
+        return self.service.export_drives()
+
+    def rpc_export_plan(self, params):
+        plan = self.service.export_plan(list(params.get("ids") or []), params.get("dest") or "",
+                                        **self._export_args(params))
+        return plan.to_dict()
+
+    def rpc_export_run_async(self, params):
+        plan = self.service.export_plan(list(params.get("ids") or []), params.get("dest") or "",
+                                        **self._export_args(params))
+
+        def work():
+            return self.service.export_run(plan, on_progress=lambda p: self._emit("export_progress", p))
+
+        return self._start_job("export", work, "export_done")
+
+    def rpc_export_stop(self, params):
+        self.service.export_stop.set()
+        return {"ok": True}
+
+    def rpc_ringtone_info(self, params):
+        return self.service.ringtone_info(params["id"])
+
+    def rpc_make_ringtone(self, params):
+        return self.service.make_ringtone(params["id"], start=float(params.get("start") or 0),
+                                          length=float(params.get("length") or 30), fmt=params.get("format") or "mp3")
+
+    def rpc_import_singers(self, params):
+        return self.service.import_singers(params.get("path") or "", replace=params.get("replace", True) is not False)
+
+    def rpc_clear_singers(self, params):
+        return self.service.clear_singers()
+
+    def rpc_singers_status(self, params):
+        return self.service.singers_status()
 
     # -- requests by voice (1.4) -------------------------------------------
     def rpc_voice_status(self, params):

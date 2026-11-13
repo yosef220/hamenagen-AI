@@ -326,6 +326,8 @@ const BACKEND_METHODS = new Set([
   'vocal_status', 'vocal_review', 'analyze_vocal_async', 'stop_vocal',
   'set_track_speech', 'set_track_disliked', 'station', 'artist_groups', 'set_artist_choice',
   'voice_status', 'voice_prepare', 'voice_recognize', 'install_voice_async',
+  'write_tags', 'write_all_tags_async', 'export_drives', 'export_plan', 'export_run_async', 'export_stop',
+  'ringtone_info', 'make_ringtone', 'import_singers', 'clear_singers', 'singers_status',
 ]);
 
 ipcMain.handle('backend', async (_evt, method, params) => {
@@ -623,6 +625,18 @@ ipcMain.handle('app:chooseFolder', async (_evt, title) => {
   const res = await dialog.showOpenDialog(mainWindow, {
     title: typeof title === 'string' ? title : 'בחירת תיקייה',
     properties: ['openDirectory'],
+  });
+  return res.canceled || !res.filePaths.length ? null : res.filePaths[0];
+});
+
+ipcMain.handle('app:chooseFile', async (_evt, title, kind) => {
+  const filters = kind === 'singers'
+    ? [{ name: 'רשימת זמרים', extensions: ['csv', 'tsv', 'txt', 'json'] }, { name: 'כל הקבצים', extensions: ['*'] }]
+    : [{ name: 'כל הקבצים', extensions: ['*'] }];
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: typeof title === 'string' ? title : 'בחירת קובץ',
+    properties: ['openFile'],
+    filters,
   });
   return res.canceled || !res.filePaths.length ? null : res.filePaths[0];
 });

@@ -56,7 +56,9 @@
         h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => { H.player.enqueue(res.tracks); H.toast(`${H.songs(total)} נוספו לתור`, { icon: 'list-music' }); } }, icon('list-music'), 'הוספה לתור'),
         res.playlist_id
           ? h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => H.go('playlists', { id: res.playlist_id }) }, icon('pencil'), 'לסדר את הרשימה')
-          : h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => H.saveAsPlaylist(res.tracks, res.understood || '') }, icon('list-plus'), 'שמירה כרשימה')) : null);
+          : h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => H.saveAsPlaylist(res.tracks, res.understood || '') }, icon('list-plus'), 'שמירה כרשימה'),
+        h('button', { class: 'btn btn-quiet', type: 'button', title: 'להעתיק את השירים האלה לנגן MP3 או לדיסק־און־קי',
+          onclick: () => H.openExport(res.tracks, res.understood || res.title || '') }, icon('usb'), 'לנגן MP3')) : null);
 
     const parts = [head];
     const topic = (res.intent && res.intent.topic) || params.topic;

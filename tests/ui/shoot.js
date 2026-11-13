@@ -409,6 +409,49 @@ async function run() {
       await page.waitForSelector('#set-voice');
       await shot(page, `27-settings-sound-voice${suffix}`);
 
+      // 1.5: the details into the files, from the settings.
+      await page.locator('#set-artists button', { hasText: 'לכתוב לכל הקבצים' }).click();
+      await page.waitForFunction(() => /הסתיים/.test(document.querySelector('#set-artists')?.textContent || ''), null, { timeout: 30000 })
+        .catch(() => errors.push('writing the details into the files did not finish'));
+
+      // 1.5: copying a request's songs to an MP3 player (a folder stands in for it).
+      const player = fs.mkdtempSync(path.join(os.tmpdir(), 'hamenagen-player-'));
+      // Without ffmpeg (as on CI) songs are copied as they are, and no ringtone can be cut.
+      const hasFfmpeg = await page.evaluate(async () => (await H.api.exportDrives()).ffmpeg);
+      await page.evaluate(async (dest) => {
+        const res = await H.api.ask('שירי שבת');
+        H.openExport(res.tracks.slice(0, 6), 'שירי שבת', { dest, label: 'NAGAN (E:)' });
+      }, player);
+      await page.waitForFunction(() => /יועתקו|כבר בנגן/.test(document.querySelector('.tool-summary')?.textContent || ''), null, { timeout: 15000 })
+        .catch(() => errors.push('the MP3 player dialog did not plan the copy'));
+      await shot(page, `30-mp3-player${suffix}`);
+      await page.locator('.tool-dialog .btn-primary', { hasText: 'להעתיק' }).click().catch(() => {});
+      await page.waitForSelector('.tool-dialog .btn-primary:has-text("סיום")', { timeout: 60000 })
+        .catch(() => errors.push('copying to the MP3 player did not finish'));
+      const copied = fs.existsSync(path.join(player, 'שירי שבת')) ? fs.readdirSync(path.join(player, 'שירי שבת')) : [];
+      const copyName = hasFfmpeg ? /^\d{3} .+\.mp3$/ : /^\d{3} .+\.\w+$/;
+      if (!copied.length || !copied.every((f) => copyName.test(f))) errors.push(`the MP3 player got: ${copied.join(', ')}`);
+      await shot(page, `31-mp3-player-done${suffix}`);
+      await page.click('.tool-dialog .btn-primary:has-text("סיום")').catch(() => {});
+
+      // 1.5: a ringtone from a song.
+      await page.evaluate(async () => {
+        const { tracks } = await H.api.listTracks({ text: 'ירושלים של זהב', limit: 1 });
+        H.openRingtone(tracks[0]);
+      });
+      if (hasFfmpeg) {
+        await page.waitForSelector('.tool-dialog input[type="range"]', { timeout: 10000 })
+          .catch(() => errors.push('the ringtone dialog did not open'));
+        await shot(page, `32-ringtone${suffix}`);
+        await page.locator('.tool-dialog .btn-primary', { hasText: 'ליצור צלצול' }).click().catch(() => {});
+        await page.waitForFunction(() => /הצלצול מוכן/.test(document.querySelector('.tool-dialog .tool-summary')?.textContent || ''), null, { timeout: 30000 })
+          .catch(async () => errors.push(`no ringtone: ${await page.textContent('.tool-dialog .tool-summary').catch(() => '')}`));
+      } else {
+        await page.waitForFunction(() => /חסר רכיב ההמרה/.test(document.querySelector('.tool-dialog')?.textContent || ''), null, { timeout: 10000 })
+          .catch(() => errors.push('without ffmpeg the ringtone dialog did not say so'));
+      }
+      await page.keyboard.press('Escape');
+
       // Spoken commands work the player rather than being searched for.
       const commands = await page.evaluate(async () => {
         const P = H.player;
