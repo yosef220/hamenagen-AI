@@ -107,9 +107,22 @@ def likely_key(name: str) -> str:
 
 
 _KNOWN_BY_KEY: dict[str, str] = {}
-for _names in KNOWN:
-    for _n in _names:
-        _KNOWN_BY_KEY.setdefault(sure_key(_n), _names[0])
+_ALIASES: dict[str, tuple[str, ...]] = {}
+_EXTRA: tuple[tuple[str, ...], ...] = ()      # the listener's own list (1.5)
+
+
+def _index_known() -> None:
+    _KNOWN_BY_KEY.clear()
+    _ALIASES.clear()
+    # The listener's list first: where it names a singer differently, it wins.
+    for names in (*_EXTRA, *KNOWN):
+        head = next((_KNOWN_BY_KEY[k] for k in map(sure_key, names) if k in _KNOWN_BY_KEY), names[0])
+        for n in names:
+            _KNOWN_BY_KEY.setdefault(sure_key(n), head)
+        _ALIASES[head] = tuple(dict.fromkeys((*_ALIASES.get(head, (head,)), *names)))
+
+
+_index_known()
 
 
 def known(name: str) -> str | None:
@@ -120,10 +133,87 @@ def known(name: str) -> str | None:
 def known_aliases(name: str) -> tuple[str, ...]:
     """Every spelling on the list of the singer called ``name``."""
     heb = known(name)
-    for names in KNOWN:
-        if names[0] == heb:
-            return names
-    return ()
+    return _ALIASES.get(heb, ()) if heb else ()
+
+
+def set_extra(lists) -> int:
+    """Use the listener's own list of singers along with ours. Each entry is
+    the name to show, then other spellings of the same singer."""
+    global _EXTRA
+    clean = []
+    for names in lists or ():
+        names = tuple(dict.fromkeys(str(n).strip()[:120] for n in names if str(n).strip()))
+        if names and sure_key(names[0]):
+            clean.append(names)
+    _EXTRA = tuple(clean[:20000])
+    _index_known()
+    return len(_EXTRA)
+
+
+def extra() -> tuple[tuple[str, ...], ...]:
+    return _EXTRA
+
+
+def parse_list(text: str) -> list[tuple[str, ...]]:
+    """A list of singers the listener brings, as a CSV/TSV/plain text file
+    (on each line: the name to show, then other spellings, separated by
+    commas, tabs, ``|`` or ``=``) or JSON (a list of lists, or
+    ``{"name": ["spelling", ...]}``). Lines that name the same spelling
+    become one singer; the first name seen is the one shown."""
+    import csv
+    import io
+    import json
+
+    text = (text or "").lstrip("\ufeff")
+    rows: list[list[str]] = []
+    stripped = text.strip()
+    if stripped[:1] in "[{":
+        data = json.loads(stripped)
+        if isinstance(data, dict):
+            for k, v in data.items():
+                rows.append([k, *(v if isinstance(v, list) else [v])])
+        elif isinstance(data, list):
+            for v in data:
+                if isinstance(v, list):
+                    rows.append([str(x) for x in v])
+                elif isinstance(v, dict):
+                    name = v.get("name") or v.get("שם")
+                    rows.append([name, *(v.get("aliases") or v.get("spellings") or [])])
+                elif isinstance(v, str):
+                    rows.append([v])
+    else:
+        first = stripped.splitlines()[0] if stripped else ""
+        delim = max(("\t", ",", "|", "=", ";"), key=first.count) if first else ","
+        for row in csv.reader(io.StringIO(text), delimiter=delim):
+            rows.append(row)
+    # Join rows that share a spelling (a list of "spelling,name" pairs, too).
+    groups: list[list[str]] = []
+    where: dict[str, int] = {}
+    for row in rows:
+        names = [str(n).strip().strip('"') for n in row if n and str(n).strip()]
+        names = [n for n in names if sure_key(n) and len(n) <= 120]
+        if not names or names[0].lower() in {"name", "שם", "singer", "זמר", "source", "מקור"}:
+            continue
+        hits = sorted({where[sure_key(n)] for n in names if sure_key(n) in where})
+        if hits:
+            g = hits[0]
+            for other in hits[1:]:
+                groups[g].extend(groups[other])
+                for n in groups[other]:
+                    where[sure_key(n)] = g
+                groups[other] = []
+        else:
+            g = len(groups)
+            groups.append([])
+        for n in names:
+            groups[g].append(n)
+            where[sure_key(n)] = g
+    out = []
+    for g in groups:
+        names = list(dict.fromkeys(g))
+        if names:
+            out.append(tuple(names))
+    return out
 
 
 @dataclass

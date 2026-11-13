@@ -32,6 +32,9 @@ from .hebrew_calendar import VOCAL_TOPIC, detect_occasion, from_gregorian, today
 from .zmanim import ZmanimService
 from .smart_update import SmartUpdater
 from . import artists as artists_mod
+from . import tags as tags_mod
+from . import export as export_mod
+from . import ringtone as ringtone_mod
 from . import sets as sets_mod
 from . import sound as sound_mod
 from . import station as station_mod
@@ -103,6 +106,7 @@ class PlayerService:
         self.classifier = HybridClassifier(self._build_backend())
         # Cover pictures, kept once each by content (scanner.store_cover).
         self.covers_dir = self.data_dir / "covers"
+        self._load_singers()
         # yt-dlp runs as its own process (ytdlp_runner); a newer copy can live
         # in data/engine; ffmpeg ships with the app for MP3 downloads.
         self.ffmpeg = find_ffmpeg(bundled_ffmpeg_dir())
@@ -113,6 +117,7 @@ class PlayerService:
 
             self.fetcher = OnlineFetcher(DemoSource())
         self.download_stop = threading.Event()
+        self.export_stop = threading.Event()
         self.downloading = False
         self.radio = RadioProvider(
             self.settings.radio_list_url,
@@ -448,6 +453,104 @@ class PlayerService:
         self.index.set_override(track_id, vocal=None if value is None else (1 if value else 0))
         return self._reclassify_one(track_id)
 
+    # -- details into the files (1.5) ------------------------------------------------
+    def _cover_bytes(self, key: str) -> bytes | None:
+        """The song's cover as the app keeps it (the original, else the small copy)."""
+        if not key:
+            return None
+        for f in [*(self.covers_dir / "src").glob(f"{key}.*"), self.covers_dir / f"{key}.jpg"]:
+            try:
+                if f.is_file():
+                    return f.read_bytes()
+            except OSError:
+                pass
+        return None
+
+    def tags_for(self, track: Track, *, album: str | None = None) -> dict:
+        """What the file should say: the name shown, the singer's one name."""
+        return {
+            "title": track.title or None,
+            "artist": self.artist_name(track.artist) if track.artist else None,
+            "album": album if album is not None else (track.album or None),
+        }
+
+    def write_track_tags(self, track_ids: list[str], *, cover: bool = True, on_progress=None) -> dict:
+        """Write the details the player shows into the files (only what
+        differs; a cover only where the file has none)."""
+        tracks = self.index.get_many(list(track_ids))
+        done = same = 0
+        failed: list[dict] = []
+        for n, t in enumerate(tracks, 1):
+            if not t.path or not tags_mod.can_write(t.path):
+                continue
+            want = {k: v for k, v in self.tags_for(t).items() if v}
+            have = tags_mod.read_tags(t.path)
+            pic = self._cover_bytes(t.cover) if cover else None
+            if all(have.get(k) == v for k, v in want.items()) and not pic:
+                same += 1
+            else:
+                ok, why = tags_mod.write_tags(t.path, cover=pic, **want)
+                if ok:
+                    done += 1
+                else:
+                    failed.append({"id": t.id, "title": t.title, "reason": why})
+            if on_progress and n % 20 == 0:
+                on_progress({"done": n, "total": len(tracks), "written": done})
+        return {"ok": not failed, "written": done, "unchanged": same, "failed": failed[:50],
+                "failed_count": len(failed), "total": len(tracks)}
+
+    def write_all_tags(self, on_progress=None) -> dict:
+        ids = [t.id for t in self.index.all_tracks() if t.path and not t.is_video]
+        return self.write_track_tags(ids, on_progress=on_progress)
+
+    # -- to an MP3 player (1.5) -----------------------------------------------------
+    def export_drives(self) -> dict:
+        return {"drives": export_mod.removable_drives(), "ffmpeg": bool(self.ffmpeg)}
+
+    def _export_songs(self, track_ids: list[str]) -> list[dict]:
+        out = []
+        for t in self.index.get_many(list(track_ids)):
+            if not t.path or t.is_video:
+                continue
+            out.append({"id": t.id, "path": t.path, "title": t.title or Path(t.path).stem,
+                        "artist": self.artist_name(t.artist) if t.artist else "",
+                        "topic_label": topics_mod.TOPIC_LABELS.get(t.topic, t.topic or "") if t.topic else "",
+                        "duration": t.duration})
+        return out
+
+    def export_plan(self, track_ids: list[str], dest: str, *, folder: str = "המנגן", layout: str = "flat",
+                    numbered: bool = True, convert: bool = True, limit_mb: int | None = None) -> "export_mod.Plan":
+        if not dest or not Path(dest).is_dir():
+            raise ValueError("התיקייה או הנגן לא נמצאו. אולי הנגן נותק?")
+        return export_mod.make_plan(self._export_songs(track_ids), dest, folder=folder, layout=layout,
+                                    numbered=numbered, convert=convert and bool(self.ffmpeg),
+                                    limit_bytes=int(limit_mb) * 1024 * 1024 if limit_mb else None)
+
+    def export_run(self, plan: "export_mod.Plan", on_progress=None) -> dict:
+        self.export_stop.clear()
+        return export_mod.run(plan, ffmpeg=self.ffmpeg or None, on_progress=on_progress, cancel=self.export_stop)
+
+    # -- a ringtone from a song (1.5) ------------------------------------------------
+    @property
+    def ringtones_dir(self) -> Path:
+        return self.downloads_dir / "צלצולים"
+
+    def ringtone_info(self, track_id: str) -> dict:
+        t = self.index.get(track_id)
+        if t is None:
+            raise ValueError("השיר לא נמצא")
+        lead = (self.index.analyses_for([t.id]).get(t.id) or {}).get("lead") or 0.0
+        return {"duration": t.duration, "start": ringtone_mod.suggest_start(t.duration, lead),
+                "lengths": list(ringtone_mod.LENGTHS), "ffmpeg": bool(self.ffmpeg), "folder": str(self.ringtones_dir)}
+
+    def make_ringtone(self, track_id: str, *, start: float, length: float = 30, fmt: str = "mp3") -> dict:
+        t = self.index.get(track_id)
+        if t is None or not t.path:
+            return {"ok": False, "message": "השיר לא נמצא"}
+        name = " - ".join(x for x in (self.artist_name(t.artist) if t.artist else "", t.title or Path(t.path).stem) if x)
+        return ringtone_mod.make(self.ffmpeg, t.path, self.ringtones_dir, name=name, start=start, length=length,
+                                 fmt=fmt, duration=t.duration)
+
     # -- requests by voice (1.4) ---------------------------------------------------
     def voice_status(self) -> dict:
         folder = self.voice.model_dir()
@@ -552,6 +655,65 @@ class PlayerService:
         self.index.set_meta(self.ARTIST_CHOICES, json.dumps(choices, ensure_ascii=False))
         self._forget_artists()
         return {"ok": True, **self.artist_groups()}
+
+    # -- the listener's own list of singers (1.5) ---------------------------------
+    @property
+    def singers_file(self) -> Path:
+        return self.data_dir / "singers.json"
+
+    def _load_singers(self) -> None:
+        try:
+            data = json.loads(self.singers_file.read_text(encoding="utf-8"))
+            artists_mod.set_extra(data.get("singers") or [])
+        except (OSError, ValueError, AttributeError):
+            artists_mod.set_extra([])
+
+    def import_singers(self, path: str, replace: bool = True) -> dict:
+        """Read a list of singers (CSV, TSV, text or JSON) the listener has and
+        use it to unify names. Kept in the app's data; the file is not kept."""
+        p = Path(path or "")
+        if not p.is_file() or p.stat().st_size > 20 * 1024 * 1024:
+            return {"ok": False, "message": "הקובץ לא נמצא או גדול מדי."}
+        raw = p.read_bytes()
+        for enc in ("utf-8-sig", "cp1255"):
+            try:
+                text = raw.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            return {"ok": False, "message": "לא הצלחתי לקרוא את הקובץ (קידוד לא מוכר)."}
+        try:
+            lists = artists_mod.parse_list(text)
+        except ValueError as exc:
+            return {"ok": False, "message": f"הקובץ לא בפורמט מוכר: {exc}"}
+        if not lists:
+            return {"ok": False, "message": "לא נמצאו בקובץ שמות של זמרים."}
+        if not replace:
+            lists = [*artists_mod.extra(), *lists]
+        count = artists_mod.set_extra(lists)
+        self.singers_file.parent.mkdir(parents=True, exist_ok=True)
+        self.singers_file.write_text(json.dumps({"source": p.name, "singers": [list(x) for x in artists_mod.extra()]},
+                                                ensure_ascii=False), encoding="utf-8")
+        self._forget_artists()
+        return {"ok": True, "count": count, "source": p.name, **self.singers_status()}
+
+    def clear_singers(self) -> dict:
+        try:
+            self.singers_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+        artists_mod.set_extra([])
+        self._forget_artists()
+        return {"ok": True, **self.singers_status()}
+
+    def singers_status(self) -> dict:
+        source = ""
+        try:
+            source = json.loads(self.singers_file.read_text(encoding="utf-8")).get("source") or ""
+        except (OSError, ValueError, AttributeError):
+            pass
+        return {"count": len(artists_mod.extra()), "source": source}
 
     # -- spoken recordings, disliked songs (1.4) --------------------------------
     @staticmethod
@@ -1676,6 +1838,7 @@ class PlayerService:
 
     # -- radio (spec §13) --------------------------------------------------
     def radio_list(self, *, refresh: bool = True) -> dict:
+        self.radio.custom = list(self.settings.custom_stations or [])
         return self.radio.list(refresh=refresh)
 
     # -- updates (spec §14) ------------------------------------------------

@@ -174,6 +174,9 @@ class Settings:
     # 1.4: folders whose songs never play in mixes, sets or the radio (they
     # still play when chosen, and are found in searches).
     isolated_folders: list = field(default_factory=list)
+    # 1.5: stations the listener added by address ([{title, url}], https only:
+    # the window plays secure addresses only).
+    custom_stations: list = field(default_factory=list)
 
     @classmethod
     def load(cls, path: str | Path) -> "Settings":
@@ -202,6 +205,13 @@ class Settings:
             self.text_size = "normal"
         self.scan_roots = [str(r) for r in (self.scan_roots or []) if str(r).strip()]
         self.isolated_folders = [str(r) for r in (self.isolated_folders or []) if str(r).strip()]
+        stations = []
+        for s in self.custom_stations or []:
+            if isinstance(s, dict):
+                title, url = str(s.get("title") or "").strip()[:80], str(s.get("url") or "").strip()
+                if url.lower().startswith("https://") and len(url) < 1000:
+                    stations.append({"title": title or url.split("/")[2], "url": url})
+        self.custom_stations = stations[:50]
         from .zmanim import CITIES, DEFAULT_CITY, HAVDALAH_CHOICES
         if self.shabbat_city not in CITIES:
             self.shabbat_city = DEFAULT_CITY

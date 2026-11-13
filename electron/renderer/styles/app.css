@@ -1509,3 +1509,10 @@ body.at-rest .app { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .mic-btn[data-state="thinking"] .icon, .mic-btn[data-state="preparing"] .icon { animation: none; }
 }
+
+/* --------------------------------------------------------- רדיו: תחנות שהמאזין הוסיף */
+.station-add { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; }
+.station-add .field { flex: 1 1 220px; min-width: 0; }
+.station { position: relative; }
+.station-remove { position: absolute; top: 6px; inset-inline-start: 6px; opacity: 0.6; }
+.station-remove:hover { opacity: 1; }
