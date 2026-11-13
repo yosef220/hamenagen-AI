@@ -88,6 +88,7 @@ const ICONS = [
   'shield-alert', 'circle-stop', 'eye', 'grip-vertical', 'pencil', 'party-popper', 'copy', 'layers',
   'cloud-download', 'gauge',
   'thumbs-down', 'message-square-quote', 'mic', 'mic-off', 'users', 'folder-lock', 'square',
+  'usb', 'bell-ring', 'file-pen-line', 'scissors', 'upload',
 ];
 const symbols = [];
 for (const name of ICONS) {

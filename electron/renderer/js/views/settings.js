@@ -126,8 +126,65 @@
       add, kept.length ? { wide: list } : {});
   }
 
+  // 1.5: a list of singers the listener brings (CSV, text or JSON).
+  function singersRow(st) {
+    const count = (st && st.count) || 0;
+    const line = h('div', { class: 'set-help' }, count
+      ? `בשימוש: ${H.n(count)} זמרים מהרשימה „${st.source || ''}”.` : '');
+    const pick = h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: async () => {
+      const file = await api.chooseFile('רשימת זמרים (CSV, טקסט או JSON)', 'singers');
+      if (!file) return;
+      const r = await api.importSingers(file, true).catch((err) => ({ ok: false, message: err.message }));
+      if (!r.ok) { line.textContent = r.message || 'הרשימה לא נטענה'; return; }
+      H.toast(`נטענה רשימה של ${H.n(r.count)} זמרים`, { icon: 'users' });
+      api.emit('library-changed', {});
+      render({ focus: 'artists' });
+    } }, icon('upload', 'icon-sm'), count ? 'רשימה אחרת…' : 'לטעון רשימה…');
+    const clear = count ? h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: async () => {
+      await api.clearSingers().catch(() => {});
+      api.emit('library-changed', {});
+      render({ focus: 'artists' });
+    } }, 'להסיר') : null;
+    return row('רשימת זמרים משלכם',
+      'קובץ שבכל שורה בו השם שיוצג ואחריו כתיבים נוספים של אותו זמר, מופרדים בפסיק (למשל: „ישי ריבו,Ishay Ribo,ישי ריבוא”). אפשר גם JSON. הרשימה משלימה את זו של המנגן, וכשהיא קובעת שם אחר — היא קובעת.',
+      h('div', { class: 'set-buttons' }, pick, clear), { wide: line });
+  }
+
+  // 1.5: the corrections into the files themselves, for MP3 players and phones.
+  let tagsRunning = false;
+  let tagsLine = null;
+  function tagsRow() {
+    tagsLine = h('div', { class: 'set-help' }, tagsRunning ? 'כותב…' : '');
+    const button = h('button', { class: 'btn btn-outline btn-sm', type: 'button', disabled: tagsRunning, onclick: async () => {
+      const r = await api.writeAllTags().catch((err) => ({ started: false, reason: err.message }));
+      if (r.started) {
+        tagsRunning = true;
+        button.disabled = true;
+        tagsLine.textContent = 'כותב את הפרטים לקבצים…';
+      } else {
+        tagsLine.textContent = r.reason === 'already running' ? 'כבר כותב.' : `לא התחיל: ${r.reason || ''}`;
+      }
+    } }, icon('file-pen-line', 'icon-sm'), 'לכתוב לכל הקבצים');
+    return row('לכתוב את התיקונים לקבצים',
+      'השם המאוחד של הזמר, שם השיר שתוקן ותמונה (לקבצים שאין להם) — לתוך הקבצים עצמם, כדי שגם נגן MP3, טלפון או תוכנה אחרת יציגו אותם. רק מה ששונה נכתב. קבצים של MP3, M4A, FLAC, OGG ו-WMA.',
+      button, { wide: tagsLine });
+  }
+  api.on('tags_progress', (p) => {
+    tagsRunning = true;
+    if (tagsLine) tagsLine.textContent = `עבר על ${H.n(p.done)} מתוך ${H.n(p.total)} · נכתבו ${H.n(p.written)}`;
+  });
+  api.on('tags_done', (r) => {
+    tagsRunning = false;
+    const text = r && r.error ? `הכתיבה נכשלה: ${r.error}`
+      : `הסתיים: נכתבו ${H.songs((r && r.written) || 0)}${r && r.unchanged ? ` · ב-${H.songs(r.unchanged)} הפרטים כבר היו נכונים` : ''}${
+        r && r.failed_count ? ` · ${H.songs(r.failed_count)} לא נכתבו (קבצים מוגנים או פגומים)` : ''}`;
+    if (tagsLine) tagsLine.textContent = text;
+    H.toast(text, { icon: 'file-pen-line' });
+    if (!root.hidden) render({ focus: 'artists' });
+  });
+
   // One singer, one name: spellings unified by themselves, and suggestions.
-  function artistsGroup(data) {
+  function artistsGroup(data, singersSt) {
     const groups = (data && data.groups) || [];
     const section = h('section', { class: 'set-group', id: 'set-artists' }, h('h2', {}, 'שמות של זמרים'));
     const choose = async (key, choice) => {
@@ -144,7 +201,8 @@
     const unified = groups.filter((g) => g.applied);
     const apart = groups.filter((g) => !g.applied && g.sure);
     section.append(h('p', { class: 'set-help' },
-      'אותו זמר כתוב לפעמים בכמה צורות: בעברית ובאנגלית, עם נקודה או בלי, בכתיב מלא או חסר. המנגן מציג אותו בשם אחד, והחיפוש מוצא את השירים בכל הכתיבים. בקבצים עצמם לא משתנה כלום.'));
+      'אותו זמר כתוב לפעמים בכמה צורות: בעברית ובאנגלית, עם נקודה או בלי, בכתיב מלא או חסר. המנגן מציג אותו בשם אחד, והחיפוש מוצא את השירים בכל הכתיבים. בקבצים עצמם לא משתנה כלום — אלא אם תבחרו לכתוב את התיקונים לקבצים (למטה).'));
+    section.append(singersRow(singersSt), tagsRow());
     if (!groups.length) {
       section.append(h('p', { class: 'muted' }, 'לא נמצאו זמרים שכתובים בכמה צורות.'));
       return section;
@@ -457,18 +515,18 @@
   }
 
   async function render(params = {}) {
-    const [settings, status, overview, info, shell, vocal, artistData, voiceSt] = await Promise.all([
+    const [settings, status, overview, info, shell, vocal, artistData, voiceSt, , singersSt] = await Promise.all([
       api.getSettings(), api.classifierStatus().catch(() => null), api.overview().catch(() => null),
       api.appInfo().catch(() => null), api.shellInfo(), api.vocalStatus().catch(() => null),
       api.artistGroups().catch(() => null), api.voiceStatus().catch(() => null),
-      H.shabbat ? H.shabbat.refresh() : null,
+      H.shabbat ? H.shabbat.refresh() : null, api.singersStatus().catch(() => null),
     ]);
     H.settings = settings;
     H.appInfo = info;
     H.clear(root).append(
       h('header', { class: 'page-head' }, h('h1', {}, 'הגדרות')),
       h('div', { class: 'settings' },
-        appearance(), library(overview), artistsGroup(artistData), sound(), voiceGroup(voiceSt), ai(status, info), suggestions(), shabbat(), listening(vocal), online(info), updates(info),
+        appearance(), library(overview), artistsGroup(artistData, singersSt), sound(), voiceGroup(voiceSt), ai(status, info), suggestions(), shabbat(), listening(vocal), online(info), updates(info),
         about(info, shell)));
     if (params.focus) {
       const target = H.$(`#set-${params.focus}`);

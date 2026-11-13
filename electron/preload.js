@@ -102,6 +102,18 @@ contextBridge.exposeInMainWorld('hamenagen', {
   installVoice: () => core('install_voice_async'),
   setArtistChoice: (key, choice) => core('set_artist_choice', { key, ...choice }),
   station: (seed, history, count) => core('station', { seed: seed || null, history: history || [], count: count || null }),
+  // 1.5: details into the files, an MP3 player, a ringtone, a list of singers.
+  writeTags: (ids, cover) => core('write_tags', { ids, cover: cover !== false }),
+  writeAllTags: () => core('write_all_tags_async'),
+  exportDrives: () => core('export_drives'),
+  exportPlan: (opts) => core('export_plan', opts || {}),
+  exportRun: (opts) => core('export_run_async', opts || {}),
+  exportStop: () => core('export_stop'),
+  ringtoneInfo: (id) => core('ringtone_info', { id }),
+  makeRingtone: (id, start, length, format) => core('make_ringtone', { id, start, length, format }),
+  importSingers: (filePath, replace) => core('import_singers', { path: filePath, replace: replace !== false }),
+  clearSingers: () => core('clear_singers'),
+  singersStatus: () => core('singers_status'),
 
   // The operating system.
   shellInfo: () => ipcRenderer.invoke('app:info'),
@@ -118,6 +130,7 @@ contextBridge.exposeInMainWorld('hamenagen', {
   applyAppUpdate: (plan) => ipcRenderer.invoke('app:applyUpdate', plan),
   openFolder: (folder) => ipcRenderer.invoke('app:openFolder', folder),
   chooseFolder: (title) => ipcRenderer.invoke('app:chooseFolder', title),
+  chooseFile: (title, kind) => ipcRenderer.invoke('app:chooseFile', title, kind),
   playerState: (state) => ipcRenderer.send('player:state', state),
 
   // Pushed notifications: core events, theme changes, taskbar buttons.

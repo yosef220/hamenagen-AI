@@ -283,6 +283,7 @@
     const topics = (H.cachedTopics || []).length ? H.cachedTopics : Object.entries(H.topicLabels || {}).map(([key, label]) => ({ key, label }));
     const vocalState = track.vocal === 'yes' ? 'yes' : track.vocal === 'no' ? 'no' : 'auto';
     const speechState = track.speech_chosen === true ? 'speech' : track.speech_chosen === false ? 'song' : 'auto';
+    const local = !!track.path && track.source !== 'youtube' && !String(track.path).startsWith('http');
     const heard = track.vocal === 'vocal' ? 'המנגן שמע בשיר שירה בלי כלי נגינה.'
       : track.vocal === 'maybe' ? 'נשמע כמו שירה בלי כלים, אבל לא בטוח.' : '';
     const topicButtons = topics.map((t) => h('button', {
@@ -303,7 +304,11 @@
         item('list-music', 'הוספה לרשימה…', () => { closeTrackMenu(); H.addToPlaylist([track]); }),
         track.kind !== 'speech' ? item('radio', 'רדיו מהשיר הזה', () => H.radioFrom(track)) : null,
         track.path ? item('folder-open', 'להציג בתיקייה', () => { closeTrackMenu(); api.showInFolder(track.path); }) : null,
-        item('image', 'פרטים ותמונה מהרשת…', () => { closeTrackMenu(); H.openDetails(track); })),
+        item('image', 'פרטים ותמונה מהרשת…', () => { closeTrackMenu(); H.openDetails(track); }),
+        local ? item('file-pen-line', 'לכתוב את הפרטים לקובץ', () => H.writeTags([track]),
+          { title: 'השם, הזמר (בשם המאוחד) והתמונה, כדי שגם נגן MP3 או טלפון יציגו אותם' }) : null,
+        local ? item('usb', 'להעתיק לנגן MP3…', () => { closeTrackMenu(); H.openExport([track], H.trackTitle(track)); }) : null,
+        local && track.kind !== 'speech' ? item('bell-ring', 'צלצול לטלפון…', () => H.openRingtone(track)) : null),
       h('div', { class: 'menu-group' },
         h('div', { class: 'menu-label' }, 'הנושא של השיר'),
         h('div', { class: 'chip-grid', role: 'group', 'aria-label': 'נושא' }, topicButtons),

@@ -237,6 +237,7 @@
         h('div', { class: 'results-actions' },
           total ? h('button', { class: 'btn btn-primary', type: 'button', onclick: () => H.player.playList(current.tracks, 0, { shuffle: false }) }, icon('play'), 'נגן לפי הסדר') : null,
           total ? h('button', { class: 'btn btn-outline', type: 'button', onclick: () => H.player.playList(current.tracks, 0, { shuffle: true }) }, icon('shuffle'), 'ערבב') : null,
+          total ? h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => H.openExport(current.tracks, current.name) }, icon('usb'), 'לנגן MP3') : null,
           h('button', { class: 'btn btn-quiet', type: 'button', onclick: rename }, icon('pencil'), 'שינוי שם'),
           h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => { confirmDelete.hidden = false; } }, icon('trash-2'), 'מחיקה')),
         confirmDelete),
