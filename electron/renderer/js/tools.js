@@ -72,7 +72,7 @@
   // ------------------------------------------------------------ to an MP3 player
   let exporting = null;      // { dialog parts } while a copy runs
 
-  H.openExport = async function openExport(tracks, name) {
+  H.openExport = async function openExport(tracks, name, preset = {}) {
     const songs = (tracks || []).filter((t) => t && t.path && t.source !== 'youtube');
     if (!songs.length) {
       H.toast('אין כאן שירים מהמחשב להעתקה', { kind: 'bad' });
@@ -93,6 +93,7 @@
       opts.dest = path;
       for (const b of drives.querySelectorAll('.drive')) b.setAttribute('aria-checked', b.dataset.path === path ? 'true' : 'false');
       if (label && !drives.querySelector(`.drive[data-path="${CSS.escape(path)}"]`)) {
+        for (const note of drives.querySelectorAll('p')) note.remove();
         drives.appendChild(driveButton({ path, label, free: null }, true));
       }
       plan();
@@ -102,7 +103,8 @@
       onclick: () => pickDrive(dv.path),
     }, icon(dv.free == null ? 'folder-open' : 'usb', 'icon-sm'),
     h('span', { class: 'drive-name' }, dv.label),
-    h('span', { class: 'drive-free num' }, dv.free == null ? dv.path : `${mb(dv.free)} פנויים`));
+    dv.free == null ? h('span', { class: 'drive-free', dir: 'ltr', title: dv.path }, dv.path)
+      : h('span', { class: 'drive-free num' }, `${mb(dv.free)} פנויים`));
 
     async function loadDrives() {
       drives.replaceChildren(h('p', { class: 'muted dialog-wait' }, icon('loader-circle', 'icon-sm spin'), 'מחפש נגנים ודיסקים מחוברים…'));
@@ -112,7 +114,8 @@
       drives.replaceChildren();
       for (const dv of r.drives || []) drives.appendChild(driveButton(dv, dv.path === opts.dest));
       if (!(r.drives || []).length) drives.appendChild(h('p', { class: 'muted' }, 'לא נמצא נגן מחובר. חברו את הנגן או את הדיסק־און־קי, או בחרו תיקייה.'));
-      if (!opts.dest && (r.drives || []).length === 1) pickDrive(r.drives[0].path);
+      if (preset.dest && !opts.dest) pickDrive(preset.dest, preset.label || preset.dest);
+      else if (!opts.dest && (r.drives || []).length === 1) pickDrive(r.drives[0].path);
     }
 
     const plan = H.debounce(async () => {
@@ -131,7 +134,8 @@
       if (info.already) parts.push(`${H.songs(info.already)} כבר שם`);
       if (info.convert) parts.push(`${H.songs(info.convert)} יומרו ל-MP3`);
       if (info.left_out_count) parts.push(`${H.songs(info.left_out_count)} לא ייכנסו — אין מספיק מקום`);
-      summary.textContent = `${parts.join(' · ')}. יעד: ${info.dest}${info.dest.endsWith('\\') || info.dest.endsWith('/') ? '' : '\\'}${info.folder}`;
+      const sep = /[\\/]$/.test(info.dest) ? '' : (info.dest.includes('\\') ? '\\' : '/');
+      summary.replaceChildren(`${parts.join(' · ')}. לתיקייה: `, h('bdi', { dir: 'ltr' }, `${info.dest}${sep}${info.folder}`));
       go.disabled = !fresh;
     }, 250);
 
@@ -206,6 +210,7 @@
     const done = h('div', { class: 'tool-actions' },
       r && r.folder ? h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => api.openFolder(r.folder) }, icon('folder-open', 'icon-sm'), 'לפתוח את התיקייה') : null,
       h('button', { class: 'btn btn-primary', type: 'button', onclick: () => d.el.close() }, 'סיום'));
+    for (const note of d.foot.querySelectorAll('.tool-foot-note')) note.textContent = '';
     if (stop) stop.replaceWith(done); else d.foot.appendChild(done);
   });
 
@@ -254,7 +259,7 @@
     });
     d.el.addEventListener('close', () => { audio.pause(); audio.src = ''; });
 
-    const result = h('p', { class: 'tool-summary', 'aria-live': 'polite' }, `נשמר בתיקייה: ${info.folder}`);
+    const result = h('p', { class: 'tool-summary', 'aria-live': 'polite' }, 'יישמר בתיקייה: ', h('bdi', { dir: 'ltr' }, info.folder));
     const make = h('button', { class: 'btn btn-primary', type: 'button' }, icon('scissors', 'icon-sm'), 'ליצור צלצול');
     make.addEventListener('click', async () => {
       make.disabled = true;

@@ -1553,3 +1553,6 @@ body.at-rest .app { visibility: hidden; }
 .drive[aria-checked="true"] { border-color: var(--tekhelet); background: var(--tekhelet-soft); box-shadow: 0 0 0 1px var(--tekhelet) inset; }
 .drive-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .drive-free { font-size: var(--fs-sm); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.tool-dialog .dialog-foot { flex-wrap: wrap; }
+.tool-dialog .dialog-foot .tool-actions { flex: none; flex-wrap: nowrap; margin-inline-start: auto; }
+.tool-dialog .dialog-foot > .btn { margin-inline-start: auto; }

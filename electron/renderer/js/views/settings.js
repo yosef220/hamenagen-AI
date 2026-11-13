@@ -146,15 +146,17 @@
       render({ focus: 'artists' });
     } }, 'להסיר') : null;
     return row('רשימת זמרים משלכם',
-      'קובץ שבכל שורה בו השם שיוצג ואחריו כתיבים נוספים של אותו זמר, מופרדים בפסיק (למשל: „ישי ריבו,Ishay Ribo,ישי ריבוא”). אפשר גם JSON. הרשימה משלימה את זו של המנגן, וכשהיא קובעת שם אחר — היא קובעת.',
+      'קובץ שבכל שורה בו השם שיוצג ואחריו כתיבים נוספים של אותו זמר, מופרדים בפסיק (למשל: ישי ריבו, Ishay Ribo, Ishai Ribo). אפשר גם JSON. הרשימה משלימה את זו של המנגן, וכשהיא קובעת שם אחר — היא קובעת.',
       h('div', { class: 'set-buttons' }, pick, clear), { wide: line });
   }
 
   // 1.5: the corrections into the files themselves, for MP3 players and phones.
   let tagsRunning = false;
   let tagsLine = null;
+  let tagsButton = null;
+  let tagsLast = '';
   function tagsRow() {
-    tagsLine = h('div', { class: 'set-help' }, tagsRunning ? 'כותב…' : '');
+    tagsLine = h('div', { class: 'set-help' }, tagsRunning ? 'כותב…' : tagsLast);
     const button = h('button', { class: 'btn btn-outline btn-sm', type: 'button', disabled: tagsRunning, onclick: async () => {
       const r = await api.writeAllTags().catch((err) => ({ started: false, reason: err.message }));
       if (r.started) {
@@ -165,6 +167,7 @@
         tagsLine.textContent = r.reason === 'already running' ? 'כבר כותב.' : `לא התחיל: ${r.reason || ''}`;
       }
     } }, icon('file-pen-line', 'icon-sm'), 'לכתוב לכל הקבצים');
+    tagsButton = button;
     return row('לכתוב את התיקונים לקבצים',
       'השם המאוחד של הזמר, שם השיר שתוקן ותמונה (לקבצים שאין להם) — לתוך הקבצים עצמם, כדי שגם נגן MP3, טלפון או תוכנה אחרת יציגו אותם. רק מה ששונה נכתב. קבצים של MP3, M4A, FLAC, OGG ו-WMA.',
       button, { wide: tagsLine });
@@ -178,9 +181,10 @@
     const text = r && r.error ? `הכתיבה נכשלה: ${r.error}`
       : `הסתיים: נכתבו ${H.songs((r && r.written) || 0)}${r && r.unchanged ? ` · ב-${H.songs(r.unchanged)} הפרטים כבר היו נכונים` : ''}${
         r && r.failed_count ? ` · ${H.songs(r.failed_count)} לא נכתבו (קבצים מוגנים או פגומים)` : ''}`;
+    tagsLast = text;
     if (tagsLine) tagsLine.textContent = text;
+    if (tagsButton) tagsButton.disabled = false;
     H.toast(text, { icon: 'file-pen-line' });
-    if (!root.hidden) render({ focus: 'artists' });
   });
 
   // One singer, one name: spellings unified by themselves, and suggestions.
