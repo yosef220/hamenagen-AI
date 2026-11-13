@@ -347,7 +347,22 @@ jobs:
           }
           $took = [math]::Round($sw.Elapsed.TotalSeconds, 1)
           if (Test-Path (Join-Path $t 'apply.log')) { Get-Content (Join-Path $t 'apply.log') }
-          if (-not $result) { throw "no result after $took s: the swap never finished" }
+          if (Test-Path (Join-Path $work 'app.log')) { "--- app.log:"; Get-Content (Join-Path $work 'app.log') }
+          if (-not $result) {
+            "--- what is in data\update:"; Get-ChildItem $work -Force | Format-Table Name, Length
+            foreach ($f in 'app.log', 'apply.log') {
+              $fp = Join-Path $work $f
+              if (Test-Path $fp) { "--- ${f}:"; Get-Content $fp }
+            }
+            $core = Join-Path $data 'logs\core.log'
+            if (Test-Path $core) { "--- core.log (end):"; Get-Content $core -Tail 30 }
+            "--- running from the program folder:"
+            Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($inst) } |
+              Format-Table ProcessId, Name, CommandLine -AutoSize | Out-String -Width 400
+            "--- powershell processes:"
+            Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Format-Table ProcessId, CommandLine -AutoSize | Out-String -Width 400
+            throw "no result after $took s: the swap never finished"
+          }
           if (-not $result.ok) { throw "the swap failed after $took s: $($result.error)" }
           if (-not (Test-Path (Join-Path $inst 'resources\backend\UPDATED.txt'))) { throw "the new part is not in place" }
           if ($took -gt 40) { throw "the swap took $took s (the app or its core did not close)" }

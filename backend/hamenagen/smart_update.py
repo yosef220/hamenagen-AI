@@ -299,7 +299,8 @@ class SmartUpdater:
                 data["log"] = self._log_tail()
         for leftover in ("staging", "backup", "parts"):
             shutil.rmtree(self.work / leftover, ignore_errors=True)
-        for name in ("result.json", "plan.json", "parts.json", "apply.ps1", "apply.log"):
+        # The logs stay until the next update, for whoever asks what happened.
+        for name in ("result.json", "plan.json", "parts.json", "apply.ps1"):
             try:
                 os.remove(self.work / name)
             except OSError:

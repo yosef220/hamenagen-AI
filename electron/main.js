@@ -373,13 +373,28 @@ ipcMain.handle('app:openExternal', async (_evt, url) => {
 // a plan in data/update. A small PowerShell script waits for the app to exit,
 // swaps the parts (putting the old ones back if anything fails) and starts
 // the app again; the outcome waits in data/update/result.json.
+// Every step of the smart update, to data/update/app.log (the script adds
+// its own apply.log): when an update does not finish, these say where.
+function updateLog(text) {
+  try {
+    const dir = path.join(DATA_DIR, 'update');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'app.log'), `${new Date().toISOString()} ${text}\n`);
+  } catch { /* best effort */ }
+}
+
 async function applyUpdatePlan(planPath) {
+  for (const f of ['app.log', 'apply.log']) {
+    try { fs.rmSync(path.join(DATA_DIR, 'update', f), { force: true }); } catch { /* ignore */ }
+  }
+  updateLog(`apply requested: ${planPath}`);
   if (process.platform !== 'win32' || !app.isPackaged) {
     return { ok: false, message: 'העדכון החכם פועל רק בתוכנה עצמה ב-Windows.' };
   }
   const work = path.join(DATA_DIR, 'update');
   const plan = typeof planPath === 'string' ? path.resolve(planPath) : '';
   if (!plan || path.dirname(plan) !== path.resolve(work) || !fs.existsSync(plan)) {
+    updateLog(`no plan: ${plan} (work ${path.resolve(work)})`);
     return { ok: false, message: 'אין עדכון מוכן.' };
   }
   const script = path.join(work, 'apply.ps1');
@@ -392,19 +407,24 @@ async function applyUpdatePlan(planPath) {
   // the program's folder, and in 1.4.0 it outlived the window (its kill was
   // timed after the app had already quit), so the swap waited and rolled back.
   await bridge.stopAndWait(2000);
+  updateLog('core stopped');
   try {
     const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
     const child = spawn(powershell, [
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
       '-File', script, '-Plan', plan, '-WaitPid', String(process.pid), '-Relaunch', process.execPath,
     ], { detached: true, stdio: 'ignore', windowsHide: true });
+    child.on('error', (err) => updateLog(`powershell error: ${err && err.message}`));
     child.unref();
+    updateLog(`powershell started: pid ${child.pid} (${powershell})`);
   } catch (err) {
+    updateLog(`powershell did not start: ${err && err.message}`);
     bridge.start();
     return { ok: false, message: String(err && err.message ? err.message : err) };
   }
   for (const w of BrowserWindow.getAllWindows()) w.destroy();
-  setTimeout(() => app.exit(0), 150);
+  // A moment for the script to start before this process (its parent) goes.
+  setTimeout(() => { updateLog('exiting'); app.exit(0); }, 700);
   return { ok: true };
 }
 
@@ -417,7 +437,11 @@ function maybeTestApply() {
   if (!TEST_APPLY_PLAN) return;
   const result = path.join(path.dirname(TEST_APPLY_PLAN), 'result.json');
   if (fs.existsSync(TEST_APPLY_PLAN) && !fs.existsSync(result)) {
-    setTimeout(() => { applyUpdatePlan(TEST_APPLY_PLAN); }, 3000);
+    updateLog('test: applying the prepared plan in 3 s');
+    setTimeout(() => {
+      applyUpdatePlan(TEST_APPLY_PLAN).then((r) => updateLog(`test: ${JSON.stringify(r)}`))
+        .catch((err) => updateLog(`test: failed ${err && err.stack}`));
+    }, 3000);
   }
 }
 
