@@ -216,12 +216,16 @@
   // name holds such a word is still found.
   const POLITE = /(^| )(בבקשה|לי|את|השיר|המוזיקה|מוזיקה|קצת|עוד)(?= |$)/g;
   const COMMANDS = [
-    ['next', ['הבא', 'שיר הבא', 'לשיר הבא', 'תעביר', 'תעביר הלאה', 'הלאה', 'דלג', 'תדלג', 'next']],
-    ['prev', ['הקודם', 'שיר קודם', 'לשיר הקודם', 'תחזור', 'אחורה', 'שוב']],
-    ['pause', ['עצור', 'תעצור', 'הפסק', 'תפסיק', 'השהה', 'stop', 'pause']],
-    ['play', ['המשך', 'תמשיך', 'נגן', 'תנגן', 'play']],
-    ['louder', ['תגביר', 'הגבר', 'יותר חזק', 'חזק יותר', 'תגביר את הווליום']],
-    ['quieter', ['תנמיך', 'הנמך', 'יותר חלש', 'חלש יותר', 'יותר בשקט', 'תנמיך את הווליום']],
+    ['next', ['הבא', 'שיר הבא', 'לשיר הבא', 'לבא', 'תעביר', 'תעביר הלאה', 'הלאה', 'דלג', 'תדלג', 'next',
+      'שיר אחר', 'משהו אחר', 'תחליף', 'תחליף שיר', 'החלף', 'החלף שיר', 'הבא בתור']],
+    ['prev', ['הקודם', 'שיר קודם', 'לשיר הקודם', 'לקודם', 'תחזור', 'אחורה', 'שוב', 'אחד אחורה', 'שיר אחורה']],
+    ['pause', ['עצור', 'תעצור', 'הפסק', 'תפסיק', 'השהה', 'stop', 'pause', 'תשתיק', 'השתק', 'די', 'מספיק', 'שקט',
+      'תעצור הכל', 'לעצור', 'להפסיק']],
+    ['play', ['המשך', 'תמשיך', 'נגן', 'תנגן', 'play', 'תמשיך לנגן', 'להמשיך', 'תחזיר המוזיקה']],
+    ['louder', ['תגביר', 'הגבר', 'להגביר', 'יותר חזק', 'חזק יותר', 'תגביר הווליום', 'תגביר העוצמה', 'תרים',
+      'תרים הווליום', 'תרים העוצמה', 'יותר בקול', 'יותר רועש', 'חזק', 'תגביר טיפה']],
+    ['quieter', ['תנמיך', 'הנמך', 'להנמיך', 'יותר חלש', 'חלש יותר', 'יותר בשקט', 'תנמיך הווליום', 'תנמיך העוצמה',
+      'תוריד הווליום', 'תוריד העוצמה', 'תוריד הקול', 'חלש', 'תנמיך טיפה']],
     ['shuffle', ['ערבב', 'תערבב', 'בערבוב']],
     ['radio', ['רדיו', 'רדיו המנגן', 'תפעיל רדיו', 'תפעיל את הרדיו']],
     ['radio-song', ['רדיו מהשיר הזה', 'עוד שירים כאלה', 'עוד כאלה', 'שירים דומים']],
@@ -231,6 +235,28 @@
     .replace(POLITE, ' ').replace(/\s+/g, ' ').trim();
   const LOOKUP = new Map();
   for (const [name, phrases] of COMMANDS) for (const ph of phrases) LOOKUP.set(clean(ph) || ph, name);
+
+  // People say the same command in many ways: "תעבור לשיר הבא", "אפשר את הבא?",
+  // "תדלג על השיר הזה", "תעשה יותר חזק", "תחזור לשיר הקודם". Words around the
+  // command are taken off before looking it up; what is left must be a command.
+  const LEAD = new Set(['אפשר', 'תוכל', 'תוכלי', 'בוא', 'בואו', 'נו', 'יאללה', 'רגע', 'היי', 'אולי', 'תעשה', 'עשה',
+    'תעשי', 'תן', 'תני', 'אני', 'רוצה', 'צריך', 'בבקשה']);
+  const VERBS = new Set(['תעבור', 'עבור', 'לעבור', 'תעביר', 'העבר', 'להעביר', 'תלך', 'לך', 'ללכת', 'תדלג', 'דלג',
+    'לדלג', 'תשים', 'שים', 'לשים', 'תפעיל', 'הפעל', 'תחזיר', 'החזר', 'תחזור', 'לחזור', 'חזור', 'תקפוץ', 'קפוץ']);
+  const TRAIL = new Set(['רגע', 'לרגע', 'הזה', 'הזאת', 'עכשיו', 'כבר', 'על', 'אחד', 'שנייה', 'בבקשה', 'תודה', 'ממנו',
+    'הלאה']);
+  function reduce(key) {
+    let w = key.split(' ').filter(Boolean);
+    let changed = true;
+    while (changed && w.length > 1) {
+      changed = false;
+      if (LEAD.has(w[0])) { w = w.slice(1); changed = true; }
+      if (w.length > 1 && TRAIL.has(w[w.length - 1])) { w = w.slice(0, -1); changed = true; }
+    }
+    // "תעביר לשיר הבא", "תדלג על הזה": the verb goes when a command follows it.
+    if (w.length > 1 && VERBS.has(w[0]) && LOOKUP.has(w.slice(1).join(' '))) w = w.slice(1);
+    return w.join(' ');
+  }
 
   // "תכבה בעוד חצי שעה", "טיימר שינה עשרים דקות", "תכבה בסוף השיר", "בטל את הטיימר".
   const NUMBERS = { 'חמש': 5, 'עשר': 10, 'רבע שעה': 15, 'עשרים': 20, 'חצי שעה': 30, 'ארבעים': 40,
@@ -249,11 +275,13 @@
 
   // Heard without a click (handsfree.js), a word that could be part of a song
   // ("שוב", "נגן", "רדיו", "מה זה") is not taken as a command.
-  const LOOSE = new Set(['שוב', 'אחורה', 'נגן', 'תנגן', 'play', 'רדיו', 'מה זה', 'בערבוב', 'עוד כאלה', 'next', 'stop', 'pause']);
+  const LOOSE = new Set(['שוב', 'אחורה', 'נגן', 'תנגן', 'play', 'רדיו', 'מה זה', 'בערבוב', 'כאלה', 'next', 'stop',
+    'pause', 'די', 'מספיק', 'שקט', 'חזק', 'חלש', 'הלאה', 'החלף', 'תחזור']);
   V.commandFor = (text, opts = {}) => {
     const key = clean(text);
     if (opts.strict && (LOOSE.has(key) || LOOSE.has(String(text || '').trim()))) return null;
-    return LOOKUP.get(key) || LOOKUP.get(String(text || '').trim()) || (V.sleepFor(text) !== null ? 'sleep' : null);
+    return LOOKUP.get(key) || LOOKUP.get(String(text || '').trim()) || LOOKUP.get(reduce(key))
+      || (V.sleepFor(text) !== null ? 'sleep' : null);
   };
 
   V.command = function command(text) {

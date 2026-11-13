@@ -1,7 +1,7 @@
 {
   "name": "hamenagen",
   "productName": "המנגן",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "המנגן — נגן מוזיקה קהילתי חכם: מבין בקשות בעברית, מכיר את הלוח העברי ועובד בלי אינטרנט",
   "main": "electron/main.js",
   "hamenagenEdition": "portable",

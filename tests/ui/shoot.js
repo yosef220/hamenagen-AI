@@ -496,6 +496,10 @@ async function run() {
         const out = {
           next: F.handle('השיר הבא'),
           louder: F.handle('תגביר בבקשה'),
+          // 1.5.2: said in other words.
+          natural: ['תעבור לשיר הבא', 'תדלג על השיר הזה', 'תעשה יותר חזק', 'תוריד את הווליום', 'תחזור לשיר הקודם']
+            .map((t) => F.handle(t)),
+          welcome: F.handle('ברוך הבא'),           // a song's name, not "next"
           song: F.handle('שוב'),                  // could be a word in a song: ignored
           talk: F.handle('אני הולך לקנות לחם'),   // people talking: ignored
           stayed: H.currentView() === view,
@@ -508,6 +512,7 @@ async function run() {
         return out;
       });
       if (free.next !== 'command' || free.louder !== 'command' || free.song !== null || free.talk !== null
+        || free.natural.some((x) => x !== 'command') || free.welcome !== null
         || !free.stayed || free.wake !== 'wake' || free.request !== 'request' || !free.asked) {
         errors.push(`hands-free: ${JSON.stringify(free)}`);
       }
