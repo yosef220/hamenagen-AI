@@ -96,6 +96,12 @@
       let sum = 0;
       for (let i = 0; i < x.length; i += 1) sum += x[i] * x[i];
       const db = 10 * Math.log10(sum / x.length + 1e-12);
+      if (attention) overlayLevel(Math.max(0, Math.min(1, (db + 60) / 45)));
+      // The player's own chime or voice is not someone speaking.
+      if (performance.now() < mutedUntil || (window.speechSynthesis && speechSynthesis.speaking)) {
+        take = null; loudFor = 0; pre.length = 0;
+        return;
+      }
       // The room's level: follows quiet stretches quickly, loud ones slowly.
       if (floor === null) floor = db;
       else if (db < floor) floor = floor * 0.7 + db * 0.3;
@@ -105,7 +111,10 @@
         pre.push(x);
         while (pre.length * frameMs > PREROLL_MS) pre.shift();
         loudFor = loud ? loudFor + frameMs : 0;
-        if (loudFor >= START_MS) { take = pre.splice(0); takeMs = take.length * frameMs; quietFor = 0; }
+        if (loudFor >= START_MS) {
+          take = pre.splice(0); takeMs = take.length * frameMs; quietFor = 0;
+          if (attention) attentionHearing();
+        }
         return;
       }
       take.push(x);
@@ -122,6 +131,7 @@
   }
 
   function stop() {
+    if (attention) endAttention();
     if (!rig) return;
     rig.tap.onaudioprocess = null;
     for (const t of rig.stream.getTracks()) t.stop();
@@ -150,10 +160,138 @@
     thinking = true;
     try {
       const res = await api.voiceRecognize(toBase64(parts), RATE);
-      if (res && res.ok && res.request) F.handle(res.request);
-    } catch { /* the next sentence */ }
+      const text = res && res.ok ? (res.request || '') : '';
+      if (attention) F.answer(text);
+      else if (text) F.handle(text);
+    } catch {
+      if (attention) F.answer('');
+    }
     thinking = false;
   }
+
+  // ------------------------------------------------------------ "המנגן…": attention
+  // Saying the player's name opens a full-screen "I'm listening", lowers the
+  // music, and takes the next sentence as a request (no name needed). Nothing
+  // like it happens because someone speaks near the computer: only the name
+  // or a command does anything. Not understood: "לא הבנתי, אפשר לומר שוב" (twice).
+  const ATTEND_MS = 7000;
+  let attention = null;           // { timer, tries }
+  let mutedUntil = 0;
+
+  const overlay = h('div', { class: 'listen-overlay', hidden: true, role: 'dialog', 'aria-modal': 'false', 'aria-live': 'polite' },
+    h('div', { class: 'lo-ring' }, icon('mic')),
+    h('div', { class: 'lo-title' }),
+    h('div', { class: 'lo-text' }),
+    h('div', { class: 'lo-hint' }));
+  overlay.addEventListener('click', () => endAttention());
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !overlay.hidden) endAttention(); });
+  document.addEventListener('DOMContentLoaded', () => document.body.appendChild(overlay));
+  if (document.body) document.body.appendChild(overlay);
+  const $o = (sel) => overlay.querySelector(sel);
+  let flashTimer = null;
+
+  function showOverlay(mode, title, text = '', hint = '') {
+    clearTimeout(flashTimer);
+    overlay.dataset.mode = mode;
+    $o('.lo-title').textContent = title;
+    $o('.lo-text').textContent = text;
+    $o('.lo-hint').textContent = hint;
+    H.setIcon($o('.lo-ring'), mode === 'done' ? 'check' : mode === 'puzzled' ? 'circle-alert' : 'mic');
+    overlay.hidden = false;
+  }
+  function hideOverlay(after = 0) {
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { overlay.hidden = true; overlay.style.removeProperty('--level'); }, after);
+  }
+  function overlayLevel(v) { overlay.style.setProperty('--level', v.toFixed(2)); }
+
+  // A short chime (rising: listening; falling: not understood), kept out of the microphone.
+  function chime(up) {
+    try {
+      const ac = new AudioContext();
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, ac.currentTime);
+      g.connect(ac.destination);
+      [[up ? 660 : 620, 0], [up ? 880 : 465, 0.14]].forEach(([f, t]) => {
+        const o = ac.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = f;
+        o.connect(g);
+        o.start(ac.currentTime + t);
+        o.stop(ac.currentTime + t + 0.13);
+      });
+      g.gain.exponentialRampToValueAtTime(0.18, ac.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.3);
+      setTimeout(() => ac.close().catch(() => {}), 600);
+    } catch { /* no sound: the screen still says it */ }
+    mutedUntil = performance.now() + 450;
+  }
+
+  // Said aloud too, when Windows has a Hebrew voice.
+  function speak(text) {
+    try {
+      const voice = speechSynthesis.getVoices().find((v) => /^he|^iw/i.test(v.lang));
+      if (!voice) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.voice = voice;
+      u.lang = voice.lang;
+      speechSynthesis.speak(u);
+      mutedUntil = performance.now() + 400 + text.length * 90;
+    } catch { /* the screen says it */ }
+  }
+
+  function startAttention() {
+    if (!attention) H.player.duck(true);
+    clearTimeout(attention && attention.timer);
+    attention = { tries: attention ? attention.tries : 0, timer: null };
+    showOverlay('listening', 'כן? אני מקשיב', '', 'למשל: „תשמיע שירי שבת”, „תעבור לשיר הבא”, „תנמיך”');
+    chime(true);
+    armAttention();
+  }
+  function armAttention() {
+    clearTimeout(attention.timer);
+    attention.timer = setTimeout(() => F.answer(''), ATTEND_MS);
+  }
+  function attentionHearing() {
+    clearTimeout(attention.timer);
+    attention.timer = setTimeout(() => F.answer(''), ATTEND_MS + 4000);   // a long sentence is still being said
+    $o('.lo-title').textContent = 'שומע…';
+  }
+  function endAttention(after = 0) {
+    if (attention) {
+      clearTimeout(attention.timer);
+      attention = null;
+      H.player.duck(false);
+    }
+    hideOverlay(after);
+  }
+
+  /** The sentence said after the name (or nothing, when nothing was understood). */
+  F.answer = function answer(text) {
+    if (!attention) return null;
+    const rest = String(text || '').trim().replace(WAKE, '').trim();
+    api.emit('handsfree-heard', { text: rest, attention: true });
+    if (rest.replace(/[^א-תa-z0-9]/gi, '').length < 2) {
+      attention.tries += 1;
+      if (attention.tries > 2) {
+        showOverlay('puzzled', 'לא הצלחתי להבין', '', 'אפשר לנסות שוב: „המנגן…”');
+        endAttention(1800);
+        return 'gave-up';
+      }
+      showOverlay('puzzled', 'לא הבנתי. אפשר לומר שוב?', '', 'אני מקשיב…');
+      chime(false);
+      speak('לא הבנתי, אפשר לומר שוב?');
+      armAttention();
+      return 'again';
+    }
+    showOverlay('done', 'הבנתי', `„${rest}”`);
+    endAttention(1400);
+    if (H.voice.command(rest)) return 'command';
+    api.emit('voice-heard', { text: rest });
+    H.ask(rest, { spoken: true });
+    return 'request';
+  };
+  F.attending = () => !!attention;
 
   // ------------------------------------------------------------ what was said
   /** Act on a sentence heard without a click. Returns what was done. */
@@ -163,14 +301,20 @@
     const wake = t.match(WAKE);
     if (wake) {
       const rest = t.slice(wake[0].length).trim();
-      if (!rest) { H.toast('כן? אפשר לבקש, למשל: „המנגן, תשמיע שירי שבת”', { icon: 'mic' }); return 'wake'; }
+      if (!rest) { startAttention(); return 'wake'; }
+      showOverlay('done', 'הבנתי', `„${rest}”`);
+      hideOverlay(1400);
       if (H.voice.command(rest)) return 'command';
       api.emit('voice-heard', { text: rest });
       H.ask(rest, { spoken: true });
       return 'request';
     }
     // Without the name, only commands that cannot be a word in a song.
-    if (H.voice.commandFor(t, { strict: true }) && H.voice.command(t)) return 'command';
+    if (H.voice.commandFor(t, { strict: true }) && H.voice.command(t)) {
+      showOverlay('done', 'הבנתי', `„${t}”`);
+      hideOverlay(1200);
+      return 'command';
+    }
     return null;
   };
 

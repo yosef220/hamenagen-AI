@@ -505,15 +505,29 @@ async function run() {
           stayed: H.currentView() === view,
           wake: F.handle('המנגן'),
         };
-        out.request = F.handle('המנגן תשמיע שירי שבת');
-        await new Promise((r) => setTimeout(r, 1500));
-        out.asked = H.currentView() === 'results' && /שבת/.test(document.querySelector('.results-title')?.textContent || '');
-        H.player.toggle(false);
+        // The name alone: listening on the whole screen, the music lower.
+        out.attending = F.attending() && !document.querySelector('.listen-overlay').hidden;
+        out.again = F.answer('');                   // nothing understood: "say it again"
+        out.puzzled = document.querySelector('.listen-overlay').dataset.mode === 'puzzled';
         return out;
       });
+      await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+      await page.screenshot({ path: path.join(out, `35-listening-again${suffix}.png`) });
+      Object.assign(free, await page.evaluate(async () => {
+        const F = H.handsFree;
+        const out = { request: F.answer('תשמיע שירי שבת'), stillAttending: F.attending() };
+        await new Promise((r) => setTimeout(r, 1800));
+        out.overlayGone = document.querySelector('.listen-overlay').hidden;
+        out.asked = H.currentView() === 'results' && /שבת/.test(document.querySelector('.results-title')?.textContent || '');
+        out.direct = F.handle('המנגן תשמיע שירי שבת');
+        await new Promise((r) => setTimeout(r, 1600));
+        H.player.toggle(false);
+        return out;
+      }));
       if (free.next !== 'command' || free.louder !== 'command' || free.song !== null || free.talk !== null
         || free.natural.some((x) => x !== 'command') || free.welcome !== null
-        || !free.stayed || free.wake !== 'wake' || free.request !== 'request' || !free.asked) {
+        || !free.stayed || free.wake !== 'wake' || !free.attending || free.again !== 'again' || !free.puzzled
+        || free.request !== 'request' || free.stillAttending || !free.overlayGone || !free.asked || free.direct !== 'request') {
         errors.push(`hands-free: ${JSON.stringify(free)}`);
       }
 
