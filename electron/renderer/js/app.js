@@ -134,7 +134,32 @@
     try { st = await api.classifierStatus(); } catch { return; }
     if (!st.enabled || st.loaded) return;
     modelAsked = true;
-    api.installModel().catch(() => {});
+    const choice = (H.settings && H.settings.model_download) || 'ask';
+    // In the offline editions the model is already on the computer: loading reads it.
+    if (st.bundled || st.cached || choice === 'yes') { api.installModel().catch(() => {}); return; }
+    if (choice === 'no') return;
+    offerModel();
+  }
+
+  // 1.5.1: nothing big is downloaded without asking.
+  function offerModel() {
+    if (H.$('#model-offer')) return;
+    const close = () => bar.remove();
+    const answer = async (value) => {
+      close();
+      try { H.settings = await api.updateSettings({ model_download: value }); } catch { /* kept for this run */ }
+      if (value === 'yes') api.installModel().catch(() => {});
+    };
+    const bar = h('div', { class: 'update-bar', id: 'model-offer', role: 'region', 'aria-label': 'מודל הסיווג' },
+      icon('cpu'),
+      h('span', { class: 'model-offer-text' },
+        'כדי לזהות נושא של שיר גם כשאין לו מילת מפתח בשם, המנגן יכול להוריד מודל שפה קטן שעובד במחשב (כ-450MB, פעם אחת). ',
+        'בלי המודל הסיווג ממשיך לפי המילון ואינדקס השירים.'),
+      h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => answer('yes') }, 'להוריד'),
+      h('button', { class: 'btn btn-quiet', type: 'button', onclick: close }, 'לא עכשיו'),
+      h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => answer('no') }, 'לא לשאול שוב'));
+    const main = H.$('#main');
+    main.insertBefore(bar, main.firstChild);
   }
 
   api.on('model_install', (msg) => {

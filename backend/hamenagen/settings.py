@@ -122,6 +122,12 @@ class Settings:
     autoplay_after_download: bool = True
     # Folders to scan. Empty means "the whole computer" (spec §9).
     scan_roots: list[str] = field(default_factory=list)
+    # Songs that live only in the cloud (OneDrive, Dropbox…): "skip" takes
+    # them by their name without downloading; "read" downloads and reads them.
+    cloud_files: str = "skip"
+    # The language model for topics (~450MB) in the editions without it:
+    # "ask" before downloading it, "yes" (the listener agreed), "no".
+    model_download: str = "ask"
     # Where songs downloaded from the network are saved. Empty = Music\Hamenagen.
     downloads_dir: str = ""
     # Enable the optional local embedding classifier layer.
@@ -204,6 +210,10 @@ class Settings:
         if self.text_size not in TEXT_SIZES:
             self.text_size = "normal"
         self.scan_roots = [str(r) for r in (self.scan_roots or []) if str(r).strip()]
+        if self.cloud_files not in ("skip", "read"):
+            self.cloud_files = "skip"
+        if self.model_download not in ("ask", "yes", "no"):
+            self.model_download = "ask"
         self.isolated_folders = [str(r) for r in (self.isolated_folders or []) if str(r).strip()]
         stations = []
         for s in self.custom_stations or []:

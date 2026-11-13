@@ -57,6 +57,7 @@ async function launch(dataDir, theme) {
     scan_roots: [path.resolve(music)],
     theme,
     update_manifest_url: '',
+    model_download: 'no',
   };
   fs.mkdirSync(dataDir, { recursive: true });
   const settingsFile = path.join(dataDir, 'settings.json');
@@ -145,6 +146,14 @@ async function run() {
       if (!/שבת/.test(understood)) errors.push(`request understood as: ${understood}`);
       await page.waitForTimeout(800);
       await shot(page, `02-results${suffix}`);
+      // 1.5.1: more of the topic from YouTube, only when asked.
+      await page.locator('#view-results .results-more button', { hasText: 'מיוטיוב' }).click()
+        .catch(() => errors.push('no "more from YouTube" for a topic'));
+      await page.waitForSelector('#view-results .online-item', { timeout: 15000 })
+        .catch(() => errors.push('the topic search on YouTube showed nothing'));
+      await page.evaluate(() => document.querySelector('#view-results .results-more')?.scrollIntoView({ block: 'start' }));
+      await shot(page, `33-topic-youtube${suffix}`);
+      await page.evaluate(() => document.querySelector('#view-results')?.scrollTo?.(0, 0));
 
       await page.evaluate(() => H.go('library'));
       await page.waitForSelector('#view-library .track');

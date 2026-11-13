@@ -196,6 +196,14 @@ class VocalDetector:
             "error": self.load_error,
         }
 
+    def unload(self) -> None:
+        """Let the model go when the listening job is over (1.5.1)."""
+        if self._lock.acquire(blocking=False):
+            try:
+                self._session = None
+            finally:
+                self._lock.release()
+
     def load(self) -> bool:
         if self._session is not None:
             return True

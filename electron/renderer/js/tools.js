@@ -55,7 +55,10 @@
     try {
       const r = await api.writeTags(list.map((t) => t.id), true);
       if (r.failed_count) {
-        const why = r.failed[0] && r.failed[0].reason === 'read-only' ? 'הקובץ מוגן מפני כתיבה' : (r.failed[0] && r.failed[0].reason) || '';
+        const reason = r.failed[0] && r.failed[0].reason;
+        const why = reason === 'read-only' ? 'הקובץ מוגן מפני כתיבה'
+          : reason === 'cloud' ? 'הקובץ נמצא רק בענן (OneDrive/Dropbox). נגנו אותו פעם אחת, ואז אפשר לכתוב'
+            : reason || '';
         H.toast(`לא הצלחתי לכתוב ל-${H.songs(r.failed_count)}${why ? `: ${why}` : ''}`, { kind: 'bad' });
       } else if (!r.written && r.unchanged) {
         H.toast(list.length === 1 ? 'הפרטים בקובץ כבר נכונים' : 'הפרטים בקבצים כבר נכונים', { icon: 'file-pen-line' });

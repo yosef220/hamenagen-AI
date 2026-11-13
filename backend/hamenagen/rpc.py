@@ -21,8 +21,10 @@ and report through events. The window therefore never waits on the network.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -67,6 +69,18 @@ class RpcServer:
         self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="rpc")
         self._jobs: dict[str, bool] = {}
         self._jobs_lock = threading.Lock()
+
+    def _start_idle_watch(self) -> None:
+        """Every minute, let go of models not used for a while (1.5.1)."""
+        def loop():
+            while True:
+                time.sleep(float(os.environ.get("HAMENAGEN_IDLE_TICK") or 60))
+                try:
+                    self.service.release_idle_models()
+                except Exception:  # noqa: BLE001 - never stop the core for this
+                    pass
+
+        threading.Thread(target=loop, name="idle-models", daemon=True).start()
 
     def _write(self, obj: dict) -> None:
         line = json.dumps(obj, ensure_ascii=False) + "\n"
@@ -518,6 +532,7 @@ class RpcServer:
         """Answer requests until stdin closes. ``wait`` lets pending slow
         requests finish first (tests); the app just exits."""
         self._out = stdout
+        self._start_idle_watch()
         self._emit("ready", {"version": self.service.app_info()["version"]})
         for line in stdin:
             line = line.strip()

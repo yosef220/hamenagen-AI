@@ -97,6 +97,11 @@
         h('div', { style: { display: 'flex', gap: '8px' } }, allBtn, addBtn), { wide: list }),
       row('לסרוק עכשיו', `${stats ? `${H.songs(stats.tracks)} · ` : ''}${last}`,
         h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: () => H.rescan(true) }, icon('refresh-cw', 'icon-sm'), 'לסרוק')),
+      row('קבצים שנמצאים רק בענן',
+        `קבצים של OneDrive, Dropbox וכדומה שמסומנים „זמין באינטרנט בלבד”. המנגן לא מוריד אותם לבד: הם נכנסים לספרייה לפי שם הקובץ, ויורדים רק כשמנגנים אותם.${
+          overview && overview.cloud_files ? ` כרגע ${H.songs(overview.cloud_files)} כאלה.` : ''}`,
+        segmented([['skip', 'לפי השם, בלי להוריד'], ['read', 'להוריד ולקרוא']], s.cloud_files || 'skip',
+          async (v) => { if (await save({ cloud_files: v })) H.rescan(); }, 'קבצים בענן')),
       toggle('include_video', 'לכלול קובצי וידאו', 'קבצי MP4 ודומיהם יופיעו בספרייה ויתנגנו כשמע.', () => H.rescan()),
       toggle('hide_duplicates', 'להציג כל שיר פעם אחת',
         stats && stats.duplicates

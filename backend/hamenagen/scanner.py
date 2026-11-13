@@ -14,10 +14,12 @@ import hashlib
 import os
 import re
 import struct
+import threading
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import cloudfiles
 from .models import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, Track
 from .text_normalize import repair_hebrew
 
@@ -251,6 +253,25 @@ def _read_tags(path: Path) -> dict:
     return info
 
 
+# A file that does not answer (a cloud download that was cancelled, a network
+# drive that went away) is given this long, then the scan moves on.
+READ_TIMEOUT = 30.0
+
+
+def _read_tags_limited(path: Path, timeout: float = READ_TIMEOUT) -> dict:
+    """_read_tags, but a file that hangs is skipped (by its name) instead of
+    stopping the whole scan."""
+    box: dict = {}
+
+    def work():
+        box["tags"] = _read_tags(path)
+
+    t = threading.Thread(target=work, name="read-tags", daemon=True)
+    t.start()
+    t.join(timeout)
+    return box.get("tags", {}) if not t.is_alive() else {}
+
+
 def _image_ext(data: bytes) -> str:
     if data[:3] == b"\xff\xd8\xff":
         return "jpg"
@@ -302,7 +323,7 @@ def folder_picture(folder: str | Path, cache: dict | None = None) -> bytes | Non
         for entry in os.scandir(folder):
             name = entry.name.lower()
             stem, ext = os.path.splitext(name)
-            if ext in _IMAGE_EXTENSIONS and entry.is_file():
+            if ext in _IMAGE_EXTENSIONS and entry.is_file() and not cloudfiles.is_cloud_only(entry.stat()):
                 images[stem] = entry.path
         for wanted in _FOLDER_IMAGE_NAMES:
             match = images.get(wanted) or next(
@@ -352,7 +373,10 @@ def track_id_for(path: str | Path) -> str:
 
 
 def scan_file(path: str | Path, *, include_video: bool = False, stat: os.stat_result | None = None,
-              covers_dir: str | Path | None = None, folder_cache: dict | None = None) -> Track | None:
+              covers_dir: str | Path | None = None, folder_cache: dict | None = None,
+              read_contents: bool = True) -> Track | None:
+    """A Track for one file. ``read_contents=False``: only what the name
+    and the folder say (a file that lives in the cloud is not downloaded)."""
     p = Path(path)
     ext = p.suffix.lower()
     is_video = ext in VIDEO_EXTENSIONS
@@ -364,14 +388,14 @@ def scan_file(path: str | Path, *, include_video: bool = False, stat: os.stat_re
         return None
 
     abspath = str(p.resolve())
-    tags = _read_tags(p)
+    tags = _read_tags_limited(p) if read_contents else {}
     artist, title = _parse_filename(p.stem)
     tag_title = tags.get("title", "")
     if is_placeholder_title(tag_title) and title and not is_placeholder_title(title):
         tag_title = ""  # "Track 19" in the tag, a real name in the file name
 
     cover = ""
-    if covers_dir is not None:
+    if covers_dir is not None and read_contents:
         picture = tags.get("picture") or folder_picture(p.parent, folder_cache)
         cover = store_cover(picture, covers_dir) if picture else ""
 
