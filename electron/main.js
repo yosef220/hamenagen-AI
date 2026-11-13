@@ -11,8 +11,8 @@
  */
 
 const {
-  app, BrowserWindow, Menu, WebContentsView, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, screen,
-  session, shell,
+  app, BrowserWindow, Menu, WebContentsView, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, powerMonitor,
+  protocol, screen, session, shell,
 } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -283,6 +283,7 @@ function createWindow() {
   for (const evt of ['resize', 'move', 'maximize', 'unmaximize']) mainWindow.on(evt, debounce(saveBounds, 500));
   mainWindow.on('close', saveBounds);
   mainWindow.on('closed', () => { mainWindow = null; });
+  watchFront();
 
   // Links never navigate the app window; web pages open in the browser.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -640,6 +641,46 @@ ipcMain.handle('app:chooseFile', async (_evt, title, kind) => {
   });
   return res.canceled || !res.filePaths.length ? null : res.filePaths[0];
 });
+
+// --- 1.5.1: is the player in front? (hands-free listening) -------------------------------
+// In front: the window has the focus, not minimized. It stays "in front" when it
+// had the focus and the computer then went idle, locked or blanked the screen
+// (the screen saver takes the focus without the listener using anything else),
+// until someone works in another program. Hidden, minimized or behind another
+// program that is in use: not in front, and the microphone listens only on a click.
+let frontNow = false;
+let frontTimer = null;
+
+function computeFront() {
+  if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible() || mainWindow.isMinimized()) return false;
+  if (mainWindow.isFocused()) return true;
+  let idle = 'active';
+  try { idle = powerMonitor.getSystemIdleState(20); } catch { /* unknown: treat as in use */ }
+  return frontNow && (idle === 'idle' || idle === 'locked');
+}
+
+function updateFront() {
+  const next = computeFront();
+  if (next === frontNow) return;
+  frontNow = next;
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:front', { front: next });
+}
+
+function watchFront() {
+  for (const evt of ['focus', 'blur', 'minimize', 'restore', 'show', 'hide']) {
+    mainWindow.on(evt, () => setTimeout(updateFront, evt === 'blur' ? 300 : 0));
+  }
+  clearInterval(frontTimer);
+  frontTimer = setInterval(updateFront, 2000);
+  for (const evt of ['lock-screen', 'unlock-screen', 'suspend', 'resume']) {
+    powerMonitor.on(evt, () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:power', { event: evt });
+      updateFront();
+    });
+  }
+}
+
+ipcMain.handle('app:front', () => frontNow);
 
 ipcMain.on('player:state', (_evt, state) => {
   playerState = { playing: !!(state && state.playing), hasTrack: !!(state && state.hasTrack) };

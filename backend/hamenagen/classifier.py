@@ -178,6 +178,7 @@ class EmbeddingBackend:
         self.available = False
         self.load_error: str | None = None
         self.on_download: DownloadHook | None = None
+        self.last_used = 0.0
 
     # -- files -------------------------------------------------------------
     def _folder(self) -> Path | None:
@@ -223,7 +224,9 @@ class EmbeddingBackend:
                 self._session = session
                 self._tokenizer = tokenizer
                 self._inputs = {i.name for i in session.get_inputs()}
-                self._build_exemplars()
+                if self._matrix is None:          # kept when the model is let go
+                    self._build_exemplars()
+                self.last_used = time.monotonic()
                 self.available = True
                 self.load_error = None
                 return True
@@ -259,6 +262,21 @@ class EmbeddingBackend:
         self._matrix = self._embed(phrases) if phrases else None
         self._phrase_topic = owner
 
+    def unload_if_idle(self, idle: float) -> bool:
+        """Let the model go when it was not used for ``idle`` seconds (1.5.1).
+        It takes about 500MB of memory and is needed only for new songs; it is
+        loaded again, in a second or two, when one comes."""
+        if self._session is None or time.monotonic() - self.last_used < idle:
+            return False
+        if not self._lock.acquire(blocking=False):
+            return False
+        try:
+            self._session = None
+            self._tokenizer = None
+        finally:
+            self._lock.release()
+        return True
+
     def status(self) -> dict:
         """Report the embedding layer state without forcing a download."""
         return {
@@ -282,6 +300,7 @@ class EmbeddingBackend:
                 return {}
         if self._matrix is None or not text.strip():
             return {}
+        self.last_used = time.monotonic()
         np = self._np
         sims = self._matrix @ self._embed([text])[0]
         scores = np.full(len(self._topics), -1.0)

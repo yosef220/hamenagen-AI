@@ -77,6 +77,7 @@
       parts.push(H.trackList(res.tracks));
       // Found something, but maybe not the one: YouTube is a click away.
       if (searching) parts.push(laterOnline(query));
+      else if (topic && topic !== VOCAL) parts.push(laterOnline(topicQuery(topic), true));
     } else if (searching) {
       parts.push(H.emptyState(`„${query}” לא נמצא במחשב`,
         'אפשר להוריד מיוטיוב שיר מסוים, או לבחור שירים מכל הערוץ. כל הורדה נכנסת לספרייה ומסווגת מיד.'));
@@ -84,6 +85,7 @@
     } else {
       parts.push(H.emptyState(res.note || 'לא נמצאו שירים', null,
         h('button', { class: 'btn btn-outline', type: 'button', onclick: () => H.go('home') }, 'חזרה לבית')));
+      if (topic && topic !== VOCAL) parts.push(laterOnline(topicQuery(topic), true));
     }
     H.clear(root).append(...parts);
   }
@@ -173,10 +175,18 @@
   const LONG = 15 * 60; // a show or a medley evening, not a song
   const SHORT = 60;     // a teaser
 
-  /** Found songs on the computer, but maybe not the right one. */
-  function laterOnline(query) {
+  /** 1.5.1: songs of a topic from YouTube, like the topics on the computer. */
+  function topicQuery(topic) {
+    const label = (H.topicLabels && H.topicLabels[topic]) || topic;
+    return /^שירי |^ניגוני /.test(label) ? label : `שירי ${label}`;
+  }
+
+  /** Found songs on the computer, but maybe not the right one (or more of a topic).
+   * Nothing is searched until the listener asks. */
+  function laterOnline(query, more) {
     const slot = h('div', { class: 'results-more' });
-    const btn = h('button', { class: 'btn btn-quiet', type: 'button' }, icon('search'), `לא מה שחיפשת? לחפש את „${query}” ביוטיוב`);
+    const btn = h('button', { class: 'btn btn-quiet', type: 'button' }, icon('search'),
+      more ? `עוד „${query}” מיוטיוב` : `לא מה שחיפשת? לחפש את „${query}” ביוטיוב`);
     btn.addEventListener('click', () => slot.replaceChildren(onlinePanel(query)));
     slot.appendChild(btn);
     return slot;

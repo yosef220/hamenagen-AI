@@ -247,8 +247,14 @@
     return hit ? NUMBERS[hit] : null;
   };
 
-  V.commandFor = (text) => LOOKUP.get(clean(text)) || LOOKUP.get(String(text || '').trim())
-    || (V.sleepFor(text) !== null ? 'sleep' : null);
+  // Heard without a click (handsfree.js), a word that could be part of a song
+  // ("שוב", "נגן", "רדיו", "מה זה") is not taken as a command.
+  const LOOSE = new Set(['שוב', 'אחורה', 'נגן', 'תנגן', 'play', 'רדיו', 'מה זה', 'בערבוב', 'עוד כאלה', 'next', 'stop', 'pause']);
+  V.commandFor = (text, opts = {}) => {
+    const key = clean(text);
+    if (opts.strict && (LOOSE.has(key) || LOOSE.has(String(text || '').trim()))) return null;
+    return LOOKUP.get(key) || LOOKUP.get(String(text || '').trim()) || (V.sleepFor(text) !== null ? 'sleep' : null);
+  };
 
   V.command = function command(text) {
     const name = V.commandFor(text);

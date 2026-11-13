@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import math
 import threading
+import time
 from pathlib import Path
 
 MODEL_NAME = "zipformer2-66m-streaming-he"
@@ -173,6 +174,7 @@ class SpeechRecognizer:
         self.model_dirs = [Path(d) for d in model_dirs if d]
         self.load_error = ""
         self._lock = threading.Lock()
+        self.last_used = 0.0
         self._sessions = None
         self._tokens: list[str] = []
         self._config: dict = {}
@@ -217,11 +219,25 @@ class SpeechRecognizer:
             self._tokens = [tokens.get(i, "") for i in range(max(tokens) + 1)]
             self._config = config
             self._sessions = sess
+            self.last_used = time.monotonic()
             self.load_error = ""
             return True
         except Exception as exc:  # noqa: BLE001 - reported to the window
             self.load_error = f"המודל לזיהוי דיבור לא נטען: {exc}"
             return False
+
+    def unload_if_idle(self, idle: float) -> bool:
+        """Let the model go after ``idle`` seconds without speech (1.5.1);
+        the microphone loads it again while the listener starts speaking."""
+        if self._sessions is None or time.monotonic() - self.last_used < idle:
+            return False
+        if not self._lock.acquire(blocking=False):
+            return False
+        try:
+            self._sessions = None
+        finally:
+            self._lock.release()
+        return True
 
     def _initial_states(self, np) -> dict:
         out = {}
@@ -238,6 +254,7 @@ class SpeechRecognizer:
 
         if not self.load():
             raise RuntimeError(self.load_error)
+        self.last_used = time.monotonic()
         x = resample(samples, rate, np)[: int(MAX_SECONDS * SAMPLE_RATE)]
         # Silence after the speech, so the last words leave the encoder.
         x = np.concatenate([x, np.zeros(int(1.5 * SAMPLE_RATE), dtype=np.float32)])

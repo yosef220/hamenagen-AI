@@ -57,6 +57,8 @@ async function launch(dataDir, theme) {
     scan_roots: [path.resolve(music)],
     theme,
     update_manifest_url: '',
+    model_download: 'no',
+    hands_free: false,       // turned on in its own step below
   };
   fs.mkdirSync(dataDir, { recursive: true });
   const settingsFile = path.join(dataDir, 'settings.json');
@@ -145,6 +147,14 @@ async function run() {
       if (!/שבת/.test(understood)) errors.push(`request understood as: ${understood}`);
       await page.waitForTimeout(800);
       await shot(page, `02-results${suffix}`);
+      // 1.5.1: more of the topic from YouTube, only when asked.
+      await page.locator('#view-results .results-more button', { hasText: 'מיוטיוב' }).click()
+        .catch(() => errors.push('no "more from YouTube" for a topic'));
+      await page.waitForSelector('#view-results .online-item', { timeout: 15000 })
+        .catch(() => errors.push('the topic search on YouTube showed nothing'));
+      await page.evaluate(() => document.querySelector('#view-results .results-more')?.scrollIntoView({ block: 'start' }));
+      await shot(page, `33-topic-youtube${suffix}`);
+      await page.evaluate(() => document.querySelector('#view-results')?.scrollTo?.(0, 0));
 
       await page.evaluate(() => H.go('library'));
       await page.waitForSelector('#view-library .track');
@@ -479,6 +489,29 @@ async function run() {
         errors.push(`spoken commands: ${JSON.stringify(commands)}`);
       }
 
+      // 1.5.1: heard without a click — commands, or a request after the player's name.
+      const free = await page.evaluate(async () => {
+        const F = H.handsFree;
+        const view = H.currentView();
+        const out = {
+          next: F.handle('השיר הבא'),
+          louder: F.handle('תגביר בבקשה'),
+          song: F.handle('שוב'),                  // could be a word in a song: ignored
+          talk: F.handle('אני הולך לקנות לחם'),   // people talking: ignored
+          stayed: H.currentView() === view,
+          wake: F.handle('המנגן'),
+        };
+        out.request = F.handle('המנגן תשמיע שירי שבת');
+        await new Promise((r) => setTimeout(r, 1500));
+        out.asked = H.currentView() === 'results' && /שבת/.test(document.querySelector('.results-title')?.textContent || '');
+        H.player.toggle(false);
+        return out;
+      });
+      if (free.next !== 'command' || free.louder !== 'command' || free.song !== null || free.talk !== null
+        || !free.stayed || free.wake !== 'wake' || free.request !== 'request' || !free.asked) {
+        errors.push(`hands-free: ${JSON.stringify(free)}`);
+      }
+
       if (voiceArgs.length) {
         await page.evaluate(() => H.go('home'));
         await page.waitForSelector('.mic-btn');
@@ -506,6 +539,26 @@ async function run() {
         if (!(await page.$('#view-results .track'))) errors.push('a long spoken request found no song inside it');
         await shot(page, `29-voice-result${suffix}`);
         await page.evaluate(() => H.player.toggle(false));
+
+        // Hands-free: the recording plays into the open microphone, the words are
+        // recognized — and, being no command, nothing happens.
+        await page.evaluate(async () => {
+          window.__heard = [];
+          H.api.on('handsfree-heard', (e) => window.__heard.push(e.text));
+          H.settings = await H.api.updateSettings({ hands_free: true });
+          H.go('home');
+          await H.handsFree.refresh();
+          await H.handsFree.setFront(true);
+        });
+        await page.waitForFunction(() => H.handsFree.listening(), null, { timeout: 10000 })
+          .catch(() => errors.push('hands-free did not start listening'));
+        await page.waitForFunction(() => window.__heard.some((t) => /ירושלים/.test(t)), null, { timeout: 30000 })
+          .catch(async () => errors.push(`hands-free heard: ${await page.evaluate(() => window.__heard.join(' | '))}`));
+        if (await page.evaluate(() => H.currentView() !== 'home')) errors.push('hands-free acted on talk that was no command');
+        await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+        await shot(page, `34-hands-free${suffix}`);
+        await page.evaluate(async () => { await H.handsFree.setFront(false); });
+        if (await page.evaluate(() => H.handsFree.listening())) errors.push('hands-free kept listening in the background');
       }
 
       await page.evaluate(() => H.go('downloads'));

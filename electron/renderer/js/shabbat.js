@@ -141,7 +141,7 @@
     return status;
   }
 
-  H.shabbat = { refresh, show, hide, preview: startPreview, endPreview, status: () => status };
+  H.shabbat = { refresh, show, hide, preview: startPreview, endPreview, status: () => status, shown: () => !overlay.hidden };
   refresh();
   setInterval(tick, 5000);
   setInterval(refresh, 20 * 60 * 1000);

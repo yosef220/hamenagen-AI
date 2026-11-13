@@ -136,6 +136,9 @@ contextBridge.exposeInMainWorld('hamenagen', {
   // Pushed notifications: core events, theme changes, taskbar buttons.
   onBackendEvent: (handler) => listen('backend:event', handler),
   onThemeChange: (handler) => listen('app:theme', handler),
+  onFront: (handler) => listen('app:front', handler),
+  onPower: (handler) => listen('app:power', handler),
+  isFront: () => ipcRenderer.invoke('app:front'),
   onPlayerCommand: (handler) => listen('player:command', handler),
   onSearchLink: (handler) => listen('search:link', handler),
   onSearchState: (handler) => listen('search:state', handler),

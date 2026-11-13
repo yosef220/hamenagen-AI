@@ -32,6 +32,7 @@ from .hebrew_calendar import VOCAL_TOPIC, detect_occasion, from_gregorian, today
 from .zmanim import ZmanimService
 from .smart_update import SmartUpdater
 from . import artists as artists_mod
+from . import cloudfiles
 from . import tags as tags_mod
 from . import export as export_mod
 from . import ringtone as ringtone_mod
@@ -86,6 +87,19 @@ def _display_query(raw: str) -> str:
     """The user's own words minus the "play me" filler, for "חיפוש: …"."""
     words = [w for w in (raw or "").split() if normalize(w) not in intent_mod._PLAY_VERBS]
     return " ".join(words).strip() or (raw or "").strip()
+
+
+def _give_memory_back() -> None:
+    """Hand freed memory back to the system, so it shows in the Task Manager."""
+    import ctypes
+
+    try:
+        if sys.platform == "win32":
+            ctypes.cdll.ucrtbase._heapmin()
+        elif sys.platform.startswith("linux"):
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:  # noqa: BLE001 - only a nicety
+        pass
 
 
 class PlayerService:
@@ -239,16 +253,26 @@ class PlayerService:
             force = not partial and bool(known) and idx.get_meta("scan_version") != SCAN_VERSION
             folder_cache: dict = {}
             seen: set[str] = set()
-            added = updated = files = 0
+            added = updated = files = cloud = 0
+            skip_cloud = self.settings.cloud_files != "read"
             for path, st in iter_media_files(use_roots, include_video=self.settings.include_video):
                 files += 1
                 tid = track_id_for(path)
                 previous = known.get(tid)
-                if previous and previous == (st.st_mtime, st.st_size) and not force:
+                # 1.5.1: a file that lives only in the cloud (OneDrive, Dropbox…)
+                # is taken by its name, without downloading it. It is kept with
+                # no modification time, so the scan reads it in full once it is
+                # on the computer (after it was played, for example).
+                by_name = skip_cloud and cloudfiles.is_cloud_only(st)
+                cloud += by_name
+                if previous and previous == (None if by_name else st.st_mtime, st.st_size) and not force:
                     seen.add(tid)
                 elif (track := scan_file(path, include_video=self.settings.include_video, stat=st,
-                                         covers_dir=self.covers_dir, folder_cache=folder_cache)) is not None \
+                                         covers_dir=self.covers_dir, folder_cache=folder_cache,
+                                         read_contents=not by_name)) is not None \
                         and not is_too_short(track):
+                    if by_name:
+                        track.mtime = None
                     seen.add(tid)
                     if previous:
                         old = idx.get(tid)
@@ -280,6 +304,8 @@ class PlayerService:
             finished = datetime.now()
             idx.set_meta("last_scan_at", finished.isoformat(timespec="seconds"))
             if not partial:
+                idx.set_meta("cloud_files", str(cloud))
+            if not partial:
                 idx.set_meta("scan_version", SCAN_VERSION)
             return {
                 "scanned_roots": use_roots,
@@ -289,6 +315,7 @@ class PlayerService:
                 "removed": removed,
                 "propagated": propagated,
                 "duplicates": duplicates,
+                "cloud": cloud,
                 "total": idx.count(),
                 "seconds": round((finished - started).total_seconds(), 1),
             }
@@ -483,6 +510,9 @@ class PlayerService:
         for n, t in enumerate(tracks, 1):
             if not t.path or not tags_mod.can_write(t.path):
                 continue
+            if cloudfiles.path_is_cloud_only(t.path):
+                failed.append({"id": t.id, "title": t.title, "reason": "cloud"})
+                continue
             want = {k: v for k, v in self.tags_for(t).items() if v}
             have = tags_mod.read_tags(t.path)
             pic = self._cover_bytes(t.cover) if cover else None
@@ -655,6 +685,24 @@ class PlayerService:
         self.index.set_meta(self.ARTIST_CHOICES, json.dumps(choices, ensure_ascii=False))
         self._forget_artists()
         return {"ok": True, **self.artist_groups()}
+
+    # -- memory (1.5.1) ------------------------------------------------------------
+    MODEL_IDLE = int(os.environ.get("HAMENAGEN_MODEL_IDLE") or 180)   # the topic model: ~500MB, for new songs
+    VOICE_IDLE = 600          # the speech model: about 150MB, needed only at the microphone
+
+    def release_idle_models(self) -> bool:
+        """Let go of models that were not used for a while (called every minute)."""
+        freed = False
+        backend = self.classifier.embedding
+        if backend is not None and not self.scanning:
+            freed |= backend.unload_if_idle(self.MODEL_IDLE)
+        freed |= self.voice.unload_if_idle(self.VOICE_IDLE)
+        if freed:
+            import gc
+
+            gc.collect()
+            _give_memory_back()
+        return freed
 
     # -- the listener's own list of singers (1.5) ---------------------------------
     @property
@@ -854,8 +902,12 @@ class PlayerService:
         listen, rhythm = self._listening_plan()
         done = idx.analyses()
         out = []
+        skip_cloud = self.settings.cloud_files != "read"
         for t in idx.all_tracks():
             if t.is_video or not t.path:
+                continue
+            # Listening would download a song that lives only in the cloud.
+            if skip_cloud and (t.mtime is None or cloudfiles.path_is_cloud_only(t.path)):
                 continue
             a = done.get(t.id)
             changed = a is None or (a.get("mtime"), a.get("size")) != (t.mtime, t.size)
@@ -926,6 +978,7 @@ class PlayerService:
         finally:
             idx.close()
             self.vocal_running = False
+            self.vocal.unload()
 
     def _apply_vocal_verdicts(self) -> int:
         """Re-apply what was heard after the vocal settings changed."""
@@ -1781,6 +1834,7 @@ class PlayerService:
             "history": self._tracks_payload(self.index.history(12)),
             "favorites": self._tracks_payload(self.index.favorites(12)),
             "last_scan_at": self.index.get_meta("last_scan_at"),
+            "cloud_files": int(self.index.get_meta("cloud_files") or 0),
             "scanning": self.scanning,
             "roots": self._roots(),
         }
