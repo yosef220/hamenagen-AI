@@ -63,7 +63,7 @@
 | --- | --- |
 | ספרייה, הגדרות, מועדפים, היסטוריה | גרסה ניידת: `data` ליד `Hamenagen.exe` (או `%APPDATA%\Hamenagen` אם אי אפשר לכתוב שם). גרסה מותקנת: `%APPDATA%\Hamenagen`. פיתוח: `data/` במאגר. |
 | מודל הסיווג | גרסת האופליין: `resources/models` בתוך התוכנה. אחרות: `models` בתיקיית הנתונים, יורד פעם אחת. |
-| מודל זיהוי הדיבור | גרסאות האופליין: `resources/models/voice-he`. אחרות: `models/voice-he` בתיקיית הנתונים, יורד פעם אחת בלחיצה הראשונה על המיקרופון (`scripts/prepare_voice_model.py` לבנייה). |
+| מודל זיהוי הדיבור | גרסאות האופליין: `resources/voice-models/voice-he` (חלק נפרד בעדכון החכם; ב-1.4.0 היה ב-`resources/models`). אחרות: `models/voice-he` בתיקיית הנתונים, יורד פעם אחת בלחיצה הראשונה על המיקרופון (`scripts/prepare_voice_model.py` לבנייה). |
 | מודל זיהוי הווקאלי | בכל המהדורות: `resources/audio-models` בתוך התוכנה (6MB). בהרצת פיתוח: `data/models` (`scripts/prepare_audio_model.py`). |
 | אינדקס הידע | `resources/backend/hamenagen/data` — חלק מהתוכנה, CC BY-SA 4.0 (`data/LICENSE-DATA.md`). |
 | הורדות | `מוזיקה\Hamenagen` של המשתמש (ניתן לשינוי). |

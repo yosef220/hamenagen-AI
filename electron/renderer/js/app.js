@@ -43,10 +43,10 @@
   for (const item of H.$$('.nav-item')) item.addEventListener('click', () => H.go(item.dataset.view));
 
   /** A typed request: understand it and start playing (spec §8). */
-  H.ask = function ask(text) {
+  H.ask = function ask(text, opts = {}) {
     const clean = String(text || '').trim();
     if (!clean) return;
-    H.go('results', { text: clean, autoplay: true });
+    H.go('results', { text: clean, autoplay: true, spoken: !!opts.spoken });
   };
 
   /** Play a topic straight away (the luach's suggestion button). */

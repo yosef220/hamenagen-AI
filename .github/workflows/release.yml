@@ -118,6 +118,30 @@ jobs:
             Sort-Object { [version]($_ -replace '^ffmpeg-n(\d+\.\d+)-.*$', '$1') } | Select-Object -Last 1
           $asset = if ($branch) { $branch } else { 'ffmpeg-master-latest-win64-lgpl.zip' }
           "ffmpeg build: $asset"
+          # The same ffmpeg as the last release while BtbN's branch is the same
+          # (BtbN rebuilds it every day with backports, which would make the
+          # smart update send 55 MB again for nothing).
+          $minor = if ($asset -match '^ffmpeg-n(\d+\.\d+)-') { $Matches[1] } else { '' }
+          try {
+            $tag = gh api "repos/${{ github.repository }}/releases/latest" --jq '.tag_name' 2>$null
+            if ($minor -and $tag) {
+              gh release download $tag -R "${{ github.repository }}" -p update.json -O prev-update.json --clobber 2>$null
+              $prev = (Get-Content prev-update.json -Raw | ConvertFrom-Json).app.parts.setup.parts.ffmpeg
+              if ($prev -and $prev.version -match "^ffmpeg version n$([regex]::Escape($minor))[.-]") {
+                curl.exe -L --fail --retry 5 --retry-delay 10 -o prev-ffmpeg.zip $prev.url
+                $digest = (Get-FileHash prev-ffmpeg.zip -Algorithm SHA256).Hash.ToLower()
+                if ($LASTEXITCODE -eq 0 -and $digest -eq $prev.sha256) {
+                  New-Item -ItemType Directory -Force build | Out-Null
+                  7z x prev-ffmpeg.zip -obuild -y | Out-Null
+                  if (Test-Path build/ffmpeg/ffmpeg.exe) {
+                    "ffmpeg: kept from $tag ($($prev.version))"
+                    & build/ffmpeg/ffmpeg.exe -hide_banner -version | Select-Object -First 1
+                    exit 0
+                  }
+                } else { "ffmpeg from $tag did not match its digest; downloading" }
+              }
+            }
+          } catch { "could not reuse the last release's ffmpeg: $_" }
           $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$asset"
           curl.exe -L --fail --retry 5 --retry-delay 10 -o ffmpeg.zip $url
           if ($LASTEXITCODE -ne 0 -or (Get-Item ffmpeg.zip).Length -lt 10MB) { throw "ffmpeg could not be downloaded" }
@@ -156,7 +180,7 @@ jobs:
         env:
           PYTHONUTF8: '1'
           PYTHONIOENCODING: 'utf-8'
-        run: build/win-python/python.exe backend/scripts/prepare_voice_model.py --out build/models
+        run: build/win-python/python.exe backend/scripts/prepare_voice_model.py --out build/voice-models
 
       - name: Package
         env:
@@ -233,8 +257,9 @@ jobs:
           $res = "dist/win-unpacked/resources"
           $env:HAMENAGEN_BACKEND_DIR = (Resolve-Path "$res/backend").Path
           $env:MODELS = (Resolve-Path "$res/models").Path
+          $env:VOICE_MODELS = (Resolve-Path "$res/voice-models").Path
           & "$res/python/python.exe" -c "import os, sys; sys.path.insert(0, os.environ['HAMENAGEN_BACKEND_DIR']); from hamenagen.classifier import EmbeddingBackend; b = EmbeddingBackend(cache_dir=os.environ['MODELS'], allow_download=False); assert b.load(), b.load_error; c = b.classify('\u05e1\u05d5\u05e4\u05d2\u05e0\u05d9\u05d5\u05ea \u05d7\u05de\u05d5\u05ea'); print('model ok:', c); assert c is not None and c.topic == '\u05d7\u05e0\u05d5\u05db\u05d4'"
-          & "$res/python/python.exe" -c "import os, sys; sys.path.insert(0, os.environ['HAMENAGEN_BACKEND_DIR']); import numpy as np; from hamenagen.voice import SpeechRecognizer; r = SpeechRecognizer([os.environ['MODELS']]); assert r.load(), r.load_error; print('speech model ok:', repr(r.recognize(np.zeros(16000, dtype=np.float32))))"
+          & "$res/python/python.exe" -c "import os, sys; sys.path.insert(0, os.environ['HAMENAGEN_BACKEND_DIR']); import numpy as np; from hamenagen.voice import SpeechRecognizer; r = SpeechRecognizer([os.environ['VOICE_MODELS']]); assert r.load(), r.load_error; print('speech model ok:', repr(r.recognize(np.zeros(16000, dtype=np.float32))))"
           if ($LASTEXITCODE -ne 0) { throw "the bundled speech model does not load" }
 
       - name: The parts of the app, for the smart update

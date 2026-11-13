@@ -128,7 +128,7 @@ class RpcServer:
 
     # -- playing -----------------------------------------------------------
     def rpc_handle_request(self, params):
-        return self.service.handle_request(params.get("text", ""))
+        return self.service.handle_request(params.get("text", ""), bool(params.get("spoken")))
 
     def rpc_playlist(self, params):
         return self.service.playlist(

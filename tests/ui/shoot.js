@@ -459,6 +459,8 @@ async function run() {
           null, { timeout: 20000 })
           .catch(async () => errors.push(`a request by voice was not understood: ${await page.textContent('.results-title').catch(() => '')}`));
         await page.waitForTimeout(500);
+        // A long sentence: the songs that match the part of it that names them.
+        if (!(await page.$('#view-results .track'))) errors.push('a long spoken request found no song inside it');
         await shot(page, `29-voice-result${suffix}`);
         await page.evaluate(() => H.player.toggle(false));
       }

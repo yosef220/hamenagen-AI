@@ -8,7 +8,7 @@ the same files on the first press of the microphone button.
 
 Usage::
 
-    python backend/scripts/prepare_voice_model.py --out build/models
+    python backend/scripts/prepare_voice_model.py --out build/voice-models
 """
 
 from __future__ import annotations

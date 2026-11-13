@@ -27,7 +27,7 @@
     let res;
     try {
       res = params.text !== undefined
-        ? await api.ask(params.text)
+        ? await api.ask(params.text, params.spoken)
         : await api.playlist(params.kind, { topic: params.topic, minutes: params.minutes, limit: params.limit });
     } catch (err) {
       H.clear(root).appendChild(H.emptyState('הבקשה לא הצליחה', err.message));

@@ -75,6 +75,16 @@ def bundled_audio_models_dir() -> Path | None:
     return None
 
 
+def bundled_voice_models_dir() -> Path | None:
+    """The speech model shipped inside the app (the offline editions): its
+    own part, so the smart update never sends the classification model
+    again when only one of them changes."""
+    env = os.environ.get("HAMENAGEN_VOICE_MODELS_DIR")
+    if env and Path(env).is_dir():
+        return Path(env)
+    return None
+
+
 def bundled_ffmpeg_dir() -> Path | None:
     """ffmpeg shipped inside the app, for MP3 downloads with covers."""
     env = os.environ.get("HAMENAGEN_FFMPEG_DIR")

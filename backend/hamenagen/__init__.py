@@ -10,4 +10,4 @@ either by the Electron front-end (via :mod:`hamenagen.rpc`) or from the
 command line (via :mod:`hamenagen.cli`), and unit-tested on its own.
 """
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
