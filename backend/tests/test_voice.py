@@ -97,3 +97,17 @@ def test_the_real_model_hears_hebrew(tmp_path):
     out = svc.voice_recognize(base64.b64encode(pcm).decode(), sr)
     assert out["ok"] and out["request"] == "יכול להיות"
     svc.close()
+
+
+def test_the_offline_editions_model_is_found_in_its_own_folder(tmp_path, monkeypatch):
+    from hamenagen.service import PlayerService
+
+    own = tmp_path / "voice-models"
+    (own / voice.MODEL_FOLDER).mkdir(parents=True)
+    for name in voice.FILES:
+        (own / voice.MODEL_FOLDER / name).write_text("x")
+    monkeypatch.setenv("HAMENAGEN_VOICE_MODELS_DIR", str(own))
+    svc = PlayerService(data_dir=tmp_path / "data")
+    st = svc.voice_status()
+    assert st["available"] and st["bundled"]
+    svc.close()

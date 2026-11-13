@@ -98,6 +98,10 @@ if (fs.existsSync('build/ffmpeg')) {
 const withModel = edition === 'offline' || edition === 'setup-offline';
 if (withModel) {
   config.extraResources.push({ from: 'build/models', to: 'models', filter: ['**/*'] });
+  // The speech model in its own part (resources/voice-models).
+  if (fs.existsSync('build/voice-models')) {
+    config.extraResources.push({ from: 'build/voice-models', to: 'voice-models', filter: ['**/*'] });
+  }
 }
 if (edition === 'portable' || edition === 'offline') {
   // Only the folder; scripts/portable.nsi makes the one-file EXE from it.

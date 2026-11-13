@@ -55,6 +55,7 @@ from .scanner import (
 from .settings import (
     Settings,
     bundled_audio_models_dir,
+    bundled_voice_models_dir,
     bundled_ffmpeg_dir,
     bundled_models_dir,
     default_data_dir,
@@ -125,7 +126,11 @@ class PlayerService:
         # Listening for a cappella songs: the model ships in every edition;
         # a dev run can put it in data/models (prepare_audio_model.py).
         self.vocal = VocalDetector([bundled_audio_models_dir() or "", self.models_dir])
-        self.voice = voice_mod.SpeechRecognizer([self.bundled_models_dir or "", self.models_dir])
+        self.bundled_voice_dir = bundled_voice_models_dir()
+        # 1.4.0 kept the speech model in resources/models; from 1.4.1 it has
+        # its own folder (resources/voice-models).
+        self.voice = voice_mod.SpeechRecognizer([self.bundled_voice_dir or "", self.bundled_models_dir or "",
+                                                 self.models_dir])
         # Shabbat mode: times for the city, cached; the harness stays offline.
         offline = bool(os.environ.get("HAMENAGEN_DEMO_ONLINE"))
         self.zmanim = ZmanimService(self.data_dir / "zmanim.json", sources=[] if offline else None)
@@ -449,8 +454,8 @@ class PlayerService:
         return {
             "available": folder is not None,
             "loaded": self.voice.loaded,
-            "bundled": folder is not None and self.bundled_models_dir is not None
-            and folder.parent == self.bundled_models_dir,
+            "bundled": folder is not None and folder.parent in {d for d in (self.bundled_voice_dir,
+                                                                               self.bundled_models_dir) if d},
             "download_mb": voice_mod.DOWNLOAD_MB,
             "credit": voice_mod.CREDIT,
             "error": self.voice.load_error,
