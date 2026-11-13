@@ -373,7 +373,7 @@ ipcMain.handle('app:openExternal', async (_evt, url) => {
 // a plan in data/update. A small PowerShell script waits for the app to exit,
 // swaps the parts (putting the old ones back if anything fails) and starts
 // the app again; the outcome waits in data/update/result.json.
-ipcMain.handle('app:applyUpdate', async (_evt, planPath) => {
+async function applyUpdatePlan(planPath) {
   if (process.platform !== 'win32' || !app.isPackaged) {
     return { ok: false, message: 'העדכון החכם פועל רק בתוכנה עצמה ב-Windows.' };
   }
@@ -382,9 +382,17 @@ ipcMain.handle('app:applyUpdate', async (_evt, planPath) => {
   if (!plan || path.dirname(plan) !== path.resolve(work) || !fs.existsSync(plan)) {
     return { ok: false, message: 'אין עדכון מוכן.' };
   }
+  const script = path.join(work, 'apply.ps1');
   try {
-    const script = path.join(work, 'apply.ps1');
     fs.writeFileSync(script, fs.readFileSync(path.join(__dirname, 'update-apply.ps1')));
+  } catch (err) {
+    return { ok: false, message: String(err && err.message ? err.message : err) };
+  }
+  // The core first, and wait until it is really gone: it runs Python from
+  // the program's folder, and in 1.4.0 it outlived the window (its kill was
+  // timed after the app had already quit), so the swap waited and rolled back.
+  await bridge.stopAndWait(2000);
+  try {
     const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
     const child = spawn(powershell, [
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
@@ -392,11 +400,26 @@ ipcMain.handle('app:applyUpdate', async (_evt, planPath) => {
     ], { detached: true, stdio: 'ignore', windowsHide: true });
     child.unref();
   } catch (err) {
+    bridge.start();
     return { ok: false, message: String(err && err.message ? err.message : err) };
   }
-  setTimeout(() => app.quit(), 400);
+  for (const w of BrowserWindow.getAllWindows()) w.destroy();
+  setTimeout(() => app.exit(0), 150);
   return { ok: true };
-});
+}
+
+ipcMain.handle('app:applyUpdate', (_evt, planPath) => applyUpdatePlan(planPath));
+
+// Tests (CI): the packaged app applies a prepared plan by itself, the same way
+// as the button, once (not again after it comes back: result.json is there).
+const TEST_APPLY_PLAN = process.env.HAMENAGEN_TEST_APPLY_PLAN || '';
+function maybeTestApply() {
+  if (!TEST_APPLY_PLAN) return;
+  const result = path.join(path.dirname(TEST_APPLY_PLAN), 'result.json');
+  if (fs.existsSync(TEST_APPLY_PLAN) && !fs.existsSync(result)) {
+    setTimeout(() => { applyUpdatePlan(TEST_APPLY_PLAN); }, 3000);
+  }
+}
 
 // --- searching from inside the app ---------------------------------------------------------
 // Where the network blocks programs from searching YouTube (NetFree), the
@@ -612,6 +635,7 @@ app.whenReady().then(() => {
   bridge.start();
   ensureDesktopShortcut();
   createWindow();
+  maybeTestApply();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

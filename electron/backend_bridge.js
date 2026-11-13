@@ -15,6 +15,7 @@
 
 const { spawn } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const readline = require('readline');
 
@@ -112,7 +113,10 @@ class BackendBridge {
     let proc;
     try {
       proc = spawn(this.pythonPath, ['-c', bootstrap], {
-        cwd: this.backendDir,
+        // Not the backend folder: Windows locks a process's current folder, and
+        // the smart update replaces that folder (1.4.0 could not, so the
+        // update rolled back). The path comes from HAMENAGEN_BACKEND_DIR.
+        cwd: os.tmpdir(),
         env: {
           ...process.env,
           ...this.extraEnv,
@@ -209,6 +213,22 @@ class BackendBridge {
       setTimeout(() => { try { proc.kill(); } catch { /* ignore */ } }, 600);
       this.proc = null;
     }
+  }
+
+  /** Stop the core and wait until it has really exited (killed after
+   *  ``ms``): the smart update must not start while it still runs. */
+  stopAndWait(ms = 1500) {
+    const proc = this.proc;
+    this.stop();
+    if (!proc || proc.exitCode !== null) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => { clearTimeout(timer); resolve(); };
+      const timer = setTimeout(() => {
+        try { proc.kill('SIGKILL'); } catch { /* ignore */ }
+        setTimeout(resolve, 300);
+      }, ms);
+      proc.once('exit', done);
+    });
   }
 }
 

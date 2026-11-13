@@ -177,3 +177,39 @@ def test_when_a_smart_update_is_not_possible(tmp_path):
         == "no_parts_here"
     other = {"latest": "1.3.1", "newer": True, "parts": {"edition": "setup", "parts": {"x": {}}}}
     assert updater.plan(other)["reason"] == "other_edition"
+
+
+def test_a_swap_that_never_ran_is_reported_with_its_log(tmp_path):
+    """1.4.0: the old core held its folder, the swap waited and the listener
+    started the app again; the same update was then offered over and over."""
+    import json as _json
+    import os as _os
+    import time as _time
+
+    from hamenagen.smart_update import SmartUpdater
+
+    updater = SmartUpdater(tmp_path / "data", tmp_path / "inst" / "resources")
+    updater.work.mkdir(parents=True, exist_ok=True)
+    plan = updater.work / "plan.json"
+    plan.write_text(_json.dumps({"version": "1.4.1"}), encoding="utf-8")
+    (updater.work / "apply.log").write_text("waiting for the player to close\ncannot move backend: in use\n",
+                                            encoding="utf-8")
+    assert updater.result() is None                      # just written: it may still be running
+    old = _time.time() - updater.STALE_PLAN_SECONDS - 5
+    _os.utime(plan, (old, old))
+    out = updater.result()
+    assert out["ok"] is False and out["stale"] and out["version"] == "1.4.1" and "in use" in out["log"]
+    assert not plan.exists() and updater.result() is None   # once
+
+
+def test_a_failed_swap_carries_its_log(tmp_path):
+    import json as _json
+
+    from hamenagen.smart_update import SmartUpdater
+
+    updater = SmartUpdater(tmp_path / "data", tmp_path / "inst" / "resources")
+    updater.work.mkdir(parents=True, exist_ok=True)
+    (updater.work / "result.json").write_text(_json.dumps({"ok": False, "version": "1.4.1", "error": "x"}))
+    (updater.work / "apply.log").write_text("part backend\nfailed: x\n", encoding="utf-8")
+    out = updater.result()
+    assert out["ok"] is False and "failed: x" in out["log"]
