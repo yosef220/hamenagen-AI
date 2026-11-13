@@ -1556,3 +1556,18 @@ body.at-rest .app { visibility: hidden; }
 .tool-dialog .dialog-foot { flex-wrap: wrap; }
 .tool-dialog .dialog-foot .tool-actions { flex: none; flex-wrap: nowrap; margin-inline-start: auto; }
 .tool-dialog .dialog-foot > .btn { margin-inline-start: auto; }
+
+/* 1.5.1: listening for commands without a click — a quiet ring, not the red of recording */
+.mic-btn.standby[data-state="idle"] { color: var(--tekhelet); box-shadow: 0 0 0 2px var(--tekhelet-soft); }
+.mic-btn.standby[data-state="idle"]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  border: 1px solid var(--tekhelet);
+  opacity: 0.35;
+  animation: standby-breathe 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes standby-breathe { 50% { opacity: 0.05; transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .mic-btn.standby[data-state="idle"]::after { animation: none; } }

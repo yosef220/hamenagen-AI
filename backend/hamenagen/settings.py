@@ -128,6 +128,9 @@ class Settings:
     # The language model for topics (~450MB) in the editions without it:
     # "ask" before downloading it, "yes" (the listener agreed), "no".
     model_download: str = "ask"
+    # 1.5.1: while the player is in front, the microphone listens for spoken
+    # commands without a click ("הבא", "תנמיך"; "המנגן, …" for a request).
+    hands_free: bool = True
     # Where songs downloaded from the network are saved. Empty = Music\Hamenagen.
     downloads_dir: str = ""
     # Enable the optional local embedding classifier layer.

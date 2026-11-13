@@ -28,7 +28,7 @@
   ];
   const SHELL = [
     'shellInfo', 'setTheme', 'openExternal', 'showInFolder', 'openFolder', 'chooseFolder', 'chooseFile', 'playerState',
-    'clipboardLink', 'searchOpen', 'searchPlace', 'searchHide', 'searchNav', 'applyAppUpdate',
+    'clipboardLink', 'searchOpen', 'searchPlace', 'searchHide', 'searchNav', 'applyAppUpdate', 'isFront',
   ];
 
   const api = {};
@@ -56,6 +56,8 @@
   };
   bridge.onBackendEvent((msg) => api.emit(msg.event, msg));
   bridge.onThemeChange((msg) => api.emit('theme', msg));
+  bridge.onFront((msg) => api.emit('front', msg));
+  bridge.onPower((msg) => api.emit('power', msg));
   bridge.onPlayerCommand((cmd) => api.emit('player-command', cmd));
   bridge.onSearchLink((msg) => api.emit('search-link', msg));
   bridge.onSearchState((msg) => api.emit('search-state', msg));
