@@ -503,6 +503,8 @@ async function run() {
           // 1.5.2: said in other words.
           natural: ['תעבור לשיר הבא', 'תדלג על השיר הזה', 'תעשה יותר חזק', 'תוריד את הווליום', 'תחזור לשיר הקודם']
             .map((t) => F.handle(t)),
+          // 1.5.4: the recognizer writes the verb a letter off, and an explanation follows.
+          written: ['תגביה', 'תגביל את הווליום', 'תגביר את הווליום לא תחפש את השיר תגביה'].map((t) => F.handle(t)),
           welcome: F.handle('ברוך הבא'),           // a song's name, not "next"
           song: F.handle('שוב'),                  // could be a word in a song: ignored
           talk: F.handle('אני הולך לקנות לחם'),   // people talking: ignored
@@ -529,7 +531,7 @@ async function run() {
         return out;
       }));
       if (free.next !== 'command' || free.louder !== 'command' || free.song !== null || free.talk !== null
-        || free.natural.some((x) => x !== 'command') || free.welcome !== null
+        || free.natural.some((x) => x !== 'command') || free.written.some((x) => x !== 'command') || free.welcome !== null
         || !free.stayed || free.wake !== 'wake' || !free.attending || free.again !== 'again' || !free.puzzled
         || free.request !== 'request' || free.stillAttending || !free.overlayGone || !free.asked || free.direct !== 'request') {
         errors.push(`hands-free: ${JSON.stringify(free)}`);

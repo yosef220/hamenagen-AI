@@ -277,11 +277,41 @@
   // ("שוב", "נגן", "רדיו", "מה זה") is not taken as a command.
   const LOOSE = new Set(['שוב', 'אחורה', 'נגן', 'תנגן', 'play', 'רדיו', 'מה זה', 'בערבוב', 'כאלה', 'next', 'stop',
     'pause', 'די', 'מספיק', 'שקט', 'חזק', 'חלש', 'הלאה', 'החלף', 'תחזור']);
+  // 1.5.4: the recognizer writes a command a letter off ("תגביה", "תגביל" for "תגביר").
+  // A short sentence whose one real word is within one letter of a command verb is that command.
+  const VERB_FORMS = {
+    louder: ['תגביר', 'תגביה', 'תגביל', 'להגביר', 'להגביה', 'הגבר', 'הגבה', 'תגבירי', 'תרים', 'להרים', 'הרם', 'תעלה'],
+    quieter: ['תנמיך', 'תנמיכי', 'להנמיך', 'הנמך', 'תוריד', 'להוריד', 'הורד', 'תנמוך'],
+  };
+  const NOISE = new Set(['את', 'לי', 'קצת', 'טיפה', 'מעט', 'בבקשה', 'הווליום', 'ווליום', 'העוצמה', 'עוצמה', 'הקול', 'קול',
+    'המוזיקה', 'מוזיקה', 'הזה', 'עכשיו', 'רגע', 'את', 'ה']);
+  function within1(a, b) {
+    if (a === b) return true;
+    if (Math.abs(a.length - b.length) > 1 || Math.min(a.length, b.length) < 5) return false;
+    let i = 0;
+    while (i < a.length && i < b.length && a[i] === b[i]) i += 1;
+    if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);                 // one letter changed
+    return (a.length > b.length ? a.slice(i + 1) === b.slice(i) : b.slice(i + 1) === a.slice(i));   // one letter missing/extra
+  }
+  function verbCommand(key) {
+    const words = key.split(' ').filter((w) => w && !NOISE.has(w));
+    if (!words.length || words.length > 2) return null;
+    for (const [name, forms] of Object.entries(VERB_FORMS)) {
+      if (forms.some((f) => within1(words[0], f)) && (words.length === 1 || /^(יותר|קצת|עוד)$/.test(words[1]))) return name;
+    }
+    return null;
+  }
+  // "תגביר את הווליום, לא תחפש את השיר תגביה": what comes after "don't search" is an explanation.
+  const NOT_SEARCH = /(^|\s)(לא|אל)\s+(תחפש|תחפשי|לחפש|תחפשו)(\s|$)/;
   V.commandFor = (text, opts = {}) => {
-    const key = clean(text);
-    if (opts.strict && (LOOSE.has(key) || LOOSE.has(String(text || '').trim()))) return null;
-    return LOOKUP.get(key) || LOOKUP.get(String(text || '').trim()) || LOOKUP.get(reduce(key))
-      || (V.sleepFor(text) !== null ? 'sleep' : null);
+    let t = String(text || '');
+    const cut = t.search(NOT_SEARCH);
+    if (cut > 0) t = t.slice(0, cut);
+    if (cut === 0) return null;
+    const key = clean(t);
+    if (opts.strict && (LOOSE.has(key) || LOOSE.has(t.trim()))) return null;
+    return LOOKUP.get(key) || LOOKUP.get(t.trim()) || LOOKUP.get(reduce(key)) || verbCommand(key) || verbCommand(reduce(key))
+      || (V.sleepFor(t) !== null ? 'sleep' : null);
   };
 
   V.command = function command(text) {

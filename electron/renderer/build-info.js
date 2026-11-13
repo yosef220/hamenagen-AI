@@ -1,3 +1,3 @@
 // Build identity, shown in Settings → About. CI overwrites this file with the
 // real commit and edition; the default marks a local/dev build.
-window.__BUILD__ = { version: '1.5.3', build: 'dev', edition: 'dev' };
+window.__BUILD__ = { version: '1.5.4', build: 'dev', edition: 'dev' };
