@@ -44,6 +44,8 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import sound
+
 MODEL_NAME = "ced-tiny-int8"
 MODEL_FOLDER = "ced-tiny"
 MODEL_FILE = "model.int8.onnx"
@@ -88,6 +90,8 @@ class VocalResult:
     windows: list[WindowScores] = field(default_factory=list)
     error: str = ""
     rhythm: dict | None = None        # tempo, pulse, loudness, energy (rhythm.py)
+    profile: dict | None = None       # sound profile, speech and music (sound.summarize)
+    edges: dict | None = None         # silence at the start and the end (sound.silence_edges)
 
     @property
     def acapella(self) -> float:
@@ -274,9 +278,14 @@ class VocalDetector:
                 out.append(np.pad(x, (0, max(0, n - len(x)))))
         return out
 
-    def score_window(self, x) -> WindowScores:
+    def window_probs(self, x):
+        """The 527 AudioSet probabilities of one window."""
+        return self._session.run(None, {"feats": self._features(x)[None]})[0][0]
+
+    def score_window(self, x, probs=None) -> WindowScores:
         np = self._np
-        probs = self._session.run(None, {"feats": self._features(x)[None]})[0][0]
+        if probs is None:
+            probs = self.window_probs(x)
         c = self._classes
         instruments = c.get("instruments") or []
         return WindowScores(
@@ -299,14 +308,18 @@ class VocalDetector:
                 return VocalResult("unreadable", error=self.load_error)
             try:
                 audio = self.read_windows(path)
-                windows = [self.score_window(x) for x in audio] if listen else []
+                probs = [self.window_probs(x) for x in audio] if listen else []
+                windows = [self.score_window(x, p) for x, p in zip(audio, probs)]
             except Exception as exc:  # noqa: BLE001 - one bad file must not stop the job
                 return VocalResult("unreadable", error=f"{type(exc).__name__}: {exc}")
             try:
                 rhythm = analyze_windows(audio, SAMPLE_RATE)
             except Exception:  # noqa: BLE001 - the tempo is a bonus
                 rhythm = None
-            return VocalResult(decide(windows) if listen else "", windows, rhythm=rhythm)
+            profile = sound.summarize(probs) if probs else None
+            edges = sound.silence_edges(path, self._sf, self._np)
+            return VocalResult(decide(windows) if listen else "", windows, rhythm=rhythm,
+                               profile=profile, edges=edges)
 
 
 def _mel_filterbank(np, n_freqs: int = 257, f_min: float = 0.0, f_max: float = 8000.0, n_mels: int = 64,

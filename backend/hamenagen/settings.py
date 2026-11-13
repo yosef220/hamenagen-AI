@@ -157,6 +157,13 @@ class Settings:
     shabbat_stop_before: int = 10
     # The end of Shabbat: "tzeit" (nightfall, 8.5°) or "rt" (Rabbeinu Tam).
     havdalah: str = "tzeit"
+    # 1.4: play loud songs a little quieter, so all songs sound about as loud.
+    normalize_volume: bool = True
+    # 1.4: skip silence at the start and the end of a song.
+    skip_silence: bool = True
+    # 1.4: folders whose songs never play in mixes, sets or the radio (they
+    # still play when chosen, and are found in searches).
+    isolated_folders: list = field(default_factory=list)
 
     @classmethod
     def load(cls, path: str | Path) -> "Settings":
@@ -184,6 +191,7 @@ class Settings:
         if self.text_size not in TEXT_SIZES:
             self.text_size = "normal"
         self.scan_roots = [str(r) for r in (self.scan_roots or []) if str(r).strip()]
+        self.isolated_folders = [str(r) for r in (self.isolated_folders or []) if str(r).strip()]
         from .zmanim import CITIES, DEFAULT_CITY, HAVDALAH_CHOICES
         if self.shabbat_city not in CITIES:
             self.shabbat_city = DEFAULT_CITY

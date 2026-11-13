@@ -35,7 +35,7 @@ from .service import PlayerService
 _SLOW = {
     "online_search", "online_download", "online_link", "radio_list", "check_updates", "apply_update",
     "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
-    "online_set", "listen_prepare",
+    "online_set", "listen_prepare", "station", "voice_recognize", "voice_prepare",
 }
 
 
@@ -211,6 +211,22 @@ class RpcServer:
     def rpc_set_track_vocal(self, params):
         return self.service.set_track_vocal(params.get("id", ""), params.get("value"))
 
+    def rpc_set_track_speech(self, params):
+        return self.service.set_track_speech(params.get("id", ""), params.get("value"))
+
+    def rpc_set_track_disliked(self, params):
+        return self.service.set_track_disliked(params.get("id", ""), bool(params.get("on")))
+
+    def rpc_artist_groups(self, params):
+        return self.service.artist_groups()
+
+    def rpc_set_artist_choice(self, params):
+        return self.service.set_artist_choice(params.get("key", ""), params.get("name"), params.get("merge"),
+                                              params.get("apart"))
+
+    def rpc_station(self, params):
+        return self.service.station(params.get("seed"), params.get("history") or [], params.get("count"))
+
     def rpc_confirm_vocal(self, params):
         return self.service.confirm_vocal(list(params.get("ids") or []), bool(params.get("value", True)))
 
@@ -267,6 +283,39 @@ class RpcServer:
             return {"status": "done" if result.get("ok") else "error", **result}
 
         return self._start_job("model", work, "model_install")
+
+    # -- requests by voice (1.4) -------------------------------------------
+    def rpc_voice_status(self, params):
+        return self.service.voice_status()
+
+    def rpc_voice_prepare(self, params):
+        """Load the speech model while the listener starts talking."""
+        return {"loaded": self.service.voice.load()}
+
+    def rpc_voice_recognize(self, params):
+        return self.service.voice_recognize(params.get("pcm", ""), int(params.get("rate") or 16000))
+
+    def rpc_install_voice_async(self, params):
+        """Download the speech model once (online editions). Emits
+        ``voice_install`` with status "downloading" | "done" | "error"."""
+        if self.service.voice.available:
+            return {"started": False, "reason": "already installed"}
+
+        def work():
+            self._emit("voice_install", {"status": "downloading", "percent": 0})
+            last = [-1]
+
+            def progress(p: dict) -> None:
+                done = (p["file"] - 1 + p["done"] / max(1, p["size"])) / p["files"]
+                pct = int(done * 100)
+                if pct != last[0]:
+                    last[0] = pct
+                    self._emit("voice_install", {"status": "downloading", "percent": pct})
+
+            out = self.service.install_voice(on_progress=progress)
+            return {"status": "done" if out.get("ok") else "error", **out}
+
+        return self._start_job("voice", work, "voice_install")
 
     def rpc_reclassify(self, params):
         return self.service.reclassify_all()

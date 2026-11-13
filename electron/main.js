@@ -226,6 +226,27 @@ function updateThumbar() {
   ]);
 }
 
+// --- the microphone (requests by voice, 1.4) ----------------------------------------
+// Only the app's own page (file://) may use it, and only for sound: the
+// recording stays in the window and goes to the core, which recognizes the
+// speech on this computer. Every other permission stays refused.
+function isOwnPage(url) {
+  return typeof url === 'string' && url.startsWith('file://');
+}
+function allowMicrophone(ses) {
+  ses.setPermissionRequestHandler((wc, permission, done, details) => {
+    const audioOnly = permission === 'media'
+      && Array.isArray(details.mediaTypes) && details.mediaTypes.length > 0
+      && details.mediaTypes.every((t) => t === 'audio');
+    done(audioOnly && isOwnPage(details.requestingUrl || (wc && wc.getURL())));
+  });
+  ses.setPermissionCheckHandler((_wc, permission, origin, details) => {
+    if (permission !== 'media') return false;
+    if (details && details.mediaType && details.mediaType !== 'audio') return false;
+    return isOwnPage((details && details.requestingUrl) || origin);
+  });
+}
+
 // --- the window ------------------------------------------------------------------
 function createWindow() {
   const saved = loadBounds();
@@ -251,6 +272,7 @@ function createWindow() {
       backgroundThrottling: false, // keep the player's clock running when hidden
     },
   });
+  allowMicrophone(mainWindow.webContents.session);
   Menu.setApplicationMenu(null);
   mainWindow.removeMenu();
   if (saved && saved.maximized) mainWindow.maximize();
@@ -301,6 +323,8 @@ const BACKEND_METHODS = new Set([
   'app_update_download_async', 'app_update_cancel', 'app_update_result',
   'complete_details_async', 'stop_complete_details',
   'vocal_status', 'vocal_review', 'analyze_vocal_async', 'stop_vocal',
+  'set_track_speech', 'set_track_disliked', 'station', 'artist_groups', 'set_artist_choice',
+  'voice_status', 'voice_prepare', 'voice_recognize', 'install_voice_async',
 ]);
 
 ipcMain.handle('backend', async (_evt, method, params) => {

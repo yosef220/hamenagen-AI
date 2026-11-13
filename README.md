@@ -52,6 +52,14 @@
 
 ![סט לברית: שירים מהמחשב ומיוטיוב בסגנון של המאזין](docs/screenshots/set-brit.png)
 
+**בקשה בקול (חדש ב-1.4).** לוחצים על המיקרופון שליד שורת הבקשה (או Ctrl+M) ואומרים „שעה של שירי שבת”. הזיהוי בעברית נעשה במחשב, גם בלי אינטרנט, במודל של ivrit.ai, וההקלטה לא נשמרת ולא נשלחת.
+
+**רדיו המנגן (חדש ב-1.4).** תחנה שמתנגנת בלי סוף מהשירים שבמחשב, לפי השעה ביום ולפי הלוח העברי, או „רדיו מהשיר הזה”. שיר ששמעתם לאחרונה לא חוזר, ואותו זמר לא מתנגן פעמיים ברצף.
+
+**צליל וסדר (חדש ב-1.4).** עוצמה אחידה בין שירים, דילוג על שקט בתחילת שיר ובסופו, הרצאות ושיעורים בלשונית נפרדת (ומחוץ לערבובים), „לא אהוב”, תיקיות שמתנגנות רק כשבוחרים בהן, שם אחד לכל זמר בכל הכתיבים, ובקשות כמו „משהו רגוע”.
+
+![רדיו המנגן בדף הבית, וכפתור המיקרופון](docs/screenshots/radio-card.png)
+
 **נגן שלם.** תור עם ערבוב וחזרה, לב לשירים אהובים, טיימר שינה שמנמיך בהדרגה, מילים מקובץ ‎.lrc או ‎.txt שליד השיר, כפתורי נגן בשורת המשימות, מקשי מדיה וחלונית המדיה של Windows.
 
 **רדיו.** כל ערוצי קול חי מיוזיק, עם השידור המרכזי 102.5FM בראש ו„מה מתנגן עכשיו” בכל ערוץ. בלי אינטרנט מוצגת רשימה שמורה.
@@ -74,12 +82,13 @@
 | ![הרדיו](docs/screenshots/radio.png) | ![ההגדרות](docs/screenshots/settings.png) |
 | ![דף הבית בערכה הכהה](docs/screenshots/home-dark.png) | ![התור בערכה הכהה](docs/screenshots/queue-dark.png) |
 | ![תפריט השיר: למה הנושא, שינוי נושא, ווקאלי](docs/screenshots/song-menu.png) | ![שירים שזוהו מהשמע, לאישור](docs/screenshots/vocal-review.png) |
+| ![בקשה בקול: המנגן מקשיב](docs/screenshots/voice-listening.png) | ![בקשה בקול: „ירושלים” התנגן](docs/screenshots/voice-result-dark.png) |
 | ![זמר שלא נמצא במחשב: שירים מיוטיוב והערוץ שלו](docs/screenshots/singer-online.png) | ![בחירת שירים מערוץ](docs/screenshots/channel-picker.png) |
 | ![נטפרי חוסמת חיפוש: חיפוש בדפדפן והדבקת קישור](docs/screenshots/netfree.png) | ![פרטים ותמונה מהרשת לשיר](docs/screenshots/details.png) |
 
 ## פרטיות
 
-אין משתמשים, אין סיסמאות ואין איסוף נתונים. הספרייה, ההגדרות, הלב וההיסטוריה נשמרים רק במחשב: בגרסה הניידת בתיקייה `data` שליד התוכנה, ובגרסה המותקנת ב-`%APPDATA%\Hamenagen`. התוכנה פונה לרשת רק כדי: לחפש ולהוריד שיר שביקשתם, לנגן ולהציג את ערוצי הרדיו, לבדוק אם יש גרסה חדשה (ולעדכן את רכיב ההורדה), להוריד פעם אחת את מודל הסיווג, ולחפש פרטים ותמונה לשיר כשמבקשים זאת בתפריט שלו — אז נשלחים ל-Apple (iTunes) רק שם השיר, הזמר והאורך.
+אין משתמשים, אין סיסמאות ואין איסוף נתונים. הספרייה, ההגדרות, הלב וההיסטוריה נשמרים רק במחשב: בגרסה הניידת בתיקייה `data` שליד התוכנה, ובגרסה המותקנת ב-`%APPDATA%\Hamenagen`. התוכנה פונה לרשת רק כדי: לחפש ולהוריד שיר שביקשתם, לנגן ולהציג את ערוצי הרדיו, לבדוק אם יש גרסה חדשה (ולעדכן את רכיב ההורדה), להוריד פעם אחת את מודל הסיווג ואת מודל זיהוי הדיבור, ולחפש פרטים ותמונה לשיר כשמבקשים זאת בתפריט שלו — אז נשלחים ל-Apple (iTunes) רק שם השיר, הזמר והאורך.
 
 ## למפתחים
 
@@ -98,6 +107,6 @@ npm start                          # מריץ את התוכנה; הנתונים 
 
 ## רישיונות של רכיבים
 
-הגופנים Frank Ruhl Libre ו-IBM Plex Sans Hebrew — SIL Open Font License. האייקונים — Lucide (ISC). ניגון HLS — hls.js (Apache-2.0). הליבה משתמשת ב-yt-dlp (Unlicense), mutagen (GPL-2.0), rapidfuzz (MIT), onnxruntime (MIT), tokenizers (Apache-2.0), soundfile (BSD-3, עם libsndfile ב-LGPL-2.1) ו-truststore (MIT). להורדות ב-MP3 מצורף ffmpeg בבנייה של [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) ברישיון LGPL-2.1 (הקוד ב-[ffmpeg.org](https://ffmpeg.org/download.html)). מודל הסיווג: `intfloat/multilingual-e5-small` (MIT). מודל זיהוי הווקאלי: CED-Tiny (Apache-2.0, בהמרה של sherpa-onnx).
+הגופנים Frank Ruhl Libre ו-IBM Plex Sans Hebrew — SIL Open Font License. האייקונים — Lucide (ISC). ניגון HLS — hls.js (Apache-2.0). הליבה משתמשת ב-yt-dlp (Unlicense), mutagen (GPL-2.0), rapidfuzz (MIT), onnxruntime (MIT), tokenizers (Apache-2.0), soundfile (BSD-3, עם libsndfile ב-LGPL-2.1) ו-truststore (MIT). להורדות ב-MP3 מצורף ffmpeg בבנייה של [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) ברישיון LGPL-2.1 (הקוד ב-[ffmpeg.org](https://ffmpeg.org/download.html)). מודל הסיווג: `intfloat/multilingual-e5-small` (MIT). מודל זיהוי הווקאלי: CED-Tiny (Apache-2.0, בהמרה של sherpa-onnx). מודל זיהוי הדיבור: [zipformer2-66m-streaming-he](https://huggingface.co/ivrit-ai/zipformer2-66m-streaming-he) של יעקב קולני ו-ivrit.ai ([CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/)).
 
 אינדקס הידע (`song_index.json`, `topic_lexicon.json`) נגזר מ[ויקיפדיה העברית](https://he.wikipedia.org) ומטקסטים של [ספריא](https://www.sefaria.org) ברישיונות פתוחים, ומופץ ברישיון CC BY-SA 4.0 — פרטים ב-[`LICENSE-DATA.md`](backend/hamenagen/data/LICENSE-DATA.md).

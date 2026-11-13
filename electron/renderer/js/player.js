@@ -54,6 +54,7 @@
   /** Play a list from `start`. `{ shuffle: true }` plays it mixed. */
   P.playList = function playList(tracks, start = 0, opts = {}) {
     if (!tracks || !tracks.length) return;
+    P.autoRadio = opts.autoRadio || null;
     P.original = tracks.slice();
     P.listCrossfade = Number.isFinite(opts.crossfade) ? opts.crossfade : null;
     if (opts.shuffle !== undefined) setShuffleFlag(!!opts.shuffle);
@@ -194,10 +195,13 @@
     P.station = null;
     P.index = i;
     counted = false;
-    audio.src = api.fileUrl(track.path);
+    // Skip the silence before the music (media fragment: start at that second).
+    const lead = P.skipSilence && track.lead >= 0.6 ? track.lead : 0;
+    audio.src = api.fileUrl(track.path) + (lead ? `#t=${lead.toFixed(2)}` : '');
     applyVolume();
     audio.play().catch(() => { /* reported by the error event */ });
     changed('track');
+    topUpRadio();
     const next = P.queue[i + 1];
     if (next && next.listen && !next.path) setTimeout(() => prepareListen(next), 1500);
   }
@@ -241,6 +245,30 @@
     if (P.mode === 'track' && Number.isFinite(audio.duration)) audio.currentTime = Math.max(0, Math.min(sec, audio.duration));
   };
 
+  // ------------------------------------------------------------ רדיו המנגן
+  // A station from the listener's own songs (core: station): when two songs
+  // are left, the next ones are asked for and added, so it plays on.
+  P.autoRadio = null;   // { seed, title, history: [ids], loading }
+  P.playRadio = function playRadio(res) {
+    if (!res || !res.tracks || !res.tracks.length) return false;
+    P.playList(res.tracks, 0, { shuffle: false, autoRadio: { seed: res.seed || null, title: res.title,
+      history: res.tracks.map((t) => t.id), loading: false } });
+    return true;
+  };
+  function topUpRadio() {
+    const r = P.autoRadio;
+    if (!r || r.loading || P.queue.length - P.index > 2) return;
+    r.loading = true;
+    api.station(r.seed, r.history, 8).then((res) => {
+      if (P.autoRadio !== r || !res || !res.tracks) return;
+      const fresh = res.tracks.filter((t) => !r.history.includes(t.id));
+      r.history.push(...fresh.map((t) => t.id));
+      P.queue.push(...fresh);
+      P.original.push(...fresh);
+      changed('queue');
+    }).catch(() => {}).finally(() => { r.loading = false; });
+  }
+
   // ------------------------------------------------------------ radio
   const isHlsUrl = (url) => /\.m3u8(\?|$)/i.test(url);
 
@@ -283,8 +311,27 @@
   };
 
   // ------------------------------------------------------------ volume
+  // Even loudness: a loud song plays a little quieter (gain from the core,
+  // never above 1, so nothing distorts).
+  P.normalize = true;
+  P.skipSilence = true;
+  P.setSoundOptions = function setSoundOptions({ normalize, skipSilence } = {}) {
+    if (normalize !== undefined) P.normalize = !!normalize;
+    if (skipSilence !== undefined) P.skipSilence = !!skipSilence;
+    applyVolume();
+  };
+  // While the microphone listens, the music steps back (P.duck).
+  let ducked = false;
+  P.duck = function duck(on) { ducked = !!on; applyVolume(); };
+  function songFactor() {
+    const d = ducked ? 0.12 : 1;
+    const cur = P.mode === 'track' ? P.queue[P.index] : null;
+    if (!P.normalize || !cur || !cur.gain) return d;
+    return d * Math.min(1, Math.pow(10, cur.gain / 20));
+  }
+  P.songFactor = songFactor;
   function applyVolume() {
-    if (!fading) audio.volume = muted ? 0 : volume;
+    if (!fading) audio.volume = muted ? 0 : volume * songFactor();
   }
   P.setVolume = function setVolume(v) {
     volume = Math.max(0, Math.min(1, v));
@@ -325,7 +372,7 @@
     }
     if (left <= 10 && P.isPlaying()) {
       fading = true;
-      audio.volume = (muted ? 0 : volume) * (left / 10);
+      audio.volume = (muted ? 0 : volume * songFactor()) * (left / 10);
     }
     renderSleep();
   }
@@ -370,10 +417,17 @@
       if (!xfade) return;
       const k = Math.min(1, (Date.now() - xfade.t0) / xfade.ms);
       ghost.volume = Math.max(0, xfade.from * (1 - k) * (1 - k));
-      audio.volume = (muted ? 0 : volume) * Math.sqrt(k);
+      audio.volume = (muted ? 0 : volume * songFactor()) * Math.sqrt(k);
       if (k >= 1) endCrossfade();
     }, 50);
     return true;
+  }
+
+  // Where the music really ends: before the silence at the end of the file.
+  function musicEnd() {
+    const cur = P.current();
+    const tail = P.skipSilence && cur && cur.tail >= 1.5 ? cur.tail : 0;
+    return audio.duration - tail;
   }
 
   function maybeCrossfade() {
@@ -381,7 +435,7 @@
     if (!seconds || xfade || P.mode !== 'track' || audio.paused || P.repeat === 'one' || P.blocked) return;
     if (P.sleep && P.sleep.endOfTrack) return;
     if (!Number.isFinite(audio.duration) || audio.duration < seconds * 3) return;
-    const left = audio.duration - audio.currentTime;
+    const left = musicEnd() - audio.currentTime;
     if (left > seconds) return;
     const nextIndex = P.index + 1 < P.queue.length ? P.index + 1 : (P.repeat === 'all' && P.queue.length > 1 ? 0 : -1);
     if (nextIndex >= 0) startCrossfade(nextIndex, Math.max(1, left));
@@ -444,6 +498,12 @@
   audio.addEventListener('timeupdate', () => {
     renderProgress();
     maybeCrossfade();
+    // No crossfade: once the music has ended, the silence after it is skipped.
+    if (!xfade && P.mode === 'track' && !audio.paused && Number.isFinite(audio.duration)
+        && musicEnd() < audio.duration && audio.currentTime >= musicEnd()) {
+      audio.dispatchEvent(new Event('ended'));
+      return;
+    }
     const cur = P.current();
     if (cur && !cur.listen && !counted && audio.currentTime >= Math.min(30, (audio.duration || 60) * 0.5)) {
       counted = true;
@@ -502,7 +562,9 @@
       heart.setAttribute('aria-pressed', 'false');
     } else if (cur) {
       H.$('#dock-title').textContent = H.trackTitle(cur);
-      H.$('#dock-sub').textContent = [cur.artist, cur.album].filter(Boolean).join(' · ') || cur.filename || '';
+      // On רדיו המנגן the station's name replaces the album.
+      const radio = P.autoRadio ? (P.autoRadio.title || 'רדיו המנגן') : null;
+      H.$('#dock-sub').textContent = [cur.artist, radio || cur.album].filter(Boolean).join(' · ') || cur.filename || '';
       coverHost.dataset.tint = H.tint(cur.topic);
       coverHost.textContent = H.letter(H.trackTitle(cur));
       heart.disabled = false;

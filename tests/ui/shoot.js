@@ -44,6 +44,14 @@ const searchServer = http.createServer((req, res) => {
     + '<p><a class="other" href="https://example.com/">אתר אחר</a></p></body>');
 });
 
+// Requests by voice: with the speech model and a recording (a folder holding
+// voice-he/ and fake-mic.wav), the microphone plays that recording.
+const voiceDir = process.env.HAMENAGEN_TEST_VOICE_DIR || '';
+const voiceArgs = voiceDir && fs.existsSync(path.join(voiceDir, 'fake-mic.wav'))
+  ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
+    `--use-file-for-fake-audio-capture=${path.join(voiceDir, 'fake-mic.wav')}`]
+  : [];
+
 async function launch(dataDir, theme) {
   const settings = {
     scan_roots: [path.resolve(music)],
@@ -59,7 +67,7 @@ async function launch(dataDir, theme) {
   const executablePath = require(path.join(root, 'node_modules', 'electron'));
   const app = await electron.launch({
     executablePath,
-    args: ['--no-sandbox', '--disable-gpu', `--force-device-scale-factor=${scale}`, root],
+    args: ['--no-sandbox', '--disable-gpu', `--force-device-scale-factor=${scale}`, ...voiceArgs, root],
     env: {
       ...process.env,
       HAMENAGEN_DATA_DIR: dataDir,
@@ -100,6 +108,10 @@ async function run() {
   // What the vocal detector would have heard (the harness has no audio model).
   execFileSync(process.env.HAMENAGEN_PYTHON || 'python3', [path.join(__dirname, 'seed_vocal.py'), path.resolve(music), dataDir],
     { stdio: 'inherit' });
+
+  if (voiceArgs.length) {
+    fs.cpSync(path.join(voiceDir, 'voice-he'), path.join(dataDir, 'models', 'voice-he'), { recursive: true });
+  }
 
   for (const theme of themes) {
     const { app, page } = await launch(dataDir, theme);
@@ -357,6 +369,99 @@ async function run() {
         return handed;
       });
       if (!crossfaded) errors.push('the crossfade did not move on to the next song');
+
+      // רדיו המנגן: the card on the home page plays the hour's station, and
+      // it adds more songs before the queue runs out.
+      await page.evaluate(() => H.go('home'));
+      await page.waitForSelector('.radio-card', { timeout: 15000 });
+      await shot(page, `25-radio-card${suffix}`);
+      await page.click('.radio-card .btn-gold');
+      await page.waitForFunction(() => H.player.autoRadio && H.player.queue.length >= 6, null, { timeout: 15000 })
+        .catch(() => errors.push('the radio did not start'));
+      const before = await page.evaluate(() => { const P = H.player; P.jump(P.queue.length - 1); return P.queue.length; });
+      await page.waitForFunction((n) => H.player.queue.length > n, before, { timeout: 15000 })
+        .catch(() => errors.push('the radio did not add more songs'));
+      await page.evaluate(() => H.player.toggle(false));
+
+      // The song menu: speech or song, not liked, a radio from the song.
+      await page.evaluate(() => H.go('library'));
+      await page.waitForSelector('#view-library .track');
+      await page.locator('#view-library .track', { hasText: 'אמת' }).first().click({ button: 'right' });
+      await page.waitForSelector('#track-menu .menu-item');
+      await shot(page, `26-track-menu${suffix}`);
+      await page.locator('#track-menu .menu-item', { hasText: 'לא אהוב' }).click();
+      await page.waitForTimeout(400);
+      await page.evaluate(() => H.views.library.refresh());
+      await page.waitForSelector('#view-library .segmented button:has-text("לא אהובים")', { timeout: 10000 })
+        .catch(() => errors.push('the "not liked" tab did not appear'));
+      const mixed = await page.evaluate(async () => {
+        const res = await H.api.station(null, [], 12);
+        return res.tracks.map((t) => t.title);
+      });
+      if (mixed.includes('אמת')) errors.push('a song marked "not liked" played on the radio');
+      await page.evaluate(async () => {
+        const { tracks } = await H.api.listTracks({ text: 'אמת', limit: 5 });
+        for (const t of tracks) await H.api.setTrackDisliked(t.id, false);
+      });
+
+      // Settings: sound, names of singers, requests by voice.
+      await page.evaluate(() => H.go('settings', { focus: 'artists' }));
+      await page.waitForSelector('#set-voice');
+      await shot(page, `27-settings-sound-voice${suffix}`);
+
+      // Spoken commands work the player rather than being searched for.
+      const commands = await page.evaluate(async () => {
+        const P = H.player;
+        const { tracks } = await H.api.ask('שירי שבת');
+        P.playList(tracks.slice(0, 4), 0, { shuffle: false });
+        await new Promise((r) => setTimeout(r, 500));
+        const out = {};
+        H.voice.command('שיר הבא בבקשה');
+        out.next = P.index;
+        const vol = P.volume();
+        H.voice.command('תנמיך');
+        out.quieter = P.volume() < vol;
+        H.voice.command('תכבה בעוד חצי שעה');
+        out.sleep = P.sleep && P.sleep.minutes;
+        H.voice.command('בטל את הטיימר');
+        out.sleepOff = P.sleep === null;
+        H.voice.command('עצור');
+        await new Promise((r) => setTimeout(r, 200));
+        out.paused = !P.isPlaying();
+        out.song = H.voice.command('ירושלים של זהב');
+        P.setVolume(vol);
+        return out;
+      });
+      if (commands.next !== 1 || !commands.quieter || commands.sleep !== 30 || !commands.sleepOff || !commands.paused || commands.song) {
+        errors.push(`spoken commands: ${JSON.stringify(commands)}`);
+      }
+
+      if (voiceArgs.length) {
+        await page.evaluate(() => H.go('home'));
+        await page.waitForSelector('.mic-btn');
+        await page.evaluate(() => {
+          window.__vlog = [];
+          const t0 = performance.now();
+          const log = (k) => (e) => window.__vlog.push(`${k}@${Math.round(performance.now() - t0)}:${e.text || e.state || ''}`);
+          H.api.on('voice-partial', log('partial'));
+          H.api.on('voice-state', log('state'));
+        });
+        await page.click('.mic-btn');
+        await page.waitForFunction(() => H.voice.state === 'listening', null, { timeout: 10000 })
+          .catch(() => errors.push('the microphone did not start listening'));
+        // The words appear while speaking (live text), before the pause ends it.
+        await page.waitForFunction(() => H.voice.state === 'listening' && /ירושלים/.test(document.querySelector('#ask-input').value),
+          null, { timeout: 8000 })
+          .catch(async () => errors.push(`no live text while listening: ${await page.evaluate(() => window.__vlog.join(' '))}`));
+        await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+        await page.screenshot({ path: path.join(out, `28-voice-listening${suffix}.png`) });
+        await page.waitForFunction(() => H.currentView() === 'results' && /ירושלים/.test(document.querySelector('.results-title')?.textContent || ''),
+          null, { timeout: 20000 })
+          .catch(async () => errors.push(`a request by voice was not understood: ${await page.textContent('.results-title').catch(() => '')}`));
+        await page.waitForTimeout(500);
+        await shot(page, `29-voice-result${suffix}`);
+        await page.evaluate(() => H.player.toggle(false));
+      }
 
       await page.evaluate(() => H.go('downloads'));
       await page.waitForTimeout(300);

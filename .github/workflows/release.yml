@@ -150,6 +150,14 @@ jobs:
           PYTHONIOENCODING: 'utf-8'
         run: build/win-python/python.exe backend/scripts/prepare_model.py --out build/models
 
+      - name: Put the speech model inside the app (offline editions)
+        if: matrix.edition == 'offline' || matrix.edition == 'setup-offline'
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+        run: build/win-python/python.exe backend/scripts/prepare_voice_model.py --out build/models
+
       - name: Package
         env:
           HAMENAGEN_EDITION: ${{ matrix.edition }}
@@ -226,6 +234,8 @@ jobs:
           $env:HAMENAGEN_BACKEND_DIR = (Resolve-Path "$res/backend").Path
           $env:MODELS = (Resolve-Path "$res/models").Path
           & "$res/python/python.exe" -c "import os, sys; sys.path.insert(0, os.environ['HAMENAGEN_BACKEND_DIR']); from hamenagen.classifier import EmbeddingBackend; b = EmbeddingBackend(cache_dir=os.environ['MODELS'], allow_download=False); assert b.load(), b.load_error; c = b.classify('\u05e1\u05d5\u05e4\u05d2\u05e0\u05d9\u05d5\u05ea \u05d7\u05de\u05d5\u05ea'); print('model ok:', c); assert c is not None and c.topic == '\u05d7\u05e0\u05d5\u05db\u05d4'"
+          & "$res/python/python.exe" -c "import os, sys; sys.path.insert(0, os.environ['HAMENAGEN_BACKEND_DIR']); import numpy as np; from hamenagen.voice import SpeechRecognizer; r = SpeechRecognizer([os.environ['MODELS']]); assert r.load(), r.load_error; print('speech model ok:', repr(r.recognize(np.zeros(16000, dtype=np.float32))))"
+          if ($LASTEXITCODE -ne 0) { throw "the bundled speech model does not load" }
 
       - name: The parts of the app, for the smart update
         shell: pwsh

@@ -314,6 +314,16 @@
       setTimeout(() => views.home.focusAsk(), 0);
       return;
     }
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyM' && H.voice) {
+      e.preventDefault();
+      if (H.voice.state === 'idle' && currentView !== 'home') H.go('home');
+      H.voice.toggle();
+      return;
+    }
+    if (e.key === 'Escape' && H.voice && H.voice.state === 'listening') {
+      H.voice.cancel();
+      return;
+    }
     if (typing) return;
     if (e.code === 'Space' && !e.target.closest('button')) {
       e.preventDefault();
@@ -340,6 +350,7 @@
     }
     H.settings = settings;
     H.player.setCrossfade(settings.crossfade_seconds || 0);
+    H.player.setSoundOptions({ normalize: settings.normalize_volume !== false, skipSilence: settings.skip_silence !== false });
     H.applyTheme(settings.theme);
     H.applyTextSize(settings.text_size);
     api.appInfo().then((info) => { H.appInfo = info; }).catch(() => {});
