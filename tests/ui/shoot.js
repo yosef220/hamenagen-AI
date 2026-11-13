@@ -453,6 +453,10 @@ async function run() {
         await page.waitForSelector('.tool-dialog input[type="range"]', { timeout: 10000 })
           .catch(() => errors.push('the ringtone dialog did not open'));
         await shot(page, `32-ringtone${suffix}`);
+        // The slider runs like the player's progress bar: its fill and its thumb together.
+        if (await page.evaluate(() => getComputedStyle(document.querySelector('.tool-dialog input[type="range"]')).direction) !== 'ltr') {
+          errors.push('the ringtone slider is not left-to-right (its fill and thumb disagree)');
+        }
         await page.locator('.tool-dialog .btn-primary', { hasText: 'ליצור צלצול' }).click().catch(() => {});
         await page.waitForFunction(() => /הצלצול מוכן/.test(document.querySelector('.tool-dialog .tool-summary')?.textContent || ''), null, { timeout: 30000 })
           .catch(async () => errors.push(`no ringtone: ${await page.textContent('.tool-dialog .tool-summary').catch(() => '')}`));
@@ -505,15 +509,29 @@ async function run() {
           stayed: H.currentView() === view,
           wake: F.handle('המנגן'),
         };
-        out.request = F.handle('המנגן תשמיע שירי שבת');
-        await new Promise((r) => setTimeout(r, 1500));
-        out.asked = H.currentView() === 'results' && /שבת/.test(document.querySelector('.results-title')?.textContent || '');
-        H.player.toggle(false);
+        // The name alone: listening on the whole screen, the music lower.
+        out.attending = F.attending() && !document.querySelector('.listen-overlay').hidden;
+        out.again = F.answer('');                   // nothing understood: "say it again"
+        out.puzzled = document.querySelector('.listen-overlay').dataset.mode === 'puzzled';
         return out;
       });
+      await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+      await page.screenshot({ path: path.join(out, `35-listening-again${suffix}.png`) });
+      Object.assign(free, await page.evaluate(async () => {
+        const F = H.handsFree;
+        const out = { request: F.answer('תשמיע שירי שבת'), stillAttending: F.attending() };
+        await new Promise((r) => setTimeout(r, 1800));
+        out.overlayGone = document.querySelector('.listen-overlay').hidden;
+        out.asked = H.currentView() === 'results' && /שבת/.test(document.querySelector('.results-title')?.textContent || '');
+        out.direct = F.handle('המנגן תשמיע שירי שבת');
+        await new Promise((r) => setTimeout(r, 1600));
+        H.player.toggle(false);
+        return out;
+      }));
       if (free.next !== 'command' || free.louder !== 'command' || free.song !== null || free.talk !== null
         || free.natural.some((x) => x !== 'command') || free.welcome !== null
-        || !free.stayed || free.wake !== 'wake' || free.request !== 'request' || !free.asked) {
+        || !free.stayed || free.wake !== 'wake' || !free.attending || free.again !== 'again' || !free.puzzled
+        || free.request !== 'request' || free.stillAttending || !free.overlayGone || !free.asked || free.direct !== 'request') {
         errors.push(`hands-free: ${JSON.stringify(free)}`);
       }
 
