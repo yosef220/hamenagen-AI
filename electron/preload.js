@@ -59,7 +59,7 @@ contextBridge.exposeInMainWorld('hamenagen', {
   appUpdateResult: () => core('app_update_result'),
   completeDetails: () => core('complete_details_async'),
   stopCompleteDetails: () => core('stop_complete_details'),
-  ask: (text) => core('handle_request', { text }),
+  ask: (text, spoken) => core('handle_request', { text, spoken: !!spoken }),
   playlist: (kind, opts) => core('playlist', { kind, ...(opts || {}) }),
   setFavorite: (id, on) => core('set_favorite', { id, on }),
   recordPlay: (id) => core('record_play', { id }),

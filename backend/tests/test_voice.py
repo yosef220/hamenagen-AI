@@ -111,3 +111,21 @@ def test_the_offline_editions_model_is_found_in_its_own_folder(tmp_path, monkeyp
     st = svc.voice_status()
     assert st["available"] and st["bundled"]
     svc.close()
+
+
+def test_a_long_spoken_sentence_finds_the_song_inside_it(tmp_path):
+    from hamenagen.models import Track
+    from hamenagen.service import PlayerService
+
+    svc = PlayerService(data_dir=tmp_path / "data")
+    svc.index.upsert_many([
+        Track(id="j", path="/m/j.mp3", title="ירושלים של זהב", artist="נעמי"),
+        Track(id="k", path="/m/k.mp3", title="שיר לציון", artist="אחים"),
+    ])
+    said = "תשמע אני רוצה עכשיו ירושלים של זהב כי זה יפה"
+    typed = svc.handle_request(said)
+    assert not typed["tracks"]                       # typed: every word counts, as before
+    spoken = svc.handle_request(said, spoken=True)
+    assert [t["id"] for t in spoken["tracks"]] == ["j"]
+    assert "ירושלים של זהב" in spoken["understood"] and spoken["note"].startswith("שמעתי")
+    svc.close()

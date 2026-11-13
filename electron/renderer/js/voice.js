@@ -203,7 +203,7 @@
       }
       if (V.command(res.request)) { api.emit('voice-partial', { text: '' }); return; }
       api.emit('voice-heard', { text: res.request });
-      H.ask(res.request);
+      H.ask(res.request, { spoken: true });
     } catch (err) {
       setState('idle');
       H.toast(`הזיהוי לא הצליח: ${err.message}`, { kind: 'bad' });

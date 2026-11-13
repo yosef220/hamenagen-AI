@@ -1040,13 +1040,56 @@ class PlayerService:
         return [self._track_dict(t, favs, overrides.get(t.id), analyses.get(t.id)) for t in tracks]
 
     # -- the main request path --------------------------------------------
-    def handle_request(self, text: str) -> dict:
-        """Turn a free Hebrew request into a playlist + explanation."""
+    def handle_request(self, text: str, spoken: bool = False) -> dict:
+        """Turn a free Hebrew request into a playlist + explanation.
+        ``spoken``: said into the microphone, so a long sentence may hold the
+        song's name among other words (see _spoken_part)."""
         saved = self._saved_playlist_request(text)
         if saved is not None:
             return self.play_playlist(saved)
         intent = intent_mod.parse(text)
+        if spoken:
+            intent.params["spoken"] = True
         return self._respond(intent)
+
+    SPOKEN_MIN_WORDS = 3
+
+    @staticmethod
+    def _raw_words_for(raw: str, piece: str) -> str:
+        """The listener's own words for a run of search words ("ירושלימ
+        זהב" → "ירושלים של זהב")."""
+        from .fuzzy import query_words
+
+        want = piece.split()
+        words = (raw or "").split()
+        for i, word in enumerate(words):
+            if query_words(word)[:1] != want[:1]:
+                continue
+            for j in range(i, len(words)):
+                got = query_words(" ".join(words[i:j + 1]))
+                if got == want:
+                    return " ".join(words[i:j + 1])
+                if got != want[: len(got)]:
+                    break
+        return piece
+
+    def _spoken_part(self, words: list[str], candidates) -> tuple[list, str] | None:
+        """A spoken sentence that no song answers whole ("ירושלים בואי
+        ירושלים היא הבית שלי"): the longest run of its words that some songs
+        answer completely — a song's name or a singer inside the sentence."""
+        n = len(words)
+        for size in range(n - 1, 0, -1):
+            best = None
+            for start in range(0, n - size + 1):
+                part = " ".join(words[start:start + size])
+                if size == 1 and len(part) < 3:
+                    continue
+                found = [r for r in fuzzy_search(part, candidates, limit=50) if r.complete]
+                if found and (best is None or len(found) < len(best[0])):
+                    best = (found, part)     # among equal lengths, the most specific
+            if best:
+                return best
+        return None
 
     _PLAY_VERBS = ("תשמיע ", "תנגן ", "נגן ", "השמע ", "תפעיל ", "שים ", "תשים ")
     _LIST_WORDS = ("את הרשימה ", "הרשימה ", "את רשימת ", "רשימת ", "רשימה ", "את הפלייליסט ", "הפלייליסט ",
@@ -1483,6 +1526,12 @@ class PlayerService:
             if not found:
                 found = near_matches(query, candidates, limit=limit)
                 near = bool(found)
+            words = query.split()
+            if not found and intent.params.get("spoken") and len(words) >= self.SPOKEN_MIN_WORDS:
+                part = self._spoken_part(words, candidates)
+                if part:
+                    found, piece = part
+                    intent.params["heard_part"] = piece
             by_id = {t.id: t for t in self.index.get_many([r.candidate.id for r in found])}
             tracks = [by_id[r.candidate.id] for r in found if r.candidate.id in by_id]
             shown = _display_query(intent.raw) or query
@@ -1492,6 +1541,12 @@ class PlayerService:
                 understood = f"השירים של {Counter(artists).most_common(1)[0][0]}"
             if not tracks:
                 return [], understood, f"„{shown}” לא נמצא במחשב."
+            piece = intent.params.get("heard_part")
+            if piece:
+                piece = self._raw_words_for(intent.raw, piece)
+                if not understood.startswith("השירים של"):
+                    understood = f"חיפוש: {piece}"
+                return tracks, understood, f"שמעתי „{shown}”. אלה השירים שמתאימים ל„{piece}”:"
             if near:
                 intent.params["near"] = True
                 return tracks, understood, "אין במחשב שיר שמתאים לכל המילים. אלה הכי קרובים:"
