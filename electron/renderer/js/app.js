@@ -186,7 +186,11 @@
     if (settings.auto_update === false) return;
     try {
       const r = await api.checkUpdates(false);
-      if (r.online && r.app && r.app.newer) H.showAppUpdate(r.app);
+      if (r.online && r.app && r.app.newer) {
+        // After a failed swap, the full download rather than the same update.
+        if (H.updateFailed && r.app.smart) r.app.smart.possible = false;
+        H.showAppUpdate(r.app);
+      }
     } catch { /* offline: nothing to say */ }
   }
 
@@ -271,9 +275,19 @@
       if (!result) return;
       if (result.ok) {
         H.toast(`המנגן עודכן לגרסה ${result.version}`, { icon: 'circle-check' });
-      } else {
-        H.toast(`העדכון לא הושלם והגרסה הקודמת נשארה${result.error ? ` (${result.error})` : ''}.`, { kind: 'bad' });
+        return;
       }
+      // It did not work: say so where it stays, and offer the full file
+      // (the same small update would most likely fail the same way).
+      if (result.log) console.warn(`smart update log:\n${result.log}`);
+      H.$('#update-text').textContent = `העדכון ל-${result.version || 'הגרסה החדשה'} לא הושלם, והגרסה הקודמת נשארה ועובדת. `
+        + 'אפשר להוריד את הגרסה המלאה ולהתקין מעל — הספרייה וההגדרות נשמרות.';
+      const button = H.$('#update-download');
+      button.disabled = false;
+      button.textContent = 'להורדה מלאה';
+      button.onclick = () => api.openExternal('https://github.com/yosef220/hamenagen-AI/releases/latest');
+      H.$('#update-bar').hidden = false;
+      H.updateFailed = true;
     } catch { /* nothing to report */ }
   }
   H.$('#update-dismiss').addEventListener('click', () => { H.$('#update-bar').hidden = true; });

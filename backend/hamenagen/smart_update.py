@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 import os
 import shutil
 import threading
@@ -257,17 +258,48 @@ class SmartUpdater:
         return {"ok": True, "plan": str(plan_path), "version": release.get("latest")}
 
     # ------------------------------------------------------------ after the swap
-    def result(self) -> dict | None:
-        """What the last swap did (once), and tidy what it left behind."""
-        path = self.work / "result.json"
-        if not path.exists():
-            return None
+    STALE_PLAN_SECONDS = 300
+
+    def _log_tail(self, lines: int = 12) -> str:
         try:
-            data = json.loads(path.read_text(encoding="utf-8-sig"))
-        except Exception:
-            data = {"ok": False, "error": "unreadable result"}
+            text = (self.work / "apply.log").read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            return ""
+        return "\n".join(text.strip().splitlines()[-lines:])
+
+    def result(self) -> dict | None:
+        """What the last swap did (once), and tidy what it left behind.
+
+        A plan that is old and has no result means the swap never ran or
+        never finished (an antivirus stopped it, or the old core held its
+        folder — 1.4.0): that is reported as a failure too, with the log,
+        so the listener is offered the full download rather than the same
+        update again."""
+        path = self.work / "result.json"
+        plan = self.work / "plan.json"
+        if not path.exists():
+            try:
+                age = time.time() - plan.stat().st_mtime
+            except OSError:
+                return None
+            if age < self.STALE_PLAN_SECONDS:
+                return None          # it may still be running
+            try:
+                version = json.loads(plan.read_text(encoding="utf-8")).get("version")
+            except Exception:
+                version = None
+            data = {"ok": False, "version": version, "stale": True,
+                    "error": "the swap did not run", "log": self._log_tail()}
+        else:
+            try:
+                data = json.loads(path.read_text(encoding="utf-8-sig"))
+            except Exception:
+                data = {"ok": False, "error": "unreadable result"}
+            if not data.get("ok"):
+                data["log"] = self._log_tail()
         for leftover in ("staging", "backup", "parts"):
             shutil.rmtree(self.work / leftover, ignore_errors=True)
+        # The logs stay until the next update, for whoever asks what happened.
         for name in ("result.json", "plan.json", "parts.json", "apply.ps1"):
             try:
                 os.remove(self.work / name)
