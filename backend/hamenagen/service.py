@@ -36,6 +36,7 @@ from . import cloudfiles
 from . import tags as tags_mod
 from . import export as export_mod
 from . import ringtone as ringtone_mod
+from . import chorus as chorus_mod
 from . import sets as sets_mod
 from . import sound as sound_mod
 from . import station as station_mod
@@ -570,7 +571,12 @@ class PlayerService:
         if t is None:
             raise ValueError("השיר לא נמצא")
         lead = (self.index.analyses_for([t.id]).get(t.id) or {}).get("lead") or 0.0
-        return {"duration": t.duration, "start": ringtone_mod.suggest_start(t.duration, lead),
+        # 1.5.3: the chorus — the part that comes back — when the song has one.
+        refrain = None
+        if t.path and not cloudfiles.path_is_cloud_only(t.path):
+            refrain = chorus_mod.find_chorus(t.path, 20, ffmpeg=self.ffmpeg or None)
+        start = refrain if refrain is not None else ringtone_mod.suggest_start(t.duration, lead)
+        return {"duration": t.duration, "start": start, "chorus": refrain is not None,
                 "lengths": list(ringtone_mod.LENGTHS), "ffmpeg": bool(self.ffmpeg), "folder": str(self.ringtones_dir)}
 
     def make_ringtone(self, track_id: str, *, start: float, length: float = 30, fmt: str = "mp3") -> dict:

@@ -38,7 +38,7 @@ _SLOW = {
     "online_search", "online_download", "online_link", "radio_list", "check_updates", "apply_update",
     "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
     "online_set", "listen_prepare", "station", "voice_recognize", "voice_prepare", "write_tags",
-    "export_drives", "export_plan", "make_ringtone", "import_singers",
+    "export_drives", "export_plan", "make_ringtone", "import_singers", "ringtone_info",
 }
 
 

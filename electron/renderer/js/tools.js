@@ -276,8 +276,11 @@
       H.toast('הצלצול מוכן. מעבירים אותו לטלפון בכבל או בבלוטות׳.', { icon: 'bell-ring' });
     });
 
+    const where = h('p', { class: 'tool-hint' }, icon(info.chorus ? 'audio-lines' : 'info', 'icon-sm'),
+      info.chorus ? `המנגן מצא את הפזמון ב-${H.clock(info.start)}. אפשר להזיז.` : 'לא נמצא פזמון ברור. אפשר להזיז את נקודת ההתחלה ולשמוע.');
     d.body.append(
       h('div', { class: 'tool-row' }, h('div', { class: 'tool-label' }, 'מאיפה'), h('div', { class: 'tool-range' }, slider, startLabel)),
+      where,
       choice('אורך', (info.lengths || [20, 30, 40]).map((n) => [String(n), `${n} שניות`]), '30',
         (v) => { opts.length = Number(v); }),
       choice('לאיזה טלפון', [['mp3', 'כל טלפון (MP3)'], ['m4r', 'אייפון (M4R)']], 'mp3', (v) => { opts.format = v; }),

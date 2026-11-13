@@ -453,6 +453,10 @@ async function run() {
         await page.waitForSelector('.tool-dialog input[type="range"]', { timeout: 10000 })
           .catch(() => errors.push('the ringtone dialog did not open'));
         await shot(page, `32-ringtone${suffix}`);
+        // The slider runs like the player's progress bar: its fill and its thumb together.
+        if (await page.evaluate(() => getComputedStyle(document.querySelector('.tool-dialog input[type="range"]')).direction) !== 'ltr') {
+          errors.push('the ringtone slider is not left-to-right (its fill and thumb disagree)');
+        }
         await page.locator('.tool-dialog .btn-primary', { hasText: 'ליצור צלצול' }).click().catch(() => {});
         await page.waitForFunction(() => /הצלצול מוכן/.test(document.querySelector('.tool-dialog .tool-summary')?.textContent || ''), null, { timeout: 30000 })
           .catch(async () => errors.push(`no ringtone: ${await page.textContent('.tool-dialog .tool-summary').catch(() => '')}`));
