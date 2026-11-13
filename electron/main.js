@@ -409,14 +409,23 @@ async function applyUpdatePlan(planPath) {
   await bridge.stopAndWait(2000);
   updateLog('core stopped');
   try {
-    const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-    const child = spawn(powershell, [
-      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
-      '-File', script, '-Plan', plan, '-WaitPid', String(process.pid), '-Relaunch', process.execPath,
-    ], { detached: true, stdio: 'ignore', windowsHide: true });
-    child.on('error', (err) => updateLog(`powershell error: ${err && err.message}`));
+    const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+    const powershell = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    const cmd = path.join(systemRoot, 'System32', 'cmd.exe');
+    // Through cmd's "start": a detached process gets no console, and Windows
+    // PowerShell exits at once without one (1.4.0/1.4.1: the app closed and
+    // the script never ran). "start /min" gives it a console of its own,
+    // minimised and then hidden, outside the app's process tree.
+    const q = (x) => `"${x}"`;
+    const line = ['start', '""', '/min', q(powershell), '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-WindowStyle', 'Hidden', '-File', q(script), '-Plan', q(plan), '-WaitPid', String(process.pid),
+      '-Relaunch', q(process.execPath)].join(' ');
+    const child = spawn(cmd, ['/d', '/s', '/c', `"${line}"`], {
+      detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true,
+    });
+    child.on('error', (err) => updateLog(`launcher error: ${err && err.message}`));
     child.unref();
-    updateLog(`powershell started: pid ${child.pid} (${powershell})`);
+    updateLog(`launcher started: pid ${child.pid}: ${line}`);
   } catch (err) {
     updateLog(`powershell did not start: ${err && err.message}`);
     bridge.start();
