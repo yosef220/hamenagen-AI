@@ -525,6 +525,19 @@ class MusicIndex:
             params.append(limit)
         return self._query(sql, params)
 
+    def by_title_words(self, phrases: list[str], limit: int | None = None, *, shuffle: bool = False) -> list[Track]:
+        """Songs whose title or file name holds one of ``phrases`` (for playing)."""
+        if not phrases:
+            return []
+        order = "RANDOM()" if shuffle else "COALESCE(NULLIF(title, ''), filename) COLLATE NOCASE"
+        like = " OR ".join("(title LIKE ? OR filename LIKE ?)" for _ in phrases)
+        params: list = [x for ph in phrases for x in (f"%{ph}%", f"%{ph}%")]
+        sql = f"SELECT * FROM tracks WHERE ({like}) AND {self._shown()} AND {self._mixable()} ORDER BY {order}"
+        if limit:
+            sql += " LIMIT ?"
+            params.append(limit)
+        return self._query(sql, params)
+
     def topic_counts(self) -> dict[str, int]:
         """How many songs each topic has (main topic or tag)."""
         counts: dict[str, int] = {}

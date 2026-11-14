@@ -125,10 +125,12 @@ def test_melave_malka_is_not_taken_for_shabbat(tmp_path):
     assert intent.parse("שירי שבת").topic == "שבת"
     svc = PlayerService(data_dir=tmp_path / "data")
     svc.index.upsert_many([Track(id=str(i), path=f"{i}.mp3", title=f"שיר {i}", topic="שבת") for i in range(6)]
-                          + [Track(id="m", path="m.mp3", title="אליהו הנביא", topic="מלווה מלכה")])
-    tracks, understood, _ = svc._tracks_for(intent.parse("שירי מלווה מלכה")) if hasattr(svc, "_tracks_for") else (None, None, None)
-    if tracks is not None:
-        assert tracks[0].id == "m" and len(tracks) == 7 and "שבת" in understood
+                          + [Track(id="m", path="m.mp3", title="שיר ללא מילת מפתח", topic="מלווה מלכה"),
+                             Track(id="n", path="n.mp3", title="אליהו הנביא", topic="שבת")])
+    out = svc._respond(intent.parse("רק שירי מלוה מלכה"))
+    # 1.5.6: only Melave Malka songs — the tagged one, and the one named for it; no Shabbat songs added.
+    assert sorted(t["id"] for t in out["tracks"]) == ["m", "n"]
+    assert out["understood"] == "שירי מלווה מלכה"
 
 
 def test_a_topic_said_clearly_beats_noise_around_it(tmp_path):
@@ -141,7 +143,7 @@ def test_a_topic_said_clearly_beats_noise_around_it(tmp_path):
                            Track(id="a", path="a.mp3", title="דע לפני מי", artist="מונה רוזנבלום")])
     out = svc._respond(intent.parse("תפעיל שירים של מוצאי שבת שמונה שנה שומע"))
     assert out["tracks"][0]["id"] == "m" and out["intent"]["action"] == "play_topic"
-    assert "מלווה מלכה" in out["understood"] and "שבת" in out["understood"]
+    assert out["understood"] == "שירי מלווה מלכה"
     # A song named by the words is still found.
     assert svc._respond(intent.parse("תפעיל שירים של מוצאי שבת דע לפני מי"))["tracks"][0]["id"] == "a"
 

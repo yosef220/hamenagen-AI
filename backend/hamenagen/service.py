@@ -1744,14 +1744,8 @@ class PlayerService:
                 # begins with a word of Melave Malka): the topic plays, and the page offers that song on YouTube.
                 words = self._raw_words_for(intent.raw, song_query) or song_query
                 intent.params["song_online"] = words
-            tracks = self.index.by_topic(intent.topic, None if minutes else intent.limit, shuffle=bool(minutes))
+            tracks = self._topic_tracks(intent.topic, None if minutes else intent.limit, bool(minutes))
             understood = topics_mod.topic_phrase(intent.topic)
-            if intent.topic == "מלווה מלכה" and len(tracks) < 5:
-                # Few songs are marked for Melave Malka: the Shabbat songs fill in, and the title says so.
-                more = self.index.by_topic("שבת", None if minutes else intent.limit, shuffle=bool(minutes))
-                seen = {t.id for t in tracks}
-                tracks = [*tracks, *[t for t in more if t.id not in seen]]
-                understood = "שירי מלווה מלכה ושירי שבת"
         else:
             # SEARCH_SONG (or fallback): every word of the request must match.
             mood = station_mod.mood_request(intent.raw or "") or station_mod.mood_request(intent.query or "")
@@ -1776,13 +1770,8 @@ class PlayerService:
                 # 1.5.5: a topic was clearly said ("שירי מוצאי שבת") and the words around it
                 # match no song (the recognizer often adds noise: "…שמונה שנה שומע"). The
                 # topic is what was asked for, not a hunt for the noise in song names.
-                tracks = self.index.by_topic(hint, None if minutes else intent.limit, shuffle=bool(minutes))
+                tracks = self._topic_tracks(hint, None if minutes else intent.limit, bool(minutes))
                 understood = topics_mod.topic_phrase(hint)
-                if hint == "מלווה מלכה" and len(tracks) < 5:
-                    more = self.index.by_topic("שבת", None if minutes else intent.limit, shuffle=bool(minutes))
-                    seen = {t.id for t in tracks}
-                    tracks = [*tracks, *[t for t in more if t.id not in seen]]
-                    understood = "שירי מלווה מלכה ושירי שבת"
                 if tracks:
                     intent.topic, intent.action = hint, Action.PLAY_TOPIC
                     return (self._fill_minutes(tracks, minutes) if minutes else tracks), understood, \
@@ -1827,6 +1816,21 @@ class PlayerService:
         if tracks and intent.params.get("song_online"):
             note = f"„{intent.params['song_online']}” לא נמצא במחשב. אלה {understood}; אפשר לחפש את השיר ביוטיוב."
         return tracks, understood, note
+
+    # Words that make a song a Melave Malka song by its name, though it was filed under Shabbat (1.5.6).
+    MELAVE_MALKA_TITLES = ["מלווה מלכה", "מלוה מלכה", "אליהו הנביא", "המבדיל בין קודש לחול", "דוד מלכא משיחא",
+                           "שבוע טוב", "הבדלה", "במוצאי שבת"]
+
+    def _topic_tracks(self, topic: str, limit: int | None, shuffle: bool) -> list[Track]:
+        """The songs of a topic. Melave Malka also takes songs named for it that are filed elsewhere; Shabbat
+        songs are not added to it (they are another topic)."""
+        tracks = self.index.by_topic(topic, None if limit is None else limit, shuffle=shuffle)
+        if topic != "מלווה מלכה":
+            return tracks
+        seen = {t.id for t in tracks}
+        named = [t for t in self.index.by_title_words(self.MELAVE_MALKA_TITLES, None, shuffle=shuffle) if t.id not in seen]
+        tracks = [*tracks, *named]
+        return tracks[:limit] if limit else tracks
 
     def _empty_note(self, intent: Intent) -> str:
         if self.index.count() == 0:
@@ -1916,11 +1920,10 @@ class PlayerService:
         counts = self.index.topic_counts()
 
         def shown(topic):
-            """(count, phrase): with few Melave Malka songs, Shabbat songs fill in (as when asked)."""
-            n = counts.get(topic, 0)
-            if topic == "מלווה מלכה" and n < 5 and counts.get("שבת", 0):
-                return n + counts["שבת"], "שירי מלווה מלכה ושירי שבת"
-            return n, topics_mod.topic_phrase(topic)
+            """(count, phrase) of a topic's songs."""
+            if topic == "מלווה מלכה":
+                return len(self._topic_tracks(topic, None, False)), topics_mod.topic_phrase(topic)
+            return counts.get(topic, 0), topics_mod.topic_phrase(topic)
 
         for occ in info["occasions"]:
             occ["count"], occ["phrase"] = shown(occ["topic"]) if occ["topic"] else (0, "")
