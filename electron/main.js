@@ -498,9 +498,12 @@ function isGoogle(url) {
 }
 
 function googleSearchUrl(query) {
-  const q = `${String(query || '').trim()} יוטיוב`.trim();
+  // 1.5.6: as in the download-from-YouTube program, where this search shows the YouTube videos with their
+  // pictures: the English word "youtube" after the words, and no language parameter (Google answers in
+  // the Hebrew of the request's Accept-Language).
+  const q = `${String(query || '').trim()} youtube`.trim();
   if (SEARCH_BASE) return `${SEARCH_BASE}?q=${encodeURIComponent(q)}`;
-  return `https://www.google.com/search?hl=iw&q=${encodeURIComponent(q)}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
 }
 
 function toWindow(channel, payload) {
