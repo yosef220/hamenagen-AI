@@ -1316,6 +1316,8 @@ class PlayerService:
                 if size == 1 and len(part) < 3:
                     continue
                 found = [r for r in fuzzy_search(part, candidates, limit=50) if r.complete]
+                if size == 1 and len(found) > 5:
+                    continue                 # "יותר" is in too many names: not what was asked for
                 if found and (best is None or len(found) < len(best[0])):
                     best = (found, part)     # among equal lengths, the most specific
             if best:
@@ -1738,6 +1740,10 @@ class PlayerService:
                     by_id = {t.id: t for t in self.index.get_many([r.candidate.id for r in found])}
                     hits = [by_id[r.candidate.id] for r in found if r.candidate.id in by_id]
                     return hits, f"חיפוש: {_display_query(intent.raw)}", ""
+                # 1.5.5: more than the topic's words was said and no song answers it ("שבוע טוב יותר"
+                # begins with a word of Melave Malka): the topic plays, and the page offers that song on YouTube.
+                words = self._raw_words_for(intent.raw, song_query) or song_query
+                intent.params["song_online"] = words
             tracks = self.index.by_topic(intent.topic, None if minutes else intent.limit, shuffle=bool(minutes))
             understood = topics_mod.topic_phrase(intent.topic)
             if intent.topic == "מלווה מלכה" and len(tracks) < 5:
@@ -1759,6 +1765,28 @@ class PlayerService:
             query = self._search_text(intent.query or intent.raw)
             candidates = self._candidates()
             found = fuzzy_search(query, candidates, limit=limit)
+            hint = intent.params.get("topic_hint")
+            if not found and hint:
+                # The words without the topic's own may still name a song ("…מוצאי שבת דע לפני מי").
+                gone = {normalize(w) for kw in [hint, *topics_mod.TOPIC_KEYWORDS.get(hint, [])] for w in kw.split()}
+                rest = " ".join(w for w in query.split() if normalize(w) not in gone)
+                if rest and rest != query:
+                    found = fuzzy_search(rest, candidates, limit=limit)
+            if not found and hint:
+                # 1.5.5: a topic was clearly said ("שירי מוצאי שבת") and the words around it
+                # match no song (the recognizer often adds noise: "…שמונה שנה שומע"). The
+                # topic is what was asked for, not a hunt for the noise in song names.
+                tracks = self.index.by_topic(hint, None if minutes else intent.limit, shuffle=bool(minutes))
+                understood = topics_mod.topic_phrase(hint)
+                if hint == "מלווה מלכה" and len(tracks) < 5:
+                    more = self.index.by_topic("שבת", None if minutes else intent.limit, shuffle=bool(minutes))
+                    seen = {t.id for t in tracks}
+                    tracks = [*tracks, *[t for t in more if t.id not in seen]]
+                    understood = "שירי מלווה מלכה ושירי שבת"
+                if tracks:
+                    intent.topic, intent.action = hint, Action.PLAY_TOPIC
+                    return (self._fill_minutes(tracks, minutes) if minutes else tracks), understood, \
+                        f"שמעתי „{_display_query(intent.raw)}”. הבנתי: {understood}."
             near = False
             if not found:
                 found = near_matches(query, candidates, limit=limit)
@@ -1796,6 +1824,8 @@ class PlayerService:
             understood = f"{_span_text(minutes)} של {understood}" if intent.action != Action.RANDOM \
                 else f"{_span_text(minutes)} של מוזיקה מכל המאגר"
         note = "" if tracks else self._empty_note(intent)
+        if tracks and intent.params.get("song_online"):
+            note = f"„{intent.params['song_online']}” לא נמצא במחשב. אלה {understood}; אפשר לחפש את השיר ביוטיוב."
         return tracks, understood, note
 
     def _empty_note(self, intent: Intent) -> str:
@@ -1884,17 +1914,20 @@ class PlayerService:
                 on = None
         info = today_info(on, vocal_suggestions=self.settings.vocal_suggestions)
         counts = self.index.topic_counts()
+
+        def shown(topic):
+            """(count, phrase): with few Melave Malka songs, Shabbat songs fill in (as when asked)."""
+            n = counts.get(topic, 0)
+            if topic == "מלווה מלכה" and n < 5 and counts.get("שבת", 0):
+                return n + counts["שבת"], "שירי מלווה מלכה ושירי שבת"
+            return n, topics_mod.topic_phrase(topic)
+
         for occ in info["occasions"]:
-            occ["count"] = counts.get(occ["topic"], 0) if occ["topic"] else 0
-            occ["phrase"] = topics_mod.topic_phrase(occ["topic"]) if occ["topic"] else ""
+            occ["count"], occ["phrase"] = shown(occ["topic"]) if occ["topic"] else (0, "")
         if info["primary"]:
-            topic = info["primary"]["topic"]
-            info["primary"]["count"] = counts.get(topic, 0)
-            info["primary"]["phrase"] = topics_mod.topic_phrase(topic)
+            info["primary"]["count"], info["primary"]["phrase"] = shown(info["primary"]["topic"])
         if info["next"] and info["next"].get("topic"):
-            topic = info["next"]["topic"]
-            info["next"]["count"] = counts.get(topic, 0)
-            info["next"]["phrase"] = topics_mod.topic_phrase(topic)
+            info["next"]["count"], info["next"]["phrase"] = shown(info["next"]["topic"])
         return info
 
     def opening_suggestion(self, on: date | None = None) -> dict | None:

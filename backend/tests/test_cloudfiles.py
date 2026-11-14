@@ -129,3 +129,34 @@ def test_melave_malka_is_not_taken_for_shabbat(tmp_path):
     tracks, understood, _ = svc._tracks_for(intent.parse("שירי מלווה מלכה")) if hasattr(svc, "_tracks_for") else (None, None, None)
     if tracks is not None:
         assert tracks[0].id == "m" and len(tracks) == 7 and "שבת" in understood
+
+
+def test_a_topic_said_clearly_beats_noise_around_it(tmp_path):
+    """1.5.5: "…מוצאי שבת שמונה שנה שומע" played songs named "מונה", not the topic."""
+    from hamenagen import intent
+    from hamenagen.models import Track
+
+    svc = PlayerService(data_dir=tmp_path / "data")
+    svc.index.upsert_many([Track(id="m", path="m.mp3", title="אליהו הנביא", topic="מלווה מלכה"),
+                           Track(id="a", path="a.mp3", title="דע לפני מי", artist="מונה רוזנבלום")])
+    out = svc._respond(intent.parse("תפעיל שירים של מוצאי שבת שמונה שנה שומע"))
+    assert out["tracks"][0]["id"] == "m" and out["intent"]["action"] == "play_topic"
+    assert "מלווה מלכה" in out["understood"] and "שבת" in out["understood"]
+    # A song named by the words is still found.
+    assert svc._respond(intent.parse("תפעיל שירים של מוצאי שבת דע לפני מי"))["tracks"][0]["id"] == "a"
+
+
+def test_a_song_named_with_a_topic_word_and_a_misheard_verb(tmp_path):
+    """1.5.5: "תפילי את השיר שבוע טוב יותר" searched for "יותר" alone."""
+    from hamenagen import intent
+    from hamenagen.models import Track
+
+    svc = PlayerService(data_dir=tmp_path / "data")
+    svc.index.upsert_many([Track(id="m", path="m.mp3", title="אליהו הנביא", topic="מלווה מלכה")]
+                          + [Track(id=f"y{i}", path=f"y{i}.mp3", title=f"שיר {i} יותר") for i in range(8)])
+    out = svc._respond(intent.parse("תפילי את השיר שבוע טוב יותר"))
+    assert out["tracks"][0]["id"] == "m"                      # not eight songs that merely say "יותר"
+    assert out["intent"]["params"]["song_online"] == "שבוע טוב יותר" and "יוטיוב" in out["note"]
+    svc.index.upsert_many([Track(id="s", path="s.mp3", title="שבוע טוב יותר", artist="מוטי וייס")])
+    out = svc._respond(intent.parse("תפילי את השיר שבוע טוב יותר"))
+    assert [t["id"] for t in out["tracks"]] == ["s"]           # the verb a letter off is not a word of the song

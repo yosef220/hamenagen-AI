@@ -284,15 +284,33 @@ class YouTubeSource:
         if not self.available():
             return self._failed("not_installed")
         last = None
+        limit = int(limit)
+        # 1.5.5: the search page itself first, not the bare ``ytsearch`` API. The
+        # page corrects a misheard or misspelled word ("מוטיבייס" → "מוטי וייס")
+        # and ranks as the listener sees it in the browser; ``ytsearch`` takes
+        # every word literally and found nothing for "שבוע טוב יותר מוטיבייס".
+        # ``ytsearch`` stays as the second try (a block on one does not always
+        # block the other).
+        attempts = [[self.search_url(query), "--flat-playlist", "--dump-json", "--playlist-end", str(limit * 2)],
+                    [f"ytsearch{limit}:{query}", "--flat-playlist", "--dump-json"]]
         for client in CLIENT_SETS[:2]:
-            res = self.runner.run([f"ytsearch{int(limit)}:{query}", "--flat-playlist", "--dump-json"],
-                                  timeout=30, client=client)
-            items = [r for e in self.runner.json_lines(res) if (r := _entry_result(e))]
-            if items:
-                return FetchOutcome(True, "", result=items[0], results=items)
-            last = res
-            if res.code in ("netfree", "network", "certificate"):
-                break  # another client will not change this
+            for args in attempts:
+                res = self.runner.run(args, timeout=30, client=client)
+                seen: set[str] = set()
+                items = []
+                for e in self.runner.json_lines(res):
+                    r = _entry_result(e)
+                    if r and r.id not in seen:        # mixes, channels and playlists have other ids
+                        seen.add(r.id)
+                        items.append(r)
+                if items:
+                    items = items[:limit]
+                    return FetchOutcome(True, "", result=items[0], results=items)
+                last = res
+                if res.code in ("netfree", "network", "certificate"):
+                    break  # another client or another form will not change this
+            if last is not None and last.code in ("netfree", "network", "certificate"):
+                break
         if last is not None and last.ok:
             return FetchOutcome(False, "לא נמצאו תוצאות.", results=[], code="empty")
         code = last.code if last is not None else "other"

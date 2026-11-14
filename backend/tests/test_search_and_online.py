@@ -215,6 +215,39 @@ def test_search_results_carry_the_channel():
     assert out.ok and out.results[0].channel == "Eli Herzlich" and out.results[0].channel_id == "UCOC"
 
 
+class _ArgsRunner(_FakeRunner):
+    def __init__(self, run_results):
+        super().__init__(run_results)
+        self.args = []
+
+    def run(self, args, *, timeout=30, client=None, cancel=None):
+        self.args.append(list(args))
+        return super().run(args, timeout=timeout, client=client, cancel=cancel)
+
+
+def test_search_asks_the_search_page_first_and_skips_mixes():
+    """1.5.5: the page corrects a misheard word ("מוטיבייס" → "מוטי וייס"); ``ytsearch`` took it literally."""
+    lines = "\n".join([
+        '{"id": "MhE6kA0TT9k", "title": "מוטי וייס - שבוע טוב יותר", "channel": "Motty Weiss", "duration": 162}',
+        '{"id": "RDMhE6kA0TT9k", "title": "Mix - מוטי וייס"}',                  # a mix is not a song
+        '{"id": "MhE6kA0TT9k", "title": "again"}',
+        '{"id": "sx645Cuow4w", "title": "Shavua Tov Yoter", "duration": 168}',
+    ])
+    runner = _ArgsRunner([RunResult(0, out=lines)])
+    out = YouTubeSource(runner).search("שבוע טוב יותר מוטיבייס", limit=8)
+    assert [r.id for r in out.results] == ["MhE6kA0TT9k", "sx645Cuow4w"]
+    assert runner.args[0][0].startswith("https://www.youtube.com/results?search_query=")
+    assert "--playlist-end" in runner.args[0] and len(runner.args) == 1
+
+
+def test_search_falls_back_to_ytsearch_when_the_page_gives_nothing():
+    good = '{"id": "PCS_sA1OdcM", "title": "המלאך", "duration": 306}'
+    runner = _ArgsRunner([RunResult(0, out=""), RunResult(0, out=good)])
+    out = YouTubeSource(runner).search("אלי הרצליך", limit=5)
+    assert out.ok and out.results[0].id == "PCS_sA1OdcM"
+    assert runner.args[1][0] == "ytsearch5:אלי הרצליך"
+
+
 def test_download_tries_other_clients_then_updates_the_engine(tmp_path):
     song = tmp_path / "המלאך [PCS_sA1OdcM].m4a"
     song.write_bytes(b"x")

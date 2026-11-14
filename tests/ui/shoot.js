@@ -504,7 +504,9 @@ async function run() {
           next: F.handle('השיר הבא'),
           louder: F.handle('תגביר בבקשה'),
           // 1.5.2: said in other words.
-          natural: ['תעבור לשיר הבא', 'תדלג על השיר הזה', 'תעשה יותר חזק', 'תוריד את הווליום', 'תחזור לשיר הקודם']
+          natural: ['תעבור לשיר הבא', 'תדלג על השיר הזה', 'תעשה יותר חזק', 'תוריד את הווליום', 'תחזור לשיר הקודם',
+            // 1.5.5: first person plural, and a trailing "okay".
+            'נעבור לשיר הבא', 'נדלג על השיר הזה', 'הבא אוקיי']
             .map((t) => F.handle(t)),
           // 1.5.4: the recognizer writes the verb a letter off, and an explanation follows.
           written: ['תגביה', 'תגביל את הווליום', 'תגביר את הווליום לא תחפש את השיר תגביה'].map((t) => F.handle(t)),

@@ -326,7 +326,7 @@ def occasions_on(g: date | None = None, *, vocal_suggestions: bool = True) -> li
     if weekday == 4:
         found.append(Occasion("erev_shabbat", "ערב שבת", "שבת", 80, "weekly", "מתכוננים לשבת"))
     elif weekday == 5:
-        found.append(Occasion("motzei_shabbat", "מוצאי שבת", "שבת", 80, "weekly", "מלווה מלכה"))
+        found.append(Occasion("motzei_shabbat", "מוצאי שבת", "מלווה מלכה", 80, "weekly", "מלווה מלכה"))
 
     # The fast of 9 Av: shown, but no music is suggested.
     if fixed == tisha_bav_fixed(h.year):
