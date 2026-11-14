@@ -1759,6 +1759,28 @@ class PlayerService:
             query = self._search_text(intent.query or intent.raw)
             candidates = self._candidates()
             found = fuzzy_search(query, candidates, limit=limit)
+            hint = intent.params.get("topic_hint")
+            if not found and hint:
+                # The words without the topic's own may still name a song ("…מוצאי שבת דע לפני מי").
+                gone = {normalize(w) for kw in [hint, *topics_mod.TOPIC_KEYWORDS.get(hint, [])] for w in kw.split()}
+                rest = " ".join(w for w in query.split() if normalize(w) not in gone)
+                if rest and rest != query:
+                    found = fuzzy_search(rest, candidates, limit=limit)
+            if not found and hint:
+                # 1.5.5: a topic was clearly said ("שירי מוצאי שבת") and the words around it
+                # match no song (the recognizer often adds noise: "…שמונה שנה שומע"). The
+                # topic is what was asked for, not a hunt for the noise in song names.
+                tracks = self.index.by_topic(hint, None if minutes else intent.limit, shuffle=bool(minutes))
+                understood = topics_mod.topic_phrase(hint)
+                if hint == "מלווה מלכה" and len(tracks) < 5:
+                    more = self.index.by_topic("שבת", None if minutes else intent.limit, shuffle=bool(minutes))
+                    seen = {t.id for t in tracks}
+                    tracks = [*tracks, *[t for t in more if t.id not in seen]]
+                    understood = "שירי מלווה מלכה ושירי שבת"
+                if tracks:
+                    intent.topic, intent.action = hint, Action.PLAY_TOPIC
+                    return (self._fill_minutes(tracks, minutes) if minutes else tracks), understood, \
+                        f"שמעתי „{_display_query(intent.raw)}”. הבנתי: {understood}."
             near = False
             if not found:
                 found = near_matches(query, candidates, limit=limit)

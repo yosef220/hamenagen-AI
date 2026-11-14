@@ -129,3 +129,18 @@ def test_melave_malka_is_not_taken_for_shabbat(tmp_path):
     tracks, understood, _ = svc._tracks_for(intent.parse("שירי מלווה מלכה")) if hasattr(svc, "_tracks_for") else (None, None, None)
     if tracks is not None:
         assert tracks[0].id == "m" and len(tracks) == 7 and "שבת" in understood
+
+
+def test_a_topic_said_clearly_beats_noise_around_it(tmp_path):
+    """1.5.5: "…מוצאי שבת שמונה שנה שומע" played songs named "מונה", not the topic."""
+    from hamenagen import intent
+    from hamenagen.models import Track
+
+    svc = PlayerService(data_dir=tmp_path / "data")
+    svc.index.upsert_many([Track(id="m", path="m.mp3", title="אליהו הנביא", topic="מלווה מלכה"),
+                           Track(id="a", path="a.mp3", title="דע לפני מי", artist="מונה רוזנבלום")])
+    out = svc._respond(intent.parse("תפעיל שירים של מוצאי שבת שמונה שנה שומע"))
+    assert out["tracks"][0]["id"] == "m" and out["intent"]["action"] == "play_topic"
+    assert "מלווה מלכה" in out["understood"] and "שבת" in out["understood"]
+    # A song named by the words is still found.
+    assert svc._respond(intent.parse("תפעיל שירים של מוצאי שבת דע לפני מי"))["tracks"][0]["id"] == "a"
