@@ -76,8 +76,12 @@
       if (res.near) parts.push(h('p', { class: 'results-note' }, icon('info', 'icon-sm'), res.note));
       parts.push(H.trackList(res.tracks));
       // Found something, but maybe not the one: YouTube is a click away.
+      const songOnline = res.intent && res.intent.params && res.intent.params.song_online;
       if (searching) parts.push(laterOnline(query));
-      else if (topic && topic !== VOCAL) parts.push(laterOnline(topicQuery(topic), true));
+      else {
+        if (songOnline) parts.push(laterOnline(songOnline));      // 1.5.5: a song was named, none on the computer
+        if (topic && topic !== VOCAL) parts.push(laterOnline(topicQuery(topic), true));
+      }
     } else if (searching) {
       parts.push(H.emptyState(`„${query}” לא נמצא במחשב`,
         'אפשר להוריד מיוטיוב שיר מסוים, או לבחור שירים מכל הערוץ. כל הורדה נכנסת לספרייה ומסווגת מיד.'));

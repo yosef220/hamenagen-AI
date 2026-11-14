@@ -83,7 +83,24 @@ _PLAY_VERBS = _n({
     "את", "של", "שיר", "השיר", "שירים", "השירים", "שירי", "המוזיקה", "מוזיקה", "קצת", "משהו", "עכשיו",
     "בבקשה", "מוסיקה", "המוסיקה", "רשימה", "רשימת", "פלייליסט", "בא", "מתחשק", "תכין", "תכיני",
     "השמעה", "תשמעו", "לשמיעה",
+    "תפעילי", "תפעילו", "תנגנו", "תשמיעו", "תשימו", "תדליק", "תדליקי", "תפעל",
 })
+
+# 1.5.5: the recognizer writes the verb a letter off ("תפילי" for "תפעילי"): the first word of a
+# request that is one letter from a play verb is not a song's word.
+_SPOKEN_VERBS = _n({"תשמיע", "תשמיעי", "תנגן", "תנגני", "תפעיל", "תפעילי", "תשים", "תשימי", "תביא", "תביאי", "תדליק"})
+
+
+def _one_off(a: str, b: str) -> bool:
+    """Equal but for one letter: swapped, missing or added."""
+    if a == b:
+        return True
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        return sum(x != y for x, y in zip(a, b)) == 1
+    short, long_ = sorted((a, b), key=len)
+    return any(long_[:i] + long_[i + 1:] == short for i in range(len(long_)))
 
 _RECENT_WORDS = _n({"אחרון", "אחרונים", "אחרונות", "החדשים", "חדשים", "האחרונים", "האחרונות", "לאחרונה"})
 
@@ -180,7 +197,11 @@ def _has_recent(norm: str) -> bool:
 
 
 def _strip_play_words(norm: str) -> str:
-    kept = [t for t in norm.split() if t not in _PLAY_VERBS]
+    words = norm.split()
+    if words and words[0] not in _PLAY_VERBS and len(words) > 1 and len(words[0]) >= 4 \
+            and any(_one_off(words[0], v) for v in _SPOKEN_VERBS):
+        words = words[1:]
+    kept = [t for t in words if t not in _PLAY_VERBS]
     return " ".join(kept).strip()
 
 

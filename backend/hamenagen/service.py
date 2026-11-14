@@ -1316,6 +1316,8 @@ class PlayerService:
                 if size == 1 and len(part) < 3:
                     continue
                 found = [r for r in fuzzy_search(part, candidates, limit=50) if r.complete]
+                if size == 1 and len(found) > 5:
+                    continue                 # "יותר" is in too many names: not what was asked for
                 if found and (best is None or len(found) < len(best[0])):
                     best = (found, part)     # among equal lengths, the most specific
             if best:
@@ -1738,6 +1740,10 @@ class PlayerService:
                     by_id = {t.id: t for t in self.index.get_many([r.candidate.id for r in found])}
                     hits = [by_id[r.candidate.id] for r in found if r.candidate.id in by_id]
                     return hits, f"חיפוש: {_display_query(intent.raw)}", ""
+                # 1.5.5: more than the topic's words was said and no song answers it ("שבוע טוב יותר"
+                # begins with a word of Melave Malka): the topic plays, and the page offers that song on YouTube.
+                words = self._raw_words_for(intent.raw, song_query) or song_query
+                intent.params["song_online"] = words
             tracks = self.index.by_topic(intent.topic, None if minutes else intent.limit, shuffle=bool(minutes))
             understood = topics_mod.topic_phrase(intent.topic)
             if intent.topic == "מלווה מלכה" and len(tracks) < 5:
@@ -1818,6 +1824,8 @@ class PlayerService:
             understood = f"{_span_text(minutes)} של {understood}" if intent.action != Action.RANDOM \
                 else f"{_span_text(minutes)} של מוזיקה מכל המאגר"
         note = "" if tracks else self._empty_note(intent)
+        if tracks and intent.params.get("song_online"):
+            note = f"„{intent.params['song_online']}” לא נמצא במחשב. אלה {understood}; אפשר לחפש את השיר ביוטיוב."
         return tracks, understood, note
 
     def _empty_note(self, intent: Intent) -> str:
