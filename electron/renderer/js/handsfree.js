@@ -29,6 +29,25 @@
   const MAX_MS = 6000;          // the longest command
   const PREROLL_MS = 350;       // keep a little from before the start
   const WAKE = /^(?:היי |הי |הלו )?ה?מנגן(?:[ ,]+|$)/;
+  const PEEK_MS = 600;          // while a sentence is being said, look at its beginning this often
+
+  // The recognizer writes the name a letter off now and then ("מנגן", "הממנגן").
+  const NAME = 'המנגן';
+  function nameOff1(w) {
+    if (w === NAME) return true;
+    if (Math.abs(w.length - NAME.length) > 1) return false;
+    let i = 0;
+    while (i < w.length && i < NAME.length && w[i] === NAME[i]) i += 1;
+    if (w.length === NAME.length) return w.slice(i + 1) === NAME.slice(i + 1);
+    return w.length > NAME.length ? w.slice(i + 1) === NAME.slice(i) : NAME.slice(i + 1) === w.slice(i);
+  }
+  /** The text starts with the player's name: returns what follows it ('' when nothing), else null. */
+  function afterName(text) {
+    const t = String(text || '').trim().replace(/^(?:היי|הי|הלו)\s+/, '');
+    const m = t.match(/^(\S+)\s*(.*)$/s);
+    if (!m || !nameOff1(m[1].replace(/[.,!?]/g, ''))) return null;
+    return m[2].trim();
+  }
 
   const F = { on: false, front: false, model: false, power: '', forced: null };
   let rig = null;               // { stream, ctx, timer, … } while listening
@@ -89,6 +108,7 @@
     let loudFor = 0;
     let quietFor = 0;
     let takeMs = 0;
+    let peekAt = 0;
     const frameMs = (1024 / RATE) * 1000;
 
     tap.onaudioprocess = (e) => {
@@ -96,7 +116,9 @@
       let sum = 0;
       for (let i = 0; i < x.length; i += 1) sum += x[i] * x[i];
       const db = 10 * Math.log10(sum / x.length + 1e-12);
-      if (attention) overlayLevel(Math.max(0, Math.min(1, (db + 60) / 45)));
+      const level = Math.max(0, Math.min(1, (db + 60) / 45));
+      if (attention) overlayLevel(level);
+      else api.emit('voice-level', { level });          // the standby ring shows that the player hears sound
       // The player's own chime or voice is not someone speaking.
       if (performance.now() < mutedUntil || (window.speechSynthesis && speechSynthesis.speaking)) {
         take = null; loudFor = 0; pre.length = 0;
@@ -112,7 +134,7 @@
         while (pre.length * frameMs > PREROLL_MS) pre.shift();
         loudFor = loud ? loudFor + frameMs : 0;
         if (loudFor >= START_MS) {
-          take = pre.splice(0); takeMs = take.length * frameMs; quietFor = 0;
+          take = pre.splice(0); takeMs = take.length * frameMs; quietFor = 0; peekAt = takeMs;
           if (attention) attentionHearing();
         }
         return;
@@ -120,6 +142,11 @@
       take.push(x);
       takeMs += frameMs;
       quietFor = loud ? 0 : quietFor + frameMs;
+      // Hear the first words while they are still being said: the name lowers the music at once.
+      if (!attention && !peeking && !thinking && takeMs - peekAt >= PEEK_MS && takeMs < MAX_MS - 500) {
+        peekAt = takeMs;
+        peek(take.slice());
+      }
       if (quietFor >= END_MS || takeMs >= MAX_MS) {
         const done = take;
         take = null;
@@ -153,6 +180,23 @@
     for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     return btoa(out);
   }
+
+  let peeking = false;
+  async function peek(parts) {
+    peeking = true;
+    try {
+      const res = await api.voiceRecognize(toBase64(parts), RATE);
+      if (res && res.ok && res.request) F.onPartial(res.request);
+    } catch { /* the whole sentence is recognized at its end anyway */ }
+    peeking = false;
+  }
+
+  /** Words heard so far of a sentence in progress. The name starts attention (quietly: no chime over the voice). */
+  F.onPartial = function onPartial(text) {
+    if (attention || afterName(text) === null) return false;
+    startAttention({ quiet: true });
+    return true;
+  };
 
   let thinking = false;
   async function heard(parts) {
@@ -240,12 +284,13 @@
     } catch { /* the screen says it */ }
   }
 
-  function startAttention() {
+  function startAttention(opts = {}) {
     if (!attention) H.player.duck(true);
     clearTimeout(attention && attention.timer);
     attention = { tries: attention ? attention.tries : 0, timer: null };
-    showOverlay('listening', 'כן? אני מקשיב', '', 'למשל: „תשמיע שירי שבת”, „תעבור לשיר הבא”, „תנמיך”');
-    chime(true);
+    showOverlay('listening', opts.quiet ? 'שומע…' : 'כן? אני מקשיב', '',
+      'למשל: „תשמיע שירי שבת”, „תעבור לשיר הבא”, „תנמיך”');
+    if (!opts.quiet) chime(true);
     armAttention();
   }
   function armAttention() {
@@ -269,8 +314,14 @@
   /** The sentence said after the name (or nothing, when nothing was understood). */
   F.answer = function answer(text) {
     if (!attention) return null;
-    const rest = String(text || '').trim().replace(WAKE, '').trim();
+    const after = afterName(text);
+    const rest = after !== null ? after : String(text || '').trim();
     api.emit('handsfree-heard', { text: rest, attention: true });
+    if (after === '') {            // only the name was said: keep listening for the request
+      showOverlay('listening', 'כן? אני מקשיב', '', 'למשל: „תשמיע שירי שבת”, „תעבור לשיר הבא”, „תנמיך”');
+      armAttention();
+      return 'wake';
+    }
     if (rest.replace(/[^א-תa-z0-9]/gi, '').length < 2) {
       attention.tries += 1;
       if (attention.tries > 2) {
@@ -293,14 +344,26 @@
   };
   F.attending = () => !!attention;
 
+  // What was heard but is no command, small and for two seconds: so it is clear that the player hears.
+  const captionEl = h('div', { class: 'hf-caption', hidden: true, 'aria-live': 'off' });
+  if (document.body) document.body.appendChild(captionEl);
+  else document.addEventListener('DOMContentLoaded', () => document.body.appendChild(captionEl));
+  let captionTimer = null;
+  function caption(text) {
+    if (!text) return;
+    captionEl.textContent = `שמעתי: „${text.length > 60 ? `${text.slice(0, 60)}…` : text}” — לא פקודה`;
+    captionEl.hidden = false;
+    clearTimeout(captionTimer);
+    captionTimer = setTimeout(() => { captionEl.hidden = true; }, 2200);
+  }
+
   // ------------------------------------------------------------ what was said
   /** Act on a sentence heard without a click. Returns what was done. */
   F.handle = function handle(text) {
     const t = String(text || '').trim();
     api.emit('handsfree-heard', { text: t });
-    const wake = t.match(WAKE);
-    if (wake) {
-      const rest = t.slice(wake[0].length).trim();
+    const rest = afterName(t);
+    if (rest !== null) {
       if (!rest) { startAttention(); return 'wake'; }
       showOverlay('done', 'הבנתי', `„${rest}”`);
       hideOverlay(1400);
@@ -315,6 +378,7 @@
       hideOverlay(1200);
       return 'command';
     }
+    caption(t);
     return null;
   };
 

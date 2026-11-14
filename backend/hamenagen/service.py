@@ -153,7 +153,17 @@ class PlayerService:
                                                  self.models_dir])
         # Shabbat mode: times for the city, cached; the harness stays offline.
         offline = bool(os.environ.get("HAMENAGEN_DEMO_ONLINE"))
-        self.zmanim = ZmanimService(self.data_dir / "zmanim.json", sources=[] if offline else None)
+        # HAMENAGEN_SHABBAT_NOW=<ISO time>: the Shabbat clock shows another moment (the interface
+        # check, so that a run on a Friday evening does not find the screen covered by "Shabbat shalom").
+        fake_now = os.environ.get("HAMENAGEN_SHABBAT_NOW", "")
+        clock = None
+        if fake_now:
+            try:
+                fixed = datetime.fromisoformat(fake_now)
+                clock = lambda: fixed  # noqa: E731
+            except ValueError:
+                clock = None
+        self.zmanim = ZmanimService(self.data_dir / "zmanim.json", sources=[] if offline else None, now=clock)
         self._configure_zmanim()
         self.vocal_running = False
         self.details_stop = False
@@ -1730,6 +1740,12 @@ class PlayerService:
                     return hits, f"חיפוש: {_display_query(intent.raw)}", ""
             tracks = self.index.by_topic(intent.topic, None if minutes else intent.limit, shuffle=bool(minutes))
             understood = topics_mod.topic_phrase(intent.topic)
+            if intent.topic == "מלווה מלכה" and len(tracks) < 5:
+                # Few songs are marked for Melave Malka: the Shabbat songs fill in, and the title says so.
+                more = self.index.by_topic("שבת", None if minutes else intent.limit, shuffle=bool(minutes))
+                seen = {t.id for t in tracks}
+                tracks = [*tracks, *[t for t in more if t.id not in seen]]
+                understood = "שירי מלווה מלכה ושירי שבת"
         else:
             # SEARCH_SONG (or fallback): every word of the request must match.
             mood = station_mod.mood_request(intent.raw or "") or station_mod.mood_request(intent.query or "")

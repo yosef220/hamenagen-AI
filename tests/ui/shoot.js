@@ -74,6 +74,9 @@ async function launch(dataDir, theme) {
       ...process.env,
       HAMENAGEN_DATA_DIR: dataDir,
       HAMENAGEN_TODAY: today,
+      // The Shabbat screen follows the clock: a run on a Friday evening (CI included) found the home
+      // screen covered. Its clock shows a Wednesday far ahead; its own steps below show the screen by hand.
+      HAMENAGEN_SHABBAT_NOW: '2036-03-05T10:00:00+00:00',
       HAMENAGEN_QUIET: '1',
       // YouTube and song details from memory (backend/hamenagen/demo_online.py).
       HAMENAGEN_DEMO_ONLINE: '1',
@@ -505,7 +508,13 @@ async function run() {
             .map((t) => F.handle(t)),
           // 1.5.4: the recognizer writes the verb a letter off, and an explanation follows.
           written: ['תגביה', 'תגביל את הווליום', 'תגביר את הווליום לא תחפש את השיר תגביה'].map((t) => F.handle(t)),
-          welcome: F.handle('ברוך הבא'),           // a song's name, not "next"
+          welcome: F.handle('ברוך הבא'),
+          // 1.5.4: "turn it off" is a command; and the name, heard while the sentence is still being said.
+          off: ['תכבה', 'תכבה את זה', 'תכבה את המוזיקה'].map((t) => F.handle(t)),
+          noName: F.onPartial('אני הולך לקנות'),           // not the name: nothing happens
+          quietBefore: F.attending(),
+          nameMid: F.onPartial('המנגן תעביר'),            // lowers the music at once
+          attendingMid: F.attending(),           // a song's name, not "next"
           song: F.handle('שוב'),                  // could be a word in a song: ignored
           talk: F.handle('אני הולך לקנות לחם'),   // people talking: ignored
           stayed: H.currentView() === view,
@@ -532,6 +541,8 @@ async function run() {
       }));
       if (free.next !== 'command' || free.louder !== 'command' || free.song !== null || free.talk !== null
         || free.natural.some((x) => x !== 'command') || free.written.some((x) => x !== 'command') || free.welcome !== null
+        || free.off.some((x) => x !== 'command') || free.nameMid !== true || free.noName !== false
+        || free.quietBefore || !free.attendingMid
         || !free.stayed || free.wake !== 'wake' || !free.attending || free.again !== 'again' || !free.puzzled
         || free.request !== 'request' || free.stillAttending || !free.overlayGone || !free.asked || free.direct !== 'request') {
         errors.push(`hands-free: ${JSON.stringify(free)}`);

@@ -1558,7 +1558,7 @@ body.at-rest .app { visibility: hidden; }
 .tool-dialog .dialog-foot > .btn { margin-inline-start: auto; }
 
 /* 1.5.1: listening for commands without a click — a quiet ring, not the red of recording */
-.mic-btn.standby[data-state="idle"] { color: var(--tekhelet); box-shadow: 0 0 0 2px var(--tekhelet-soft); }
+.mic-btn.standby[data-state="idle"] { color: var(--tekhelet); box-shadow: 0 0 0 calc(2px + var(--level) * 9px) var(--tekhelet-soft); transition: box-shadow 70ms linear; }
 .mic-btn.standby[data-state="idle"]::after {
   content: "";
   position: absolute;
@@ -1617,3 +1617,20 @@ body.at-rest .app { visibility: hidden; }
 .tool-range { direction: ltr; }
 .tool-hint { display: flex; align-items: center; gap: var(--s2); margin: calc(-1 * var(--s1)) 0 0; padding-inline-start: calc(96px + var(--s3)); font-size: var(--fs-sm); color: var(--ink-3); }
 .tool-range input[type="range"]::-webkit-slider-thumb { opacity: 1; }
+
+.hf-caption {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 96px;
+  z-index: 800;
+  width: max-content;
+  max-width: min(80vw, 560px);
+  margin-inline: auto;
+  padding: var(--s1) var(--s3);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--ink) 78%, transparent);
+  color: var(--surface);
+  font-size: var(--fs-sm);
+  pointer-events: none;
+}
+.hf-caption[hidden] { display: none; }
