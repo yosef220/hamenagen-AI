@@ -524,9 +524,19 @@ function hideSearch(reason) {
   if (was && reason) toWindow('search:closed', { reason });
 }
 
+/** The user agent without the program's own tokens ("Electron/44…", "hamenagen/1.5.6"). */
+function browserUserAgent(ua) {
+  const keep = /^(Mozilla|AppleWebKit|Chrome|Safari)\//;
+  return String(ua || '').split(' ').filter((t) => !(/^[^/()]+\/\d/.test(t) && !keep.test(t))).join(' ');
+}
+
 function ensureSearchView() {
   if (searchView && !searchView.webContents.isDestroyed()) return searchView;
   const ses = session.fromPartition('persist:websearch');
+  // 1.5.6: Google answers a program (an "Electron/…" and the app's name in the user agent) with a plainer
+  // page: video thumbnails that stay blank, no big video on top. The window is Chromium all the same, so
+  // it says what a browser says, in Hebrew.
+  ses.setUserAgent(browserUserAgent(ses.getUserAgent()), 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7');
   ses.setPermissionRequestHandler((_wc, _perm, done) => done(false));
   ses.on('will-download', (e) => e.preventDefault());
   searchView = new WebContentsView({

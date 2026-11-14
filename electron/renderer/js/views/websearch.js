@@ -45,9 +45,14 @@
       h('div', { class: 'websearch-bar' },
         h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => H.closeWebSearch() }, icon('undo-2'), 'חזרה למנגן'),
         form,
-        h('div', { class: 'websearch-nav' }, nav.back, nav.forward, nav.reload)),
+        h('div', { class: 'websearch-nav' }, nav.back, nav.forward, nav.reload,
+          // 1.5.6: the same search in the computer's own browser, where Google shows what it shows there;
+          // the YouTube link copied from it is picked up by the player (the paste box).
+          h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'לפתוח את החיפוש בדפדפן', title: 'לפתוח בדפדפן',
+            onclick: () => api.openExternal(`https://www.google.com/search?hl=iw&q=${encodeURIComponent(`${(input.value || '').trim()} יוטיוב`.trim())}`) },
+          icon('external-link')))),
       h('p', { class: 'websearch-hint' },
-        'גוגל, בתוך המנגן. לוחצים על תוצאה מיוטיוב, והשיר עובר למנגן: לשמוע בלי לשמור, או להוריד. Esc חוזר למנגן.'),
+        'גוגל, בתוך המנגן. לוחצים על תוצאה מיוטיוב, והשיר עובר למנגן: לשמוע בלי לשמור, או להוריד. Esc חוזר למנגן. אם התוצאות נראות אחרת מבדפדפן — הכפתור שליד החצים פותח אותו חיפוש בדפדפן; מעתיקים משם את הקישור ומדביקים במנגן.'),
       frame);
     observer.disconnect();
     observer.observe(frame);
