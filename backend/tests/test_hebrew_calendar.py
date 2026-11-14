@@ -187,7 +187,7 @@ def test_today_info_shape():
     assert info["parasha"] == "תולדות"
 
 
-def test_motzei_shabbat_suggests_melave_malka_with_shabbat_songs_filling_in(tmp_path):
+def test_motzei_shabbat_suggests_melave_malka_only(tmp_path):
     from datetime import date
     from hamenagen.models import Track
     from hamenagen.service import PlayerService
@@ -196,7 +196,7 @@ def test_motzei_shabbat_suggests_melave_malka_with_shabbat_songs_filling_in(tmp_
     svc.index.upsert_many([Track(id=str(i), path=f"{i}.mp3", title=f"שיר {i}", topic="שבת") for i in range(6)])
     primary = svc.today(date(2026, 11, 14))["primary"]            # a Saturday
     assert primary["topic"] == "מלווה מלכה"
-    assert primary["count"] == 6 and primary["phrase"] == "שירי מלווה מלכה ושירי שבת"
-    svc.index.upsert_many([Track(id=f"m{i}", path=f"m{i}.mp3", title=f"מ {i}", topic="מלווה מלכה") for i in range(5)])
-    primary = svc.today(date(2026, 11, 14))["primary"]
-    assert primary["count"] == 5 and primary["phrase"] == "שירי מלווה מלכה"
+    assert primary["count"] == 0 and primary["phrase"] == "שירי מלווה מלכה"   # Shabbat songs do not stand in
+    svc.index.upsert_many([Track(id="m", path="m.mp3", title="מ", topic="מלווה מלכה"),
+                           Track(id="n", path="n.mp3", title="המבדיל בין קודש לחול", topic="שבת")])
+    assert svc.today(date(2026, 11, 14))["primary"]["count"] == 2
