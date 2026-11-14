@@ -1914,17 +1914,20 @@ class PlayerService:
                 on = None
         info = today_info(on, vocal_suggestions=self.settings.vocal_suggestions)
         counts = self.index.topic_counts()
+
+        def shown(topic):
+            """(count, phrase): with few Melave Malka songs, Shabbat songs fill in (as when asked)."""
+            n = counts.get(topic, 0)
+            if topic == "מלווה מלכה" and n < 5 and counts.get("שבת", 0):
+                return n + counts["שבת"], "שירי מלווה מלכה ושירי שבת"
+            return n, topics_mod.topic_phrase(topic)
+
         for occ in info["occasions"]:
-            occ["count"] = counts.get(occ["topic"], 0) if occ["topic"] else 0
-            occ["phrase"] = topics_mod.topic_phrase(occ["topic"]) if occ["topic"] else ""
+            occ["count"], occ["phrase"] = shown(occ["topic"]) if occ["topic"] else (0, "")
         if info["primary"]:
-            topic = info["primary"]["topic"]
-            info["primary"]["count"] = counts.get(topic, 0)
-            info["primary"]["phrase"] = topics_mod.topic_phrase(topic)
+            info["primary"]["count"], info["primary"]["phrase"] = shown(info["primary"]["topic"])
         if info["next"] and info["next"].get("topic"):
-            topic = info["next"]["topic"]
-            info["next"]["count"] = counts.get(topic, 0)
-            info["next"]["phrase"] = topics_mod.topic_phrase(topic)
+            info["next"]["count"], info["next"]["phrase"] = shown(info["next"]["topic"])
         return info
 
     def opening_suggestion(self, on: date | None = None) -> dict | None:
