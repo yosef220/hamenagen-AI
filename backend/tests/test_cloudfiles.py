@@ -113,3 +113,19 @@ def test_models_are_let_go_when_idle(tmp_path):
     assert b._matrix is not None                          # the topics' vectors stay
     svc.voice._sessions, svc.voice.last_used = {"x": 1}, time.monotonic() - svc.VOICE_IDLE - 1
     assert svc.release_idle_models() and svc.voice._sessions is None
+
+
+def test_melave_malka_is_not_taken_for_shabbat(tmp_path):
+    from hamenagen import intent
+    from hamenagen.models import Track
+
+    for text in ("תפעיל שירי מלווה מלכה", "תפיל שירים של מלווה מלכה", "שירים למוצאי שבת"):
+        got = intent.parse(text)
+        assert got.topic == "מלווה מלכה", text
+    assert intent.parse("שירי שבת").topic == "שבת"
+    svc = PlayerService(data_dir=tmp_path / "data")
+    svc.index.upsert_many([Track(id=str(i), path=f"{i}.mp3", title=f"שיר {i}", topic="שבת") for i in range(6)]
+                          + [Track(id="m", path="m.mp3", title="אליהו הנביא", topic="מלווה מלכה")])
+    tracks, understood, _ = svc._tracks_for(intent.parse("שירי מלווה מלכה")) if hasattr(svc, "_tracks_for") else (None, None, None)
+    if tracks is not None:
+        assert tracks[0].id == "m" and len(tracks) == 7 and "שבת" in understood

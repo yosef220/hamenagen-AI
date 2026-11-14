@@ -124,6 +124,7 @@ H.civilDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('he-IL', {
 // ------------------------------------------------------- topics and covers
 H.TOPIC_TINTS = {
   'שבת': 'gold',
+  'מלווה מלכה': 'ember',
   'ראש השנה': 'wine',
   'יום כיפור': 'slate',
   'סוכות': 'cedar',
