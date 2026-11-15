@@ -392,9 +392,28 @@
     const linkResult = h('div', { class: 'link-result' });
     const browserBtn = searchButton(query, linkResult, false);
     const paste = pasteBox(linkResult);
+    // 1.5.8: the songs as a search engine lists them — what the browser shows — where YouTube's own list
+    // is cut by a filter; searched only on a click.
+    const webList = h('div', { class: 'online-list' });
+    const webBtn = h('button', { class: 'btn btn-outline btn-sm', type: 'button' }, icon('search', 'icon-sm'),
+      'לא מצאת? תוצאות כמו בדפדפן (דרך מנוע חיפוש)');
+    webBtn.addEventListener('click', () => {
+      webBtn.disabled = true;
+      webList.replaceChildren(h('p', { class: 'muted' }, icon('loader-circle', 'icon-sm spin'), 'מחפש…'));
+      api.onlineWebSearch(query, 10).then((r) => {
+        if (!r.ok || !r.results.length) {
+          webList.replaceChildren(h('p', { class: 'muted' }, 'גם מנוע החיפוש לא החזיר שירים מיוטיוב. אפשר לחפש בתוך המנגן או בדפדפן, ולהדביק קישור.'));
+          webBtn.disabled = false;
+          return;
+        }
+        webList.replaceChildren(h('p', { class: 'muted' }, 'לפי מנוע חיפוש, בסדר שהוא נותן:'));
+        r.results.forEach((item, i) => webList.appendChild(songRow(item, i === 0)));
+      }).catch((err) => { webList.replaceChildren(h('p', { class: 'muted' }, `החיפוש נכשל: ${err.message}`)); webBtn.disabled = false; });
+    });
     const panel = h('section', { class: 'online', 'aria-label': 'יוטיוב' },
       h('div', { class: 'online-head' }, icon('search'), h('h3', {}, `ביוטיוב: ${query}`)),
-      status, channelSlot, list, paste, linkResult, h('div', { class: 'online-foot' }, browserBtn));
+      status, channelSlot, list, h('div', { class: 'online-web' }, webBtn), webList, paste, linkResult,
+      h('div', { class: 'online-foot' }, browserBtn));
 
     api.onlineSearch(query, 8).then((r) => {
       if (!r.available) {

@@ -248,6 +248,39 @@ def test_search_falls_back_to_ytsearch_when_the_page_gives_nothing():
     assert runner.args[1][0] == "ytsearch5:אלי הרצליך"
 
 
+def test_web_search_reads_youtube_links_in_the_engines_order():
+    from hamenagen import websearch
+
+    page = ('<a href="/url?q=https://www.youtube.com/watch%3Fv%3DMhE6kA0TT9k&amp;sa=U"><h3>מוטי וייס - שבוע טוב יותר</h3></a>'
+            '<a href="https://www.youtube.com/watch?v=sx645Cuow4w"><h3>Shavua Tov Yoter</h3></a>'
+            '<a href="https://youtu.be/8Q7BbEZlRms">x</a><a href="https://www.youtube.com/watch?v=MhE6kA0TT9k">again</a>')
+    got = websearch.extract_videos(page, 8)
+    assert [g["id"] for g in got] == ["MhE6kA0TT9k", "sx645Cuow4w", "8Q7BbEZlRms"]
+    assert got[0]["title"] == "מוטי וייס - שבוע טוב יותר"
+    pages = {"google": "", "bing": page}
+    seen = []
+
+    def get(url, timeout=8):
+        seen.append(url)
+        return pages["bing" if "bing.com" in url else "google"]
+
+    out = websearch.search_youtube("שבוע טוב יותר מוטי וייס", 2, get=get)
+    assert [o["id"] for o in out] == ["MhE6kA0TT9k", "sx645Cuow4w"]
+    assert "google.com" in seen[0] and "bing.com" in seen[1] and "youtube" in seen[0]
+
+
+def test_search_falls_back_to_a_search_engine_when_youtube_is_blocked(monkeypatch):
+    from hamenagen import websearch
+
+    blocked = RunResult(1, err='ERROR: query "x" page 1: Unable to download API page: HTTP Error 418: Blocked by NetFree')
+    page = '<a href="https://www.youtube.com/watch?v=MhE6kA0TT9k"><h3>מוטי וייס - שבוע טוב יותר</h3></a>'
+    monkeypatch.setattr(websearch, "http_get", lambda url, timeout=8: page if "google.com" in url else "")
+    src = YouTubeSource(_FakeRunner([blocked]))
+    out = src.search("שבוע טוב יותר מוטי וייס", limit=5)
+    assert out.ok and out.results[0].id == "MhE6kA0TT9k" and out.results[0].title == "מוטי וייס - שבוע טוב יותר"
+    assert out.results[0].thumbnail.endswith("MhE6kA0TT9k/mqdefault.jpg")
+
+
 def test_download_tries_other_clients_then_updates_the_engine(tmp_path):
     song = tmp_path / "המלאך [PCS_sA1OdcM].m4a"
     song.write_bytes(b"x")

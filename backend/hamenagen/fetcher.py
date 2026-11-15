@@ -280,6 +280,18 @@ class YouTubeSource:
     def _failed(code: str, detail: str = "") -> FetchOutcome:
         return FetchOutcome(False, message_for(code, detail), code=code, blocked=code == "netfree")
 
+    @staticmethod
+    def _web_results(query: str, limit: int) -> list[SearchResult]:
+        from . import websearch
+
+        try:
+            found = websearch.search_youtube(query, limit)
+        except Exception:  # noqa: BLE001
+            return []
+        return [SearchResult(source="youtube", id=f["id"], title=f["title"] or "סרטון מיוטיוב",
+                             url=f"https://www.youtube.com/watch?v={f['id']}",
+                             thumbnail=thumbnail_url(f["id"], "mqdefault")) for f in found]
+
     def search(self, query: str, *, limit: int = 5) -> FetchOutcome:
         if not self.available():
             return self._failed("not_installed")
@@ -311,6 +323,11 @@ class YouTubeSource:
                     break  # another client or another form will not change this
             if last is not None and last.code in ("netfree", "network", "certificate"):
                 break
+        # 1.5.8: YouTube's own search gave nothing (refused by a filter, or empty): ask a search engine for
+        # YouTube links, as the download-from-YouTube program does.
+        web = self._web_results(query, limit)
+        if web:
+            return FetchOutcome(True, "", result=web[0], results=web)
         if last is not None and last.ok:
             return FetchOutcome(False, "לא נמצאו תוצאות.", results=[], code="empty")
         code = last.code if last is not None else "other"

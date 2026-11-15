@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('hamenagen', {
   installOfflinePack: (path) => core('install_offline_pack', { path }),
   onlineAvailable: () => core('online_available'),
   onlineSearch: (query, limit) => core('online_search', { query, limit }),
+  onlineWebSearch: (query, limit) => core('online_web_search', { query, limit }),
   onlineDownload: (result, downloadId) => core('online_download', { result, download_id: downloadId }),
   onlineLink: (url, limit) => core('online_link', { url, limit }),
   downloadBatch: (items, batchId) => core('download_batch_async', { items, batch_id: batchId }),
@@ -143,4 +144,5 @@ contextBridge.exposeInMainWorld('hamenagen', {
   onSearchLink: (handler) => listen('search:link', handler),
   onSearchState: (handler) => listen('search:state', handler),
   onSearchClosed: (handler) => listen('search:closed', handler),
+  onSearchBlocked: (handler) => listen('search:blocked', handler),
 });

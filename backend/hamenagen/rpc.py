@@ -35,7 +35,7 @@ from .service import PlayerService
 
 # Methods answered on the worker pool rather than inline.
 _SLOW = {
-    "online_search", "online_download", "online_link", "radio_list", "check_updates", "apply_update",
+    "online_search", "online_web_search", "online_download", "online_link", "radio_list", "check_updates", "apply_update",
     "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
     "online_set", "listen_prepare", "station", "voice_recognize", "voice_prepare", "write_tags",
     "export_drives", "export_plan", "make_ringtone", "import_singers", "ringtone_info",
@@ -440,6 +440,16 @@ class RpcServer:
             "results": [_shown(r) for r in outcome.results],
             "auto_selected": outcome.result.__dict__ if outcome.result else None,
         }
+
+    def rpc_online_web_search(self, params):
+        """YouTube videos as a search engine lists them (1.5.8): what the listener sees in a browser,
+        where YouTube's own search is filtered. Each result carries whether it is already in the library."""
+        from .fetcher import YouTubeSource
+
+        query = params.get("query", "")
+        found = YouTubeSource._web_results(query, int(params.get("limit", 10)))
+        have = self.service.index.video_ids()
+        return {"ok": bool(found), "results": [_shown(r, in_library=r.id in have) for r in found]}
 
     def rpc_online_set(self, params):
         """YouTube songs for a set, in the listener's style."""

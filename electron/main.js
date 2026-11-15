@@ -317,7 +317,7 @@ const BACKEND_METHODS = new Set([
   'classifier_status', 'install_model_async', 'reclassify_async',
   'get_settings', 'update_settings',
   'radio_list', 'check_updates', 'apply_update', 'offline_pack_status', 'install_offline_pack',
-  'online_available', 'online_search', 'online_download', 'online_link',
+  'online_available', 'online_search', 'online_web_search', 'online_download', 'online_link',
   'download_batch_async', 'stop_downloads', 'lookup_details', 'apply_details',
   'set_track_topic', 'set_track_vocal', 'confirm_vocal',
   'playlists', 'playlist_get', 'playlist_create', 'playlist_rename', 'playlist_delete', 'playlist_add',
@@ -603,6 +603,16 @@ function ensureSearchView() {
     catchLink({ preventDefault() {} }, target);
     if (!youtubeLinkIn(target) && isGoogle(target)) wc.loadURL(target);   // a "new tab" stays in place
     return { action: 'deny' };
+  });
+  // 1.5.8: behind NetFree, YouTube's own page is a "oops" page of the filter. Say so, and the player goes to Google.
+  wc.on('did-finish-load', async () => {
+    try {
+      const host = new URL(wc.getURL()).hostname;
+      if (!/(^|\.)youtube\.com$/.test(host)) return;
+      const blocked = await wc.executeJavaScript(
+        "/netfree/i.test(document.title + ' ' + (document.documentElement ? document.documentElement.innerHTML.slice(0, 20000) : ''))");
+      if (blocked) toWindow('search:blocked', { site: 'youtube' });
+    } catch { /* the page went away */ }
   });
   wc.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'Escape') {
