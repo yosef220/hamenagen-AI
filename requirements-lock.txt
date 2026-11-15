@@ -5,9 +5,13 @@
 #   pip install --dry-run --report r.json --platform win_amd64 --python-version 3.11 \
 #       --implementation cp --abi cp311 --only-binary=:all: --target t -r requirements.txt
 # yt-dlp keeps itself current at run time (data/engine), whatever is pinned here.
+# The search window in Edge's engine (1.5.9): pywebview, pythonnet, clr_loader, bottle (proxy_tools is
+# vendored in backend/proxy_tools: it has no wheel).
 anyio==4.16.0
+bottle==0.13.4
 cffi==2.1.1
 click==8.5.1
+clr_loader==0.3.1
 filelock==4.2.10
 flatbuffers==25.12.19
 fsspec==2026.9.0
@@ -23,6 +27,8 @@ onnxruntime==1.31.1
 packaging==26.3
 protobuf==7.36.2
 pycparser==3.12
+pythonnet==3.2.1
+pywebview==6.2.1
 PyYAML==6.0.3
 RapidFuzz==3.14.6
 soundfile==0.14.0

@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { BackendBridge } = require('./backend_bridge');
+const { NativeSearch } = require('./searchwin');
 
 const pkg = require('../package.json');
 
@@ -543,10 +544,89 @@ function searchState() {
 }
 
 function hideSearch(reason) {
+  const was = searchShown || nativeShown;
   if (searchShown && mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(searchView);
-  const was = searchShown;
+  if (nativeShown && nativeSearch) nativeSearch.hide();
   searchShown = false;
+  nativeShown = false;
   if (was && reason) toWindow('search:closed', { reason });
+}
+
+// --- 1.5.9: the search in Edge's engine (WebView2), as in the download-from-YouTube program ----------------
+// Google gives Electron's own Chromium a plainer page (no pictures, no video cards); in WebView2 — Edge, the
+// engine of the download program, where the search looks right — it gives the full one. On Windows the
+// search opens there (electron/searchwin.js, backend/hamenagen/searchwin.py): a window owned by the player's,
+// laid over the place of the search. If it cannot start (no WebView2 runtime), the player's own view is used.
+const NATIVE_SEARCH = process.platform === 'win32' && process.env.HAMENAGEN_SEARCH_VIEW !== 'electron';
+let nativeSearch = null;
+let nativeShown = false;
+let lastSearchRect = null;
+let followingWindow = false;
+
+function searchLog(line) {
+  try {
+    fs.mkdirSync(path.join(DATA_DIR, 'logs'), { recursive: true });
+    fs.appendFileSync(path.join(DATA_DIR, 'logs', 'search.log'), `${new Date().toISOString()} ${String(line).trim()}\n`);
+  } catch { /* no log */ }
+}
+
+function onNativeSearchEvent(msg) {
+  if (msg.event === 'link' && msg.url) {
+    hideSearch();
+    toWindow('search:link', { url: msg.url });
+  } else if (msg.event === 'escape') {
+    hideSearch('escape');
+  } else if (msg.event === 'blocked') {
+    toWindow('search:blocked', { site: msg.site || 'youtube' });
+  } else if (msg.event === 'state') {
+    toWindow('search:state', { canGoBack: true, canGoForward: true, loading: false });
+  } else if (msg.event === 'exit') {
+    nativeShown = false;
+  }
+}
+
+function nativeSearchFor() {
+  if (!NATIVE_SEARCH) return null;
+  if (!nativeSearch) {
+    nativeSearch = new NativeSearch({
+      pythonPath: bridge.pythonPath,
+      backendDir: bridge.backendDir,
+      profileDir: path.join(DATA_DIR, 'search-profile'),
+      onEvent: onNativeSearchEvent,
+      log: searchLog,
+    });
+  }
+  return nativeSearch.failed ? null : nativeSearch;
+}
+
+function ownerHwnd() {
+  const b = mainWindow.getNativeWindowHandle();
+  return b.length >= 8 ? b.readBigUInt64LE(0).toString() : String(b.readUInt32LE(0));
+}
+
+/** The page's rectangle (CSS pixels) as physical pixels on the screen, where the WebView2 window stands. */
+function screenRect(rect) {
+  const z = mainWindow.webContents.getZoomFactor() || 1;
+  const cb = mainWindow.getContentBounds();
+  const dip = {
+    x: Math.round(cb.x + rect.x * z), y: Math.round(cb.y + rect.y * z),
+    width: Math.max(1, Math.round(rect.width * z)), height: Math.max(1, Math.round(rect.height * z)),
+  };
+  const r = process.platform === 'win32' ? screen.dipToScreenRect(mainWindow, dip) : dip;
+  return [r.x, r.y, r.width, r.height];
+}
+
+function followWindow() {
+  if (followingWindow || !mainWindow) return;
+  followingWindow = true;
+  const again = () => {
+    if (nativeShown && nativeSearch && lastSearchRect && mainWindow && !mainWindow.isDestroyed()) {
+      nativeSearch.place(screenRect(lastSearchRect));
+    }
+  };
+  for (const evt of ['move', 'resize', 'maximize', 'unmaximize', 'restore', 'enter-full-screen', 'leave-full-screen']) {
+    mainWindow.on(evt, again);
+  }
 }
 
 /** The user agent without the program's own tokens ("Electron/44…", "hamenagen/1.5.6"). */
@@ -685,6 +765,20 @@ function placeSearch(rect) {
 
 ipcMain.handle('search:open', async (_evt, query, rect, source) => {
   if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
+  const url = query != null ? (source === 'google' ? googleSearchUrl(query) : youtubeSearchUrl(query)) : null;
+  const native = nativeSearchFor();
+  if (native && rect) {
+    try {
+      await native.start(ownerHwnd());
+      followWindow();
+      lastSearchRect = rect;
+      native.open(url, screenRect(rect));
+      nativeShown = true;
+      return { ok: true, engine: 'webview2' };
+    } catch (err) {
+      searchLog(`WebView2 window unavailable, the player's own view instead: ${err.message}`);
+    }
+  }
   const view = ensureSearchView();
   await view.identity;
   if (!searchShown) {
@@ -696,9 +790,20 @@ ipcMain.handle('search:open', async (_evt, query, rect, source) => {
   view.webContents.focus();
   return { ok: true };
 });
-ipcMain.handle('search:place', (_evt, rect) => { if (searchShown) placeSearch(rect); });
+ipcMain.handle('search:place', (_evt, rect) => {
+  if (nativeShown && nativeSearch && rect) {
+    lastSearchRect = rect;
+    nativeSearch.place(screenRect(rect));
+    return;
+  }
+  if (searchShown) placeSearch(rect);
+});
 ipcMain.handle('search:hide', () => hideSearch());
 ipcMain.handle('search:nav', (_evt, action) => {
+  if (nativeShown && nativeSearch) {
+    nativeSearch.nav(action);
+    return;
+  }
   if (!searchView || searchView.webContents.isDestroyed()) return;
   const history = searchView.webContents.navigationHistory;
   if (action === 'back' && history.canGoBack()) history.goBack();
@@ -841,4 +946,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => bridge.stop());
+app.on('before-quit', () => {
+  if (nativeSearch) nativeSearch.stop();
+  bridge.stop();
+});

@@ -246,6 +246,26 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "the packaged core cannot find ffmpeg or truststore" }
           & "$res/ffmpeg/ffmpeg.exe" -hide_banner -version | Select-Object -First 1
 
+      - name: The search window in Edge's engine (WebView2) opens and catches a click on a YouTube result
+        shell: pwsh
+        timeout-minutes: 4
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+        run: |
+          # 1.5.9: Google inside the player is shown in WebView2, as in the download-from-YouTube program.
+          # The packaged Python opens the window (pywebview, pythonnet, the WebView2 runtime), loads a page
+          # with a Google-style link to a YouTube video, clicks it, and must catch the link.
+          $res = "dist/win-unpacked/resources"
+          $env:HAMENAGEN_BACKEND_DIR = (Resolve-Path "$res/backend").Path
+          $profile = Join-Path $env:RUNNER_TEMP "search-profile"
+          $out = & "$res/python/python.exe" -c "import os, sys; sys.path.insert(0, os.environ['HAMENAGEN_BACKEND_DIR']); from hamenagen.searchwin import main; sys.exit(main(['--selftest', '--profile', r'$profile']))" 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          $out
+          if ($code -ne 0 -or $out -notmatch '"event": "selftest", "ok": true' -or $out -notmatch 'watch\?v=demo0000001') {
+            throw "the WebView2 search window does not work in the package"
+          }
+
       - name: Check the bundled model works with no network (offline editions)
         if: matrix.edition == 'offline' || matrix.edition == 'setup-offline'
         shell: pwsh
