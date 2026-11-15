@@ -17,8 +17,9 @@
   let from = null; // { view, holder }: where the search started
   // 1.5.7: YouTube's own results page is the first choice (it is what the browser shows, with its
   // pictures); Google stays beside it, for where YouTube's page does not open.
-  let source = 'youtube';
-  try { if (localStorage.getItem('websearch.source') === 'google') source = 'google'; } catch { /* no storage */ }
+  // 1.5.9: Google first, as in the download-from-YouTube program (on Windows in Edge's engine).
+  let source = 'google';
+  try { if (localStorage.getItem('websearch.source') === 'youtube') source = 'youtube'; } catch { /* no storage */ }
 
   function rect() {
     const r = frame.getBoundingClientRect();

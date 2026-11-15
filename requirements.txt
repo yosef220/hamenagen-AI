@@ -33,3 +33,5 @@ numpy>=1.26
 # song (MP3, FLAC, WAV, OGG) with libsndfile; the 6 MB model ships in every
 # edition. Without it the feature is simply not offered.
 soundfile>=0.12
+# The search window in Edge's engine (WebView2), Windows only (1.5.9); proxy_tools is vendored in backend/.
+pywebview; sys_platform == "win32"
