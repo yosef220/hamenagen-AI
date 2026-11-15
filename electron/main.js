@@ -317,7 +317,7 @@ const BACKEND_METHODS = new Set([
   'classifier_status', 'install_model_async', 'reclassify_async',
   'get_settings', 'update_settings',
   'radio_list', 'check_updates', 'apply_update', 'offline_pack_status', 'install_offline_pack',
-  'online_available', 'online_search', 'online_download', 'online_link',
+  'online_available', 'online_search', 'online_web_search', 'online_download', 'online_link',
   'download_batch_async', 'stop_downloads', 'lookup_details', 'apply_details',
   'set_track_topic', 'set_track_vocal', 'confirm_vocal',
   'playlists', 'playlist_get', 'playlist_create', 'playlist_rename', 'playlist_delete', 'playlist_add',
@@ -555,13 +555,62 @@ function browserUserAgent(ua) {
   return String(ua || '').split(' ').filter((t) => !(/^[^/()]+\/\d/.test(t) && !keep.test(t))).join(' ');
 }
 
+/**
+ * 1.5.8: what a browser says about itself. Chrome and Edge (so the WebView2 window of the download-from-YouTube
+ * program) send Client Hints — "Sec-CH-UA", "-Mobile", "-Platform" — with every request; Electron sends none,
+ * and Google gives a window that says nothing a plainer results page (no pictures, no video cards). The window
+ * is Chromium all the same, so it says it, in the headers and in ``navigator.userAgentData``.
+ */
+function browserHints() {
+  const full = process.versions.chrome || '120.0.0.0';
+  const major = full.split('.')[0];
+  const platform = process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux';
+  return {
+    major, full, platform,
+    header: `"Chromium";v="${major}", "Google Chrome";v="${major}", "Not-A.Brand";v="24"`,
+  };
+}
+
+/** Client Hints headers on the search view's requests, and the same brands for the page's scripts. */
+async function giveBrowserIdentity(wc, ses, userAgent) {
+  const hints = browserHints();
+  ses.webRequest.onBeforeSendHeaders((details, done) => {
+    const headers = { ...details.requestHeaders };
+    if (!headers['Sec-CH-UA']) {
+      headers['Sec-CH-UA'] = hints.header;
+      headers['Sec-CH-UA-Mobile'] = '?0';
+      headers['Sec-CH-UA-Platform'] = `"${hints.platform}"`;
+    }
+    done({ requestHeaders: headers });
+  });
+  try {
+    if (!wc.debugger.isAttached()) {
+      await wc.loadURL('about:blank');           // the debugger needs a page to attach to
+      wc.debugger.attach('1.3');
+    }
+    await wc.debugger.sendCommand('Emulation.setUserAgentOverride', {
+      userAgent,
+      acceptLanguage: 'he-IL,he,en-US,en',
+      userAgentMetadata: {
+        brands: [{ brand: 'Chromium', version: hints.major }, { brand: 'Google Chrome', version: hints.major },
+          { brand: 'Not-A.Brand', version: '24' }],
+        fullVersionList: [{ brand: 'Chromium', version: hints.full }, { brand: 'Google Chrome', version: hints.full },
+          { brand: 'Not-A.Brand', version: '24.0.0.0' }],
+        platform: hints.platform, platformVersion: process.platform === 'win32' ? '10.0.0' : '', architecture: 'x86',
+        bitness: '64', model: '', mobile: false, wow64: false,
+      },
+    });
+  } catch { /* the headers still go; only the page's own view of its brands stays as it was */ }
+}
+
 function ensureSearchView() {
   if (searchView && !searchView.webContents.isDestroyed()) return searchView;
   const ses = session.fromPartition('persist:websearch');
   // 1.5.6: Google answers a program (an "Electron/…" and the app's name in the user agent) with a plainer
   // page: video thumbnails that stay blank, no big video on top. The window is Chromium all the same, so
   // it says what a browser says, in Hebrew.
-  ses.setUserAgent(browserUserAgent(ses.getUserAgent()), 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7');
+  const cleanAgent = browserUserAgent(ses.getUserAgent());
+  ses.setUserAgent(cleanAgent, 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7');
   ses.setPermissionRequestHandler((_wc, _perm, done) => done(false));
   ses.on('will-download', (e) => e.preventDefault());
   searchView = new WebContentsView({
@@ -604,6 +653,16 @@ function ensureSearchView() {
     if (!youtubeLinkIn(target) && isGoogle(target)) wc.loadURL(target);   // a "new tab" stays in place
     return { action: 'deny' };
   });
+  // 1.5.8: behind NetFree, YouTube's own page is a "oops" page of the filter. Say so, and the player goes to Google.
+  wc.on('did-finish-load', async () => {
+    try {
+      const host = new URL(wc.getURL()).hostname;
+      if (!/(^|\.)youtube\.com$/.test(host)) return;
+      const blocked = await wc.executeJavaScript(
+        "/netfree/i.test(document.title + ' ' + (document.documentElement ? document.documentElement.innerHTML.slice(0, 20000) : ''))");
+      if (blocked) toWindow('search:blocked', { site: 'youtube' });
+    } catch { /* the page went away */ }
+  });
   wc.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'Escape') {
       event.preventDefault();
@@ -611,6 +670,7 @@ function ensureSearchView() {
     }
   });
   for (const evt of ['did-navigate', 'did-navigate-in-page', 'did-start-loading', 'did-stop-loading']) wc.on(evt, searchState);
+  searchView.identity = giveBrowserIdentity(wc, ses, cleanAgent);   // done before the first page is asked for
   return searchView;
 }
 
@@ -623,9 +683,10 @@ function placeSearch(rect) {
   });
 }
 
-ipcMain.handle('search:open', (_evt, query, rect, source) => {
+ipcMain.handle('search:open', async (_evt, query, rect, source) => {
   if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
   const view = ensureSearchView();
+  await view.identity;
   if (!searchShown) {
     mainWindow.contentView.addChildView(view);
     searchShown = true;

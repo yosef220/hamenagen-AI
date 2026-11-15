@@ -1116,6 +1116,7 @@ input[type="range"]:hover::-webkit-slider-thumb, input[type="range"]:focus-visib
 .online-item:not(:has(.o-thumb)) { grid-template-columns: minmax(0, 1fr) auto; }
 .o-thumb { width: 64px; height: 36px; object-fit: cover; border-radius: var(--r-sm); background: var(--line); }
 .online-foot { display: flex; justify-content: flex-start; }
+.online-web { margin-top: var(--s3); }
 .online-error { display: flex; align-items: center; gap: var(--s2); color: var(--bad); }
 .online-done { display: flex; align-items: center; gap: var(--s2); color: var(--good); flex-wrap: wrap; }
 

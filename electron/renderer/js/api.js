@@ -15,7 +15,7 @@
     'appInfo', 'today', 'ask', 'playlist', 'setFavorite', 'recordPlay', 'lyrics', 'overview',
     'listTracks', 'topics', 'rescan', 'classifierStatus', 'installModel', 'reclassify',
     'getSettings', 'updateSettings', 'radioList', 'checkUpdates', 'applyUpdate',
-    'offlinePackStatus', 'installOfflinePack', 'onlineAvailable', 'onlineSearch', 'onlineDownload',
+    'offlinePackStatus', 'installOfflinePack', 'onlineAvailable', 'onlineSearch', 'onlineWebSearch', 'onlineDownload',
     'setTrackTopic', 'setTrackVocal', 'confirmVocal', 'vocalStatus', 'vocalReview', 'analyzeVocal', 'stopVocal',
     'setTrackSpeech', 'setTrackDisliked', 'station', 'artistGroups', 'setArtistChoice',
     'voiceStatus', 'voicePrepare', 'voiceRecognize', 'installVoice',
@@ -62,6 +62,7 @@
   bridge.onSearchLink((msg) => api.emit('search-link', msg));
   bridge.onSearchState((msg) => api.emit('search-state', msg));
   bridge.onSearchClosed((msg) => api.emit('search-closed', msg));
+  bridge.onSearchBlocked((msg) => api.emit('search-blocked', msg));
 
   H.api = api;
 })();

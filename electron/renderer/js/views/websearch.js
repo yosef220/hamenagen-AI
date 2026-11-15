@@ -95,6 +95,15 @@
     nav.forward.disabled = !state.canGoForward;
     frame.classList.toggle('is-loading', !!state.loading);
   });
+  // YouTube's page is the network filter's page: Google, and next time Google first.
+  api.on('search-blocked', () => {
+    if (root.hidden || source !== 'youtube') return;
+    H.toast('יוטיוב חסום ברשת הזו (נטפרי), אז עברתי לגוגל', { icon: 'shield-alert' });
+    source = 'google';
+    try { localStorage.setItem('websearch.source', 'google'); } catch { /* no storage */ }
+    draw(input ? input.value : '');
+    open(input ? input.value.trim() : '');
+  });
   api.on('search-closed', () => { if (!root.hidden) H.closeWebSearch(); });   // Esc inside the page
   root.addEventListener('keydown', (e) => { if (e.key === 'Escape') H.closeWebSearch(); });
 
