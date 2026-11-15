@@ -1426,6 +1426,8 @@ body.at-rest .app { visibility: hidden; }
 }
 .websearch-input:focus { outline: none; border-color: var(--tekhelet); box-shadow: 0 0 0 3px var(--tekhelet-soft); }
 .websearch-nav { display: flex; gap: var(--s1); }
+.websearch-source { display: flex; gap: var(--s1); }
+.search-buttons { display: inline-flex; gap: var(--s2); flex-wrap: wrap; align-items: center; }
 .websearch-hint { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }
 .websearch-frame {
   flex: 1;

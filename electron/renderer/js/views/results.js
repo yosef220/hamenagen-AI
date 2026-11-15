@@ -159,8 +159,8 @@
   // with "יוטיוב" added, inside the player's window (websearch.js); a click on
   // a YouTube result comes back here as a link, to the place the search
   // started from (electron/main.js).
-  H.searchWeb = function searchWeb(query, holder) {
-    H.go('websearch', { query, from: { view: H.currentView(), holder: holder || null } });
+  H.searchWeb = function searchWeb(query, holder, source) {
+    H.go('websearch', { query, source, from: { view: H.currentView(), holder: holder || null } });
   };
   api.on('search-link', ({ url }) => {
     const from = H.webSearchFrom();
@@ -173,9 +173,11 @@
       H.go('results', { link: url });
     }
   });
-  const searchButton = (query, holder, primary) => h('button', {
-    class: `btn ${primary ? 'btn-primary btn-sm' : 'btn-quiet'}`, type: 'button', onclick: () => H.searchWeb(query, holder),
-  }, icon('search', primary ? 'icon-sm' : ''), `לחפש „${query}” בגוגל`);
+  /** 1.5.7: YouTube's own results page, inside the player — what the browser shows — and Google beside it. */
+  const searchButton = (query, holder, primary) => h('span', { class: 'search-buttons' },
+    h('button', { class: `btn ${primary ? 'btn-primary btn-sm' : 'btn-quiet'}`, type: 'button', onclick: () => H.searchWeb(query, holder, 'youtube') },
+      icon('search', primary ? 'icon-sm' : ''), `לחפש „${query}” ביוטיוב, בתוך המנגן`),
+    h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => H.searchWeb(query, holder, 'google') }, 'בגוגל'));
   const LONG = 15 * 60; // a show or a medley evening, not a song
   const SHORT = 60;     // a teaser
 

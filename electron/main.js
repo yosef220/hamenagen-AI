@@ -481,6 +481,10 @@ function youtubeLinkIn(url) {
     const host = u.hostname.replace(/^(www|m|music)\./, '');
     if (host === 'youtu.be' || host === 'youtube.com') {
       if (host === 'youtube.com' && /^\/(results|feed|signin|account)/.test(u.pathname)) return null;
+      // One song, not the "mix" YouTube starts from a result (list=RD…, start_radio=1).
+      if (host === 'youtube.com' && u.pathname === '/watch' && /^[\w-]{11}$/.test(u.searchParams.get('v') || '')) {
+        return `https://www.youtube.com/watch?v=${u.searchParams.get('v')}`;
+      }
       return u.toString();
     }
   } catch { /* not a URL */ }
@@ -492,6 +496,24 @@ function isGoogle(url) {
   try {
     const u = new URL(url);
     return u.protocol === 'https:' && /(^|\.)google\.[a-z.]+$/.test(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** YouTube's own results page: the same page the browser shows (1.5.7). */
+function youtubeSearchUrl(query) {
+  const q = String(query || '').trim();
+  if (SEARCH_BASE) return `${SEARCH_BASE}?q=${encodeURIComponent(q)}`;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+}
+/** A page the search view may show besides Google's: YouTube's results (and its consent screen). */
+function isYoutubeResults(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    if (u.hostname === 'consent.youtube.com') return true;
+    return /(^|\.)youtube\.com$/.test(u.hostname) && /^\/(results|feed|signin|account|$)/.test(u.pathname);
   } catch {
     return false;
   }
@@ -550,10 +572,12 @@ function ensureSearchView() {
       nodeIntegration: false,
       webSecurity: true,
       spellcheck: false,
+      backgroundThrottling: false,
     },
   });
   searchView.setBackgroundColor('#ffffff');
   const wc = searchView.webContents;
+  wc.setAudioMuted(true);            // a search page never plays: the listener hears the player
   const catchLink = (event, target) => {
     const link = youtubeLinkIn(target);
     if (link) {
@@ -562,8 +586,17 @@ function ensureSearchView() {
       toWindow('search:link', { url: link });
       return;
     }
-    if (!isGoogle(target)) event.preventDefault();   // only Google, inside the player
+    if (!isGoogle(target) && !isYoutubeResults(target)) event.preventDefault();   // only Google and YouTube's results
   };
+  // YouTube moves between its pages without loading them (history.pushState): a click on a video shows
+  // up only here. The link goes to the player, and the page is emptied, so that nothing plays in it.
+  wc.on('did-navigate-in-page', (_event, target) => {
+    const link = youtubeLinkIn(target);
+    if (!link) return;
+    hideSearch();
+    toWindow('search:link', { url: link });
+    setTimeout(() => { if (!wc.isDestroyed()) wc.loadURL('about:blank'); }, 50);   // the watch page must not play on
+  });
   wc.on('will-navigate', catchLink);
   wc.on('will-redirect', catchLink);
   wc.setWindowOpenHandler(({ url: target }) => {
@@ -590,7 +623,7 @@ function placeSearch(rect) {
   });
 }
 
-ipcMain.handle('search:open', (_evt, query, rect) => {
+ipcMain.handle('search:open', (_evt, query, rect, source) => {
   if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
   const view = ensureSearchView();
   if (!searchShown) {
@@ -598,7 +631,7 @@ ipcMain.handle('search:open', (_evt, query, rect) => {
     searchShown = true;
   }
   placeSearch(rect);
-  if (query != null) view.webContents.loadURL(googleSearchUrl(query));
+  if (query != null) view.webContents.loadURL(source === 'google' ? googleSearchUrl(query) : youtubeSearchUrl(query));
   view.webContents.focus();
   return { ok: true };
 });
