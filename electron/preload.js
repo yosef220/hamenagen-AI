@@ -123,7 +123,7 @@ contextBridge.exposeInMainWorld('hamenagen', {
   clipboardLink: () => ipcRenderer.invoke('app:clipboardLink'),
   // Google inside the window (electron/main.js): open it over the given
   // rectangle of the page, follow the rectangle, hide it, move in its history.
-  searchOpen: (query, rect) => ipcRenderer.invoke('search:open', query, rect),
+  searchOpen: (query, rect, source) => ipcRenderer.invoke('search:open', query, rect, source),
   searchPlace: (rect) => ipcRenderer.invoke('search:place', rect),
   searchHide: () => ipcRenderer.invoke('search:hide'),
   searchNav: (action) => ipcRenderer.invoke('search:nav', action),

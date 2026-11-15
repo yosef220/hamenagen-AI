@@ -1,8 +1,8 @@
 'use strict';
 
 /*
- * Google inside the player, where the network blocks the app from searching
- * YouTube (NetFree): a bar drawn here — back to the player, the query, back
+ * YouTube's results page (or Google's) inside the player, where the network blocks the app from searching
+ * YouTube (NetFree) or the list it shows is not what the browser shows: a bar drawn here — back to the player, the query, back
  * and forward in the search — and under it the page itself, which
  * electron/main.js lays over this view's frame. A click on a YouTube result
  * comes back as a link to the view the search started from (results.js).
@@ -15,6 +15,10 @@
   let input = null;
   let nav = null;
   let from = null; // { view, holder }: where the search started
+  // 1.5.7: YouTube's own results page is the first choice (it is what the browser shows, with its
+  // pictures); Google stays beside it, for where YouTube's page does not open.
+  let source = 'youtube';
+  try { if (localStorage.getItem('websearch.source') === 'google') source = 'google'; } catch { /* no storage */ }
 
   function rect() {
     const r = frame.getBoundingClientRect();
@@ -28,7 +32,7 @@
   function draw(query) {
     input = h('input', {
       class: 'websearch-input', type: 'search', value: query || '', dir: 'auto',
-      'aria-label': 'מה לחפש בגוגל', autocomplete: 'off', spellcheck: 'false',
+      'aria-label': 'מה לחפש', autocomplete: 'off', spellcheck: 'false',
     });
     const form = h('form', {
       class: 'websearch-form', role: 'search',
@@ -40,19 +44,34 @@
       reload: h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'לטעון שוב', title: 'לטעון שוב', onclick: () => api.searchNav('reload') }, icon('refresh-cw')),
     };
     frame = h('div', { class: 'websearch-frame is-loading' },
-      h('div', { class: 'websearch-loading' }, icon('loader-circle', 'spin'), 'טוען את גוגל…'));
+      h('div', { class: 'websearch-loading' }, icon('loader-circle', 'spin'), source === 'youtube' ? 'טוען את יוטיוב…' : 'טוען את גוגל…'));
+    const choose = (which) => {
+      if (which === source) return;
+      source = which;
+      try { localStorage.setItem('websearch.source', which); } catch { /* no storage */ }
+      draw(input ? input.value : query);
+      open(input ? input.value.trim() : query || '');
+    };
+    const tabs = h('div', { class: 'websearch-source', role: 'group', 'aria-label': 'איפה לחפש' },
+      ...[['youtube', 'יוטיוב'], ['google', 'גוגל']].map(([key, label]) => h('button', {
+        class: `btn btn-sm ${source === key ? 'btn-primary' : 'btn-quiet'}`, type: 'button', 'aria-pressed': String(source === key),
+        onclick: () => choose(key),
+      }, label)));
     H.clear(root).append(
       h('div', { class: 'websearch-bar' },
         h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => H.closeWebSearch() }, icon('undo-2'), 'חזרה למנגן'),
         form,
+        tabs,
         h('div', { class: 'websearch-nav' }, nav.back, nav.forward, nav.reload,
           // 1.5.6: the same search in the computer's own browser, where Google shows what it shows there;
           // the YouTube link copied from it is picked up by the player (the paste box).
           h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'לפתוח את החיפוש בדפדפן', title: 'לפתוח בדפדפן',
-            onclick: () => api.openExternal(`https://www.google.com/search?q=${encodeURIComponent(`${(input.value || '').trim()} youtube`.trim())}`) },
+            onclick: () => api.openExternal(source === 'youtube'
+              ? `https://www.youtube.com/results?search_query=${encodeURIComponent((input.value || '').trim())}`
+              : `https://www.google.com/search?q=${encodeURIComponent(`${(input.value || '').trim()} youtube`.trim())}`) },
           icon('external-link')))),
       h('p', { class: 'websearch-hint' },
-        'גוגל, בתוך המנגן. לוחצים על תוצאה מיוטיוב, והשיר עובר למנגן: לשמוע בלי לשמור, או להוריד. Esc חוזר למנגן. אם התוצאות נראות אחרת מבדפדפן — הכפתור שליד החצים פותח אותו חיפוש בדפדפן; מעתיקים משם את הקישור ומדביקים במנגן.'),
+        'לוחצים על תוצאה מיוטיוב, והשיר עובר למנגן: לשמוע בלי לשמור, או להוריד. Esc חוזר למנגן. אם עמוד אחד לא נפתח — אפשר לעבור לגוגל, או לפתוח את אותו חיפוש בדפדפן (הכפתור שליד החצים) ולהדביק כאן את הקישור.'),
       frame);
     observer.disconnect();
     observer.observe(frame);
@@ -60,11 +79,12 @@
 
   function open(query) {
     // After the layout, so that the frame has its size.
-    requestAnimationFrame(() => api.searchOpen(query, rect()));
+    requestAnimationFrame(() => api.searchOpen(query, rect(), source));
   }
 
   function show(params = {}) {
     if (params.from) from = params.from;
+    if (params.source === 'youtube' || params.source === 'google') source = params.source;
     draw(params.query);
     open(params.query || '');
   }
