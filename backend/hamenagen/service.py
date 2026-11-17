@@ -38,6 +38,7 @@ from . import tags as tags_mod
 from . import export as export_mod
 from . import ringtone as ringtone_mod
 from . import chorus as chorus_mod
+from . import rhythm as rhythm_mod
 from . import sets as sets_mod
 from . import sound as sound_mod
 from . import station as station_mod
@@ -958,7 +959,7 @@ class PlayerService:
             need_listen = listen and (changed or a.get("model") != VOCAL_MODEL
                                       or (not unreadable and a.get("profile_v") != sound_mod.PROFILE_VERSION))
             need_rhythm = rhythm and not unreadable and (changed or a.get("energy") is None
-                                                        or a.get("lead") is None)
+                                                        or a.get("lead") is None or a.get("musical_key") is None)
             if need_listen or need_rhythm:
                 out.append((t, need_listen))
         return out
@@ -996,7 +997,8 @@ class PlayerService:
                     row.update({"model": None, "verdict": None})
                 rh = result.rhythm or {}
                 row.update({"tempo": rh.get("tempo"), "energy": rh.get("energy", 0.0),
-                            "pulse": rh.get("pulse"), "loudness": rh.get("loudness")})
+                            "pulse": rh.get("pulse"), "loudness": rh.get("loudness"),
+                            "musical_key": rh.get("musical_key", -1), "key_conf": rh.get("key_conf")})
                 if result.profile:
                     row.update(result.profile)
                 # Edges it could not read count as none, so the song is not read again.
@@ -1353,6 +1355,8 @@ class PlayerService:
         d["disliked"] = bool(override and override.get("disliked"))
         a = analysis or {}
         d["long"] = self._is_long(track)
+        # 1.6: the key the listening heard ("" when not clear).
+        d["key"] = rhythm_mod.key_name(a.get("musical_key"))
         d["gain"] = sound_mod.gain_db(a.get("loudness"))
         d["lead"] = a.get("lead") or 0.0
         d["tail"] = a.get("tail") or 0.0
@@ -1571,7 +1575,7 @@ class PlayerService:
             if t.duration and not self.SET_MIN_SECONDS <= t.duration <= self.SET_MAX_SECONDS:
                 continue
             a = analyses.get(t.id) or {}
-            song = sets_mod.SetSong(t, a.get("tempo"), a.get("energy"))
+            song = sets_mod.SetSong(t, a.get("tempo"), a.get("energy"), key=a.get("musical_key"))
             if topic:
                 if t.topic != topic and topic not in t.tag_list:
                     continue

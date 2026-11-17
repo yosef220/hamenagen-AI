@@ -299,7 +299,8 @@
     H.clear(songMenu).append(
       h('div', { class: 'menu-head' },
         h('div', { class: 'menu-song' }, H.trackTitle(track)),
-        h('div', { class: 'menu-why' }, icon('info', 'icon-sm'), h('span', {}, topicWhy(track)))),
+        h('div', { class: 'menu-why' }, icon('info', 'icon-sm'), h('span', {}, topicWhy(track))),
+        track.key ? h('div', { class: 'menu-why' }, icon('music', 'icon-sm'), h('span', {}, `סולם: ${track.key}`)) : null),
       h('div', { class: 'menu-group' },
         item('list-start', 'לנגן אחרי השיר הזה', () => { closeTrackMenu(); H.player.playNext(track); H.toast('יתנגן אחרי השיר הזה', { icon: 'list-start' }); }),
         item('list-plus', 'להוסיף לסוף התור', () => { closeTrackMenu(); H.player.enqueue([track]); H.toast('נוסף לתור', { icon: 'list-plus' }); }),

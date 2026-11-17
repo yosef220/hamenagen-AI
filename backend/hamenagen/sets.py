@@ -9,7 +9,8 @@ Each celebration has words that name it (to understand the request), words
 that mark its own songs ("אליהו הנביא" for a brit), topics whose songs fit,
 and searches for YouTube when the computer has too few songs. Tempo and
 energy come from rhythm.py, heard in the background; before they are known
-the set is built from the topics alone.
+the set is built from the topics alone. Neighbouring songs also prefer keys
+that sit well together (1.6, rhythm.key_distance).
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
-from .rhythm import tempo_distance
+from .rhythm import key_distance, tempo_distance
 from .text_normalize import normalize
 
 # Topics whose songs never belong in a celebration set.
@@ -100,6 +101,7 @@ class SetSong:
     marked: bool = False
     fits: bool = False
     reasons: list[str] = field(default_factory=list)
+    key: int | None = None        # 1.6: rhythm.detect_key (-1 / None: not clear)
 
 
 def _target(position: float, low: float, high: float) -> float:
@@ -134,6 +136,8 @@ def arrange(songs: list[SetSong], seed: int | None = None) -> list[SetSong]:
             c = abs(s.energy - want) * 3.0
             if prev is not None:
                 c += tempo_distance(prev.tempo, s.tempo) / 40.0
+                # 1.6: keys that sit well together (a light touch: energy leads).
+                c += 0.12 * min(key_distance(prev.key, s.key), 3.0)
             return c
         pick = min(left, key=cost)
         left.remove(pick)

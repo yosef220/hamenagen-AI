@@ -165,6 +165,9 @@ _ANALYSIS_MIGRATIONS = {
     "profile_v": "INTEGER",
     "lead": "REAL",
     "tail": "REAL",
+    # 1.6: the key (rhythm.detect_key): 0–11 major, 12–23 minor, -1 none clear.
+    "musical_key": "INTEGER",
+    "key_conf": "REAL",
 }
 
 # 1.4: more of the listener's own decisions.
@@ -412,7 +415,7 @@ class MusicIndex:
     def save_analysis(self, track_id: str, row: dict, *, commit: bool = True) -> None:
         cols = [c for c in ("model", "verdict", "acapella", "instrument", "windows", "mtime", "size", "analyzed_at",
                             "tempo", "energy", "pulse", "loudness", "profile", "speech", "music", "profile_v",
-                            "lead", "tail") if c in row]
+                            "lead", "tail", "musical_key", "key_conf") if c in row]
         with self._lock:
             self._conn.execute(
                 f"INSERT INTO audio_analysis (track_id, {', '.join(cols)}) VALUES (?{', ?' * len(cols)}) "
