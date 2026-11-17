@@ -39,6 +39,7 @@ _SLOW = {
     "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
     "online_set", "listen_prepare", "station", "voice_recognize", "voice_prepare", "write_tags",
     "export_drives", "export_plan", "make_ringtone", "import_singers", "ringtone_info",
+    "playlist_import", "playlist_export",
 }
 
 
@@ -195,6 +196,12 @@ class RpcServer:
 
     def rpc_playlist_set_order(self, params):
         return self.service.playlist_set_order(params.get("id", 0), params.get("track_ids") or [])
+
+    def rpc_playlist_import(self, params):
+        return self.service.playlist_import(params.get("path", ""))
+
+    def rpc_playlist_export(self, params):
+        return self.service.playlist_export(params.get("id", 0), params.get("folder", ""))
 
     def rpc_track_copies(self, params):
         return self.service.track_copies(params.get("id", ""))

@@ -1687,6 +1687,55 @@ class PlayerService:
             return {"ok": False, "message": "הרשימה לא נמצאה."}
         return {"ok": True, "count": self.index.set_playlist_order(int(playlist_id), list(track_ids or []))}
 
+    # -- playlists in and out (1.6) ------------------------------------------------
+    def playlist_import(self, path: str) -> dict:
+        """Playlists from another player (M3U, PLS, CSV) or Google Takeout
+        (ZIP), matched to the library's songs. A playlist none of whose songs
+        is here is not created; what was not found is counted."""
+        from . import playlist_io
+
+        try:
+            parsed = playlist_io.read_file(path)
+        except (OSError, ValueError, UnicodeError) as exc:
+            return {"ok": False, "message": f"לא הצלחתי לקרוא את הקובץ: {exc}"}
+        except Exception as exc:  # noqa: BLE001 - a broken ZIP or CSV
+            return {"ok": False, "message": f"הקובץ לא נקרא כרשימה: {exc}"}
+        if not parsed:
+            return {"ok": False, "message": "לא נמצאו בקובץ שירים. אפשר לייבא M3U, M3U8, PLS, CSV, "
+                                            "או את קובץ ה-ZIP של Google Takeout (YouTube ו-YouTube Music)."}
+        matcher = playlist_io.Matcher(self.index.all_tracks(), self.artist_name)
+        made, found, missing, skipped = [], 0, 0, []
+        for pl in parsed:
+            ids = [i for i in (matcher.find(e) for e in pl.entries) if i]
+            ids = list(dict.fromkeys(ids))
+            found += len(ids)
+            missing += len(pl.entries) - len(ids)
+            if not ids:
+                skipped.append(pl.name)
+                continue
+            pid = self.index.create_playlist(self._unique_name(pl.name), ids)
+            made.append({"id": pid, "name": self.index.playlist_name(pid), "count": len(ids),
+                         "missing": len(pl.entries) - len(ids)})
+        return {"ok": bool(made), "playlists": made, "found": found, "missing": missing, "empty": skipped,
+                "message": "" if made else "אף שיר מהרשימה לא נמצא במחשב."}
+
+    def playlist_export(self, playlist_id: int, folder: str) -> dict:
+        """The playlist as an M3U8 file in ``folder``, for other players and phones."""
+        from . import playlist_io
+
+        name = self.index.playlist_name(int(playlist_id))
+        if name is None:
+            return {"ok": False, "message": "הרשימה לא נמצאה."}
+        if not folder or not Path(folder).is_dir():
+            return {"ok": False, "message": "התיקייה לא נמצאה."}
+        tracks = self.index.playlist_tracks(int(playlist_id))
+        dest = Path(folder) / f"{playlist_io.safe_file_name(name)}.m3u8"
+        try:
+            playlist_io.write_m3u8(tracks, dest, artist_name=self.artist_name)
+        except OSError as exc:
+            return {"ok": False, "message": f"לא הצלחתי לכתוב את הקובץ: {exc}"}
+        return {"ok": True, "path": str(dest), "count": len(tracks)}
+
     def play_playlist(self, playlist_id: int) -> dict:
         """A saved playlist as the answer to a request."""
         name = self.index.playlist_name(int(playlist_id)) or ""

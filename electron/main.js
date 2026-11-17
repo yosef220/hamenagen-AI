@@ -330,6 +330,7 @@ const BACKEND_METHODS = new Set([
   'voice_status', 'voice_prepare', 'voice_recognize', 'install_voice_async',
   'write_tags', 'write_all_tags_async', 'export_drives', 'export_plan', 'export_run_async', 'export_stop',
   'ringtone_info', 'make_ringtone', 'import_singers', 'clear_singers', 'singers_status',
+  'playlist_import', 'playlist_export',
   'save_position', 'record_skip',
 ]);
 
@@ -846,7 +847,9 @@ ipcMain.handle('app:chooseFolder', async (_evt, title) => {
 ipcMain.handle('app:chooseFile', async (_evt, title, kind) => {
   const filters = kind === 'singers'
     ? [{ name: 'רשימת זמרים', extensions: ['csv', 'tsv', 'txt', 'json'] }, { name: 'כל הקבצים', extensions: ['*'] }]
-    : [{ name: 'כל הקבצים', extensions: ['*'] }];
+    : kind === 'playlist'
+      ? [{ name: 'רשימת השמעה', extensions: ['m3u', 'm3u8', 'pls', 'csv', 'zip'] }, { name: 'כל הקבצים', extensions: ['*'] }]
+      : [{ name: 'כל הקבצים', extensions: ['*'] }];
   const res = await dialog.showOpenDialog(mainWindow, {
     title: typeof title === 'string' ? title : 'בחירת קובץ',
     properties: ['openFile'],

@@ -80,7 +80,7 @@ const ICONS = [
   'skip-back', 'skip-forward', 'shuffle', 'repeat', 'repeat-1', 'heart', 'list-music', 'moon', 'sun',
   'monitor', 'volume-2', 'volume-1', 'volume-x', 'x', 'folder-open', 'folder-plus', 'refresh-cw',
   'check', 'chevron-left', 'chevron-right', 'chevron-down', 'cpu', 'triangle-alert', 'loader-circle',
-  'external-link', 'trash-2', 'type', 'info', 'history', 'calendar-heart', 'scroll-text', 'timer', 'audio-lines',
+  'external-link', 'trash-2', 'type', 'info', 'history', 'calendar-heart', 'file-down', 'scroll-text', 'timer', 'audio-lines',
   'music-2', 'calendar-days', 'wifi-off', 'circle-play', 'mic-vocal', 'arrow-down-up', 'arrow-down',
   'arrow-up', 'plus', 'list-ordered', 'signal', 'hard-drive-download', 'package', 'circle-check',
   'circle-alert', 'keyboard', 'sliders-horizontal', 'ellipsis', 'list-plus', 'list-start', 'tag', 'ear',

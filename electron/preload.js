@@ -64,6 +64,8 @@ contextBridge.exposeInMainWorld('hamenagen', {
   setFavorite: (id, on) => core('set_favorite', { id, on }),
   recordPlay: (id) => core('record_play', { id }),
   lyrics: (id) => core('track_lyrics', { id }),
+  playlistImport: (path) => core('playlist_import', { path }),
+  playlistExport: (id, folder) => core('playlist_export', { id, folder }),
   savePosition: (id, seconds, duration, paused) => core('save_position', { id, seconds, duration, paused }),
   recordSkip: (id, seconds, burst) => core('record_skip', { id, seconds, burst }),
   overview: () => core('library_overview'),
