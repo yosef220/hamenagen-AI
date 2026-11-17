@@ -131,6 +131,14 @@ CREATE TABLE IF NOT EXISTS skips (
     burst      INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_skips_track          ON skips(track_id);
+-- 1.6: the listener's word on a song and a mood ("רגוע", "מרגש"…): 1 fits, 0 not.
+CREATE TABLE IF NOT EXISTS mood_marks (
+    track_id   TEXT NOT NULL,
+    mood       TEXT NOT NULL,
+    value      INTEGER NOT NULL,
+    updated_at TEXT,
+    PRIMARY KEY (track_id, mood)
+);
 CREATE INDEX IF NOT EXISTS idx_tracks_topic         ON tracks(topic);
 CREATE INDEX IF NOT EXISTS idx_tracks_download_date ON tracks(download_date);
 CREATE INDEX IF NOT EXISTS idx_tracks_release_date  ON tracks(release_date);
@@ -539,6 +547,35 @@ class MusicIndex:
         return self._query(
             "SELECT t.* FROM tracks t JOIN positions p ON p.track_id = t.id "
             "ORDER BY p.updated_at DESC LIMIT ?", (limit,))
+
+    # -- moods marked by the listener (1.6) ----------------------------------------
+    def set_mood_mark(self, track_id: str, mood: str, value: int | None) -> None:
+        with self._lock:
+            if value is None:
+                self._conn.execute("DELETE FROM mood_marks WHERE track_id=? AND mood=?", (track_id, mood))
+            else:
+                self._conn.execute(
+                    "INSERT INTO mood_marks (track_id, mood, value, updated_at) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(track_id, mood) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                    (track_id, mood, 1 if value else 0, datetime.now().isoformat(timespec="seconds")))
+            self._conn.commit()
+
+    def mood_marks(self, mood: str) -> dict[str, int]:
+        """{song id: 1 fits / 0 does not} for one mood."""
+        with self._lock:
+            rows = self._conn.execute("SELECT track_id, value FROM mood_marks WHERE mood=?", (mood,)).fetchall()
+        return {r["track_id"]: r["value"] for r in rows}
+
+    def mood_marks_for(self, track_ids: list[str]) -> dict[str, dict[str, int]]:
+        out: dict[str, dict[str, int]] = {}
+        with self._lock:
+            for i in range(0, len(track_ids), 500):
+                chunk = track_ids[i:i + 500]
+                marks = ",".join("?" for _ in chunk)
+                for r in self._conn.execute(
+                        f"SELECT track_id, mood, value FROM mood_marks WHERE track_id IN ({marks})", chunk):
+                    out.setdefault(r["track_id"], {})[r["mood"]] = r["value"]
+        return out
 
     # -- skips (1.6) -----------------------------------------------------------
     def record_skip(self, track_id: str, seconds: float | None = None, *, burst: bool = False,

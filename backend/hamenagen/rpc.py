@@ -168,6 +168,9 @@ class RpcServer:
         return self.service.record_skip(params.get("id", ""), float(params.get("seconds") or 0),
                                         bool(params.get("burst")))
 
+    def rpc_set_mood_mark(self, params):
+        return self.service.set_mood_mark(params.get("id", ""), params.get("mood", ""), params.get("value"))
+
     def rpc_track_lyrics(self, params):
         return self.service.track_lyrics(params.get("id", ""))
 

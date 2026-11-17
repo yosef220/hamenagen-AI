@@ -212,6 +212,25 @@
     api.emit('track-changed', { id: track.id, track });
   }
 
+  const MOODS = [['calm', 'רגוע'], ['moving', 'מרגש'], ['children', 'לילדים']];
+  async function chooseMood(track, mood, value) {
+    closeTrackMenu();
+    try {
+      const r = await api.setMoodMark(track.id, mood, value);
+      if (!r.ok) return;
+      track.moods = { ...(track.moods || {}) };
+      if (value === null) delete track.moods[mood];
+      else track.moods[mood] = value ? 1 : 0;
+      const side = value ? r.yes : r.no;
+      const learning = value === null ? `„${r.label}” חזר לזיהוי האוטומטי`
+        : side >= r.min ? `נשמר. המנגן לומד מ-${H.n(side)} הסימונים שלך ב„${r.label}”`
+          : `נשמר. מ-${H.n(r.min)} סימונים ${value ? '„מתאים”' : '„לא מתאים”'} המנגן ילמד איך „${r.label}” נשמעים לך (עכשיו ${H.n(side)})`;
+      H.toast(learning, { icon: 'ear' });
+    } catch (err) {
+      H.toast(`לא נשמר: ${err.message}`, { kind: 'bad' });
+    }
+  }
+
   async function chooseTopic(track, topic) {
     closeTrackMenu();
     try {
@@ -335,6 +354,20 @@
           ? h('p', { class: 'menu-note' }, icon('ear', 'icon-sm'), 'המנגן שמע כאן דיבור, ולכן זה לא מתנגן בערבובים ובסטים.') : null,
         item(track.disliked ? 'undo-2' : 'thumbs-down', track.disliked ? 'להחזיר לערבובים' : 'לא אהוב: לא לנגן בערבובים',
           () => chooseDisliked(track, !track.disliked), { 'aria-pressed': track.disliked ? 'true' : 'false' })),
+      // 1.6: the listener's word on a mood; from three marks the player learns it.
+      h('div', { class: 'menu-group' },
+        h('div', { class: 'menu-label' }, 'מצב רוח'),
+        MOODS.map(([key, label]) => {
+          const state = (track.moods || {})[key];
+          return h('div', { class: 'menu-row mood-row' },
+            h('span', { class: 'mood-name' }, label),
+            h('div', { class: 'segmented segmented-sm', role: 'group', 'aria-label': label },
+              [['yes', 'מתאים', true], ['no', 'לא מתאים', false], ['auto', 'אוטומטי', null]].map(([k, text, value]) => {
+                const on = k === (state === 1 ? 'yes' : state === 0 ? 'no' : 'auto');
+                return h('button', { type: 'button', role: 'menuitemradio', 'aria-pressed': on ? 'true' : 'false', 'aria-checked': on ? 'true' : 'false',
+                  onclick: () => chooseMood(track, key, value) }, text);
+              })));
+        })),
     );
     // Other files of the same song (another folder or format), shown once.
     api.trackCopies(track.id).then(({ copies }) => {

@@ -38,6 +38,7 @@ from . import tags as tags_mod
 from . import export as export_mod
 from . import ringtone as ringtone_mod
 from . import chorus as chorus_mod
+from . import mood_learn
 from . import rhythm as rhythm_mod
 from . import sets as sets_mod
 from . import sound as sound_mod
@@ -1368,11 +1369,14 @@ class PlayerService:
         overrides = self.index.overrides_for(ids)
         analyses = self.index.analyses_for(ids)
         stopped = self.index.positions_for(ids)
+        moods = self.index.mood_marks_for(ids)
         out = []
         for t in tracks:
             d = self._track_dict(t, favs, overrides.get(t.id), analyses.get(t.id))
-            # 1.6: where the listener stopped it, to go on from there.
+            # 1.6: where the listener stopped it, to go on from there; the moods
+            # the listener said it fits (1) or not (0).
             d["resume"] = (stopped.get(t.id) or {}).get("seconds") or 0
+            d["moods"] = moods.get(t.id, {})
             out.append(d)
         return out
 
@@ -1497,15 +1501,41 @@ class PlayerService:
 
     def _mood_tracks(self, mood, limit: int) -> list[Track]:
         """Songs that sound like the mood asked for ("משהו רגוע"), best
-        first with a little variety. Only songs the listening has heard."""
+        first with a little variety. Only songs the listening has heard —
+        and those the listener marked: in, always; marked out, never. The
+        marks also teach what the mood sounds like (mood_learn.py)."""
         candidates, by_id = self._station_candidates()
-        heard = [c for c in candidates if c.energy is not None or c.profile is not None]
+        marks = self.index.mood_marks(mood.key)
+        candidates = [c for c in candidates if marks.get(c.id) != 0]
+        heard = [c for c in candidates if c.energy is not None or c.profile is not None or marks.get(c.id) == 1]
         if len(heard) < 3:
             return []
+        vectors = {c.id: mood_learn.vector(c.profile) for c in candidates if c.profile is not None}
+        model = mood_learn.fit(marks, vectors) if marks and vectors else mood_learn.MoodModel()
         rng = random.Random()
-        ranked = sorted(heard, key=lambda c: -station_mod.score_for_mood(c, mood) * rng.uniform(0.9, 1.1))
+
+        def score(c) -> float:
+            if marks.get(c.id) == 1:
+                return 1000.0 + rng.random()
+            s = station_mod.score_for_mood(c, mood) + 3.0 * model.adjust(vectors.get(c.id))
+            return s * rng.uniform(0.9, 1.1)
+
+        ranked = sorted(heard, key=lambda c: -score(c))
         keep = ranked[: max(3, min(limit, int(len(ranked) * 0.5) or 3))]
         return [by_id[c.id] for c in keep]
+
+    def set_mood_mark(self, track_id: str, mood: str, value: bool | None) -> dict:
+        """The listener's word: a song fits a mood (True), does not (False),
+        or back to what is heard (None)."""
+        moods = {m.key: m for m in station_mod.MOODS}
+        if mood not in moods or self.index.get(track_id) is None:
+            return {"ok": False}
+        self.index.set_mood_mark(track_id, mood, None if value is None else int(bool(value)))
+        marks = self.index.mood_marks(mood)
+        yes = sum(1 for v in marks.values() if v == 1)
+        no = len(marks) - yes
+        return {"ok": True, "mood": mood, "label": moods[mood].label, "value": value, "yes": yes, "no": no,
+                "min": mood_learn.MIN_MARKS}
 
     def _station_mood(self, now: datetime) -> station_mod.Mood:
         part = station_mod.daypart(now)

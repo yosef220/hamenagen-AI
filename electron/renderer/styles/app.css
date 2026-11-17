@@ -1669,3 +1669,7 @@ body.at-rest .app { visibility: hidden; }
 .namefix-why { color: var(--ink-3); font-size: var(--fs-xs, 12px); }
 .namefix-row.unsure .namefix-why { color: var(--warn, var(--ink-2)); }
 .namefix-dialog .dialog-foot { justify-content: space-between; }
+
+/* 1.6: a mood per row in the song's menu. */
+.mood-row { justify-content: space-between; align-items: center; gap: var(--s2); }
+.mood-name { font-size: var(--fs-sm); color: var(--ink-2); min-width: 4rem; }
