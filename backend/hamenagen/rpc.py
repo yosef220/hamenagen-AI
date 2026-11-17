@@ -159,6 +159,14 @@ class RpcServer:
     def rpc_record_play(self, params):
         return self.service.record_play(params.get("id", ""))
 
+    def rpc_save_position(self, params):
+        return self.service.save_position(params.get("id", ""), float(params.get("seconds") or 0),
+                                          params.get("duration"), bool(params.get("paused")))
+
+    def rpc_record_skip(self, params):
+        return self.service.record_skip(params.get("id", ""), float(params.get("seconds") or 0),
+                                        bool(params.get("burst")))
+
     def rpc_track_lyrics(self, params):
         return self.service.track_lyrics(params.get("id", ""))
 

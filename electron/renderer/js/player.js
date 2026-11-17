@@ -54,6 +54,7 @@
   /** Play a list from `start`. `{ shuffle: true }` plays it mixed. */
   P.playList = function playList(tracks, start = 0, opts = {}) {
     if (!tracks || !tracks.length) return;
+    leaving('replace');
     P.autoRadio = opts.autoRadio || null;
     P.original = tracks.slice();
     P.listCrossfade = Number.isFinite(opts.crossfade) ? opts.crossfade : null;
@@ -99,7 +100,7 @@
     changed('queue');
   };
 
-  P.jump = (i) => playIndex(i);
+  P.jump = (i) => { leaving('skip'); playIndex(i); };
 
   function setShuffleFlag(on) {
     P.shuffle = on;
@@ -126,6 +127,55 @@
     H.storage.set('repeat', P.repeat);
     changed('mode');
   };
+
+  // ------------------------------------------------------------ where it stopped (1.6)
+  // A long recording (a shiur, a story) goes on from where it stopped; a song
+  // paused in the middle and played again offers to return to that point. A
+  // song skipped early is noted, unless the listener is only browsing (several
+  // songs in a row skipped within seconds).
+  let lastSaved = 0;
+  const browse = [];          // when the last quick skips were, for browsing
+  function savePosition(track, seconds, paused) {
+    if (!track || track.listen || !track.id) return;
+    const duration = Number.isFinite(audio.duration) ? audio.duration : track.duration;
+    api.savePosition(track.id, seconds, duration, paused)
+      .then((r) => { if (r && r.ok) track.resume = r.kept ? seconds : 0; }).catch(() => {});
+  }
+  function leaving(reason) {
+    const cur = P.current();
+    if (P.mode !== 'track' || !cur || cur.listen || P.loading) return;
+    const t = audio.currentTime || 0;
+    if (cur.long) {
+      if (t >= 30) savePosition(cur, t, audio.paused);
+      return;
+    }
+    if (cur.resume && !audio.paused) savePosition(cur, 0, false);   // listened on: nothing to return to
+    if (reason !== 'skip' || counted) return;
+    const now = Date.now();
+    while (browse.length && now - browse[0] > 60000) browse.shift();
+    const quick = t < 15;
+    const burst = quick && browse.length >= 2;
+    if (quick) browse.push(now);
+    api.recordSkip(cur.id, t, burst).catch(() => {});
+  }
+
+  function offerResume(track) {
+    if (!track.resume || track.listen) return 0;
+    if (track.long) {
+      const from = Math.max(0, track.resume - 3);
+      H.toast(`ממשיך מאיפה שהפסקת: ${H.clock(from)}`, {
+        icon: 'history', ms: 7000,
+        action: { label: 'מההתחלה', fn: () => { audio.currentTime = 0; } },
+      });
+      return from;
+    }
+    const at = track.resume;
+    H.toast(`„${H.trackTitle(track)}” נעצר באמצע`, {
+      icon: 'history', ms: 8000,
+      action: { label: `לחזור ל-${H.clock(at)}`, fn: () => { if (P.current() === track) audio.currentTime = Math.max(0, at - 2); } },
+    });
+    return 0;
+  }
 
   // ------------------------------------------------------------ playback
   function stopHls() {
@@ -195,8 +245,10 @@
     P.station = null;
     P.index = i;
     counted = false;
-    // Skip the silence before the music (media fragment: start at that second).
-    const lead = P.skipSilence && track.lead >= 0.6 ? track.lead : 0;
+    // Skip the silence before the music (media fragment: start at that second);
+    // a long recording goes on from where it stopped.
+    const lead = Math.max(offerResume(track), P.skipSilence && track.lead >= 0.6 ? track.lead : 0);
+    lastSaved = Date.now();
     audio.src = api.fileUrl(track.path) + (lead ? `#t=${lead.toFixed(2)}` : '');
     applyVolume();
     audio.play().catch(() => { /* reported by the error event */ });
@@ -208,6 +260,7 @@
 
   P.next = function next(auto = false) {
     if (P.mode !== 'track') return;
+    if (!auto) leaving('skip');
     if (auto && P.repeat === 'one') {
       audio.currentTime = 0;
       audio.play().catch(() => {});
@@ -228,6 +281,7 @@
       audio.currentTime = 0;
       return;
     }
+    leaving('back');
     playIndex(P.index - 1);
   };
 
@@ -483,9 +537,17 @@
     if (P.blocked) { audio.pause(); return; }
     changed('play');
   });
-  audio.addEventListener('pause', () => { if (xfade) endCrossfade(); changed('pause'); });
+  audio.addEventListener('pause', () => {
+    if (xfade) endCrossfade();
+    // Paused in the middle: kept, to go on from there later.
+    const cur = P.current();
+    if (cur && !cur.listen && !P.loading && audio.currentTime >= 30 && !audio.ended) savePosition(cur, audio.currentTime, true);
+    changed('pause');
+  });
   audio.addEventListener('playing', () => { errorsInARow = 0; });
   audio.addEventListener('ended', () => {
+    const done = P.current();
+    if (done && (done.resume || done.long)) savePosition(done, 0, false);
     if (P.sleep && P.sleep.endOfTrack) {
       P.sleep = null;
       renderSleep();
@@ -505,6 +567,11 @@
       return;
     }
     const cur = P.current();
+    // A long recording keeps its place as it plays, in case the player is closed.
+    if (cur && cur.long && !cur.listen && !audio.paused && Date.now() - lastSaved > 15000 && audio.currentTime >= 30) {
+      lastSaved = Date.now();
+      savePosition(cur, audio.currentTime, false);
+    }
     if (cur && !cur.listen && !counted && audio.currentTime >= Math.min(30, (audio.duration || 60) * 0.5)) {
       counted = true;
       api.recordPlay(cur.id).then(() => api.emit('played', cur)).catch(() => {});

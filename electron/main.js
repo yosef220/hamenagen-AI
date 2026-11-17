@@ -330,6 +330,7 @@ const BACKEND_METHODS = new Set([
   'voice_status', 'voice_prepare', 'voice_recognize', 'install_voice_async',
   'write_tags', 'write_all_tags_async', 'export_drives', 'export_plan', 'export_run_async', 'export_stop',
   'ringtone_info', 'make_ringtone', 'import_singers', 'clear_singers', 'singers_status',
+  'save_position', 'record_skip',
 ]);
 
 ipcMain.handle('backend', async (_evt, method, params) => {

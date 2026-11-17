@@ -204,6 +204,10 @@
       parts.push(scanningPanel(overview));
     } else {
       parts.push(radioSection(stationPeek));
+      // 1.6: a shiur or a story stopped in the middle goes on from there.
+      if (overview.started && overview.started.length) {
+        parts.push(listSection('להמשיך לשמוע', overview.started, ''));
+      }
       parts.push(topicsSection(overview.topics));
       parts.push(h('div', { class: 'home-cols' },
         listSection('שמעת לאחרונה', overview.history, 'השירים שתשמעו יופיעו כאן.',

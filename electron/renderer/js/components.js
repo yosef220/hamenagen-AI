@@ -102,7 +102,9 @@
     const row = opts.compact
       ? h('div', { class: 'track', role: 'listitem', tabindex: '0', 'data-id': track.id },
         H.cover(track), main,
-        h('div', { class: 'track-dur' }, track.duration ? H.clock(track.duration) : ''))
+        h('div', { class: 'track-dur' }, track.long && track.resume && track.duration
+          ? `${H.clock(track.resume)} / ${H.clock(track.duration)}`
+          : track.duration ? H.clock(track.duration) : ''))
       : h('div', { class: 'track', role: 'listitem', tabindex: '0', 'data-id': track.id },
         h('div', { class: 'track-idx' },
           h('span', { class: 'idx-n' }, String(i + 1)),

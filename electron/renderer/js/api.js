@@ -25,6 +25,7 @@
     'appUpdateDownload', 'appUpdateCancel', 'appUpdateResult', 'completeDetails', 'stopCompleteDetails',
     'shabbatStatus', 'playlists', 'playlistGet', 'playlistCreate', 'playlistRename', 'playlistDelete',
     'playlistAdd', 'playlistSetOrder', 'trackCopies', 'onlineSet', 'listenPrepare',
+    'savePosition', 'recordSkip',
   ];
   const SHELL = [
     'shellInfo', 'setTheme', 'openExternal', 'showInFolder', 'openFolder', 'chooseFolder', 'chooseFile', 'playerState',

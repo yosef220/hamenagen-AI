@@ -17,7 +17,7 @@ import threading
 import time
 from collections import Counter
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from . import __version__
@@ -1284,6 +1284,7 @@ class PlayerService:
         d["speech_chosen"] = None if not override or override.get("speech") is None else bool(override["speech"])
         d["disliked"] = bool(override and override.get("disliked"))
         a = analysis or {}
+        d["long"] = self._is_long(track)
         d["gain"] = sound_mod.gain_db(a.get("loudness"))
         d["lead"] = a.get("lead") or 0.0
         d["tail"] = a.get("tail") or 0.0
@@ -1294,7 +1295,14 @@ class PlayerService:
         ids = [t.id for t in tracks]
         overrides = self.index.overrides_for(ids)
         analyses = self.index.analyses_for(ids)
-        return [self._track_dict(t, favs, overrides.get(t.id), analyses.get(t.id)) for t in tracks]
+        stopped = self.index.positions_for(ids)
+        out = []
+        for t in tracks:
+            d = self._track_dict(t, favs, overrides.get(t.id), analyses.get(t.id))
+            # 1.6: where the listener stopped it, to go on from there.
+            d["resume"] = (stopped.get(t.id) or {}).get("seconds") or 0
+            out.append(d)
+        return out
 
     # -- the main request path --------------------------------------------
     def handle_request(self, text: str, spoken: bool = False) -> dict:
@@ -1393,6 +1401,7 @@ class PlayerService:
         analyses = self.index.analyses_for(ids)
         overrides = self.index.overrides_for(ids)
         plays = self.index.play_counts(ids)
+        skips = self.index.skip_counts(since=(datetime.now() - timedelta(days=180)).isoformat(timespec="seconds"))
         last = self.index.last_played_map()
         hearts = self.index.favorite_ids()
         now = datetime.now()
@@ -1411,7 +1420,7 @@ class PlayerService:
                 energy=a.get("energy"), tempo=a.get("tempo"), profile=sound_mod.unpack(a.get("profile")),
                 favorite=t.id in hearts, plays=plays.get(t.id, 0), hours_since_played=hours,
                 vocal=o.get("vocal") == 1 or VOCAL_TOPIC in ((t.topic,) + tuple(t.tag_list)),
-                duration=t.duration))
+                duration=t.duration, skips=skips.get(t.id, 0)))
         return out, {t.id: t for t in tracks}
 
     def _mood_tracks(self, mood, limit: int) -> list[Track]:
@@ -1889,6 +1898,42 @@ class PlayerService:
         self.index.record_play(track_id)
         return {"ok": True}
 
+    # -- where the listener stopped, and what was skipped (1.6) --------------------
+    # A recording this long (a shiur, a story) goes on from where it stopped.
+    LONG_SECONDS = 20 * 60
+
+    def _is_long(self, track: Track) -> bool:
+        return track.kind == "speech" or (track.duration or 0) >= self.LONG_SECONDS
+
+    def save_position(self, track_id: str, seconds: float, duration: float | None = None,
+                      paused: bool = False) -> dict:
+        """Keep where a recording stopped. A long recording keeps it
+        wherever it stopped; a song only when it was paused in the middle (a
+        song skipped was not wanted, and is not offered again from there).
+        Near the start or the end, nothing is kept."""
+        track = self.index.get(track_id)
+        if track is None:
+            return {"ok": False}
+        length = duration or track.duration or 0
+        long = self._is_long(track)
+        end_margin = 60 if long else 20
+        keep = seconds >= 30 and (not length or seconds < length - end_margin) and (long or paused)
+        self.index.set_position(track_id, round(float(seconds), 1) if keep else None, length or None)
+        return {"ok": True, "kept": keep, "long": long}
+
+    def started_recordings(self, limit: int = 6) -> list[Track]:
+        """Long recordings stopped in the middle, to go on with them."""
+        return [t for t in self.index.started_recordings(limit * 3) if self._is_long(t)][:limit]
+
+    # A skip after less than this is browsing, and says nothing about the song.
+    SKIP_MIN_SECONDS = 4.0
+
+    def record_skip(self, track_id: str, seconds: float, burst: bool = False) -> dict:
+        if self.index.get(track_id) is None or seconds < self.SKIP_MIN_SECONDS:
+            return {"ok": False}
+        self.index.record_skip(track_id, round(float(seconds), 1), burst=bool(burst))
+        return {"ok": True}
+
     def track_lyrics(self, track_id: str) -> dict:
         """The words of a song, plain, and with their times when an LRC has
         them (``lines``: [{t, text}], to follow the song as it plays)."""
@@ -1925,6 +1970,8 @@ class PlayerService:
             "recent": self._tracks_payload(self.index.recent_downloaded(12)),
             "history": self._tracks_payload(self.index.history(12)),
             "favorites": self._tracks_payload(self.index.favorites(12)),
+            # 1.6: shiurim and stories stopped in the middle.
+            "started": self._tracks_payload(self.started_recordings(6)),
             "last_scan_at": self.index.get_meta("last_scan_at"),
             "cloud_files": int(self.index.get_meta("cloud_files") or 0),
             "scanning": self.scanning,
