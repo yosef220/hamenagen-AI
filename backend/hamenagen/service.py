@@ -33,6 +33,7 @@ from .zmanim import ZmanimService
 from .smart_update import SmartUpdater
 from . import artists as artists_mod
 from . import cloudfiles
+from . import personal_dates
 from . import tags as tags_mod
 from . import export as export_mod
 from . import ringtone as ringtone_mod
@@ -2014,6 +2015,8 @@ class PlayerService:
             info["primary"]["count"], info["primary"]["phrase"] = shown(info["primary"]["topic"])
         if info["next"] and info["next"].get("topic"):
             info["next"]["count"], info["next"]["phrase"] = shown(info["next"]["topic"])
+        # 1.6: the listener's own days, today and in the coming week.
+        info["personal"] = personal_dates.upcoming(self.settings.personal_dates, on or date.today())
         return info
 
     def opening_suggestion(self, on: date | None = None) -> dict | None:

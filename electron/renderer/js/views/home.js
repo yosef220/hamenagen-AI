@@ -72,6 +72,15 @@
       occasionBox.append(h('div', { class: 'luach-title' }, 'יום רגיל'), h('div', { class: 'luach-detail' }, 'מה בא לשמוע?'));
     }
 
+    // 1.6: the listener's own days — today, or soon.
+    const mine = (t.personal || []).map((p) => h('div', { class: 'luach-personal' },
+      icon('calendar-heart', 'icon-sm'),
+      h('span', {}, p.days === 0 ? `היום ${p.label}` : `${H.days(p.days)} · ${p.hebrew}: ${p.label}`),
+      p.days === 0 && p.request
+        ? h('button', { class: 'chip', type: 'button', onclick: () => H.ask(p.request) }, icon('play', 'icon-sm'), p.request)
+        : null));
+    if (mine.length) occasionBox.append(h('div', { class: 'luach-mine' }, mine));
+
     const panel = h('section', { class: `luach${firstPaint ? ' enter' : ''}`, 'aria-label': `היום ${heb.text}` }, date, occasionBox);
     firstPaint = false;
     return panel;

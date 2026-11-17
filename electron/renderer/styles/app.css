@@ -1372,7 +1372,7 @@ body.at-rest .app { visibility: hidden; }
 .pl-grip { display: grid; place-items: center; color: var(--ink-3); }
 .pl-row:hover .pl-grip, .pl-row:focus-visible .pl-grip { color: var(--ink); }
 .pl-form { display: flex; gap: var(--s2); }
-.pl-form .input, .dialog .input {
+.pl-form .input, .dialog .input, .personal-form .input {
   flex: 1 1 auto;
   min-width: 0;
   height: 36px;
@@ -1651,3 +1651,9 @@ body.at-rest .app { visibility: hidden; }
   pointer-events: none;
 }
 .hf-caption[hidden] { display: none; }
+
+/* 1.6: the listener's own days on the luach, and the form that adds them. */
+.luach-mine { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s3); }
+.luach-personal { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; font-size: var(--fs-sm); }
+.personal-form { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s2); }
+.personal-form .input { min-width: 12rem; flex: 1 1 12rem; }

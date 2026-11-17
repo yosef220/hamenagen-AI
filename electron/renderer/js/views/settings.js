@@ -404,6 +404,46 @@
         } }, icon('eye', 'icon-sm'), 'להציג')));
   }
 
+  // 1.6: the listener's own days by the Hebrew date, every year.
+  const PERSONAL_KINDS = [['birthday', 'יום הולדת'], ['anniversary', 'יום נישואין'], ['yahrzeit', 'יארצייט'], ['other', 'יום אחר']];
+  const PERSONAL_REQUEST = { birthday: 'סט ליום הולדת', anniversary: 'סט לשמחה', yahrzeit: '', other: '' };
+  const HEBREW_MONTHS = [['7', 'תשרי'], ['8', 'חשוון'], ['9', 'כסלו'], ['10', 'טבת'], ['11', 'שבט'], ['12', 'אדר'],
+    ['12a', 'אדר א׳'], ['13', 'אדר ב׳'], ['1', 'ניסן'], ['2', 'אייר'], ['3', 'סיוון'], ['4', 'תמוז'], ['5', 'אב'], ['6', 'אלול']];
+  const HEBREW_DAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ז׳', 'ח׳', 'ט׳', 'י׳', 'י״א', 'י״ב', 'י״ג', 'י״ד', 'ט״ו', 'ט״ז',
+    'י״ז', 'י״ח', 'י״ט', 'כ׳', 'כ״א', 'כ״ב', 'כ״ג', 'כ״ד', 'כ״ה', 'כ״ו', 'כ״ז', 'כ״ח', 'כ״ט', 'ל׳'];
+  function personal() {
+    const items = H.settings.personal_dates || [];
+    const monthName = Object.fromEntries(HEBREW_MONTHS);
+    const kindName = Object.fromEntries(PERSONAL_KINDS);
+    const list = h('div', { class: 'roots' });
+    items.forEach((it, i) => {
+      list.appendChild(h('div', { class: 'root-item' }, icon('calendar-heart', 'icon-sm'),
+        h('span', { class: 'path' }, `${it.name} · ${kindName[it.kind] || ''} · ${HEBREW_DAYS[it.day - 1]} ב${monthName[it.month]}`
+          + (it.request ? ` · „${it.request}”` : '')),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': `להסיר את ${it.name}`, onclick: async () => {
+          if (await save({ personal_dates: items.filter((_, j) => j !== i) })) render({ focus: 'personal' });
+        } }, icon('x', 'icon-sm'))));
+    });
+    const name = h('input', { class: 'input', type: 'text', placeholder: 'שם (למשל: שרה, סבא משה)', 'aria-label': 'שם', maxlength: '60' });
+    const kind = h('select', { class: 'select', 'aria-label': 'סוג' }, PERSONAL_KINDS.map(([v, t]) => h('option', { value: v }, t)));
+    const day = h('select', { class: 'select', 'aria-label': 'יום בחודש' }, HEBREW_DAYS.map((t, i) => h('option', { value: String(i + 1) }, t)));
+    const month = h('select', { class: 'select', 'aria-label': 'חודש' }, HEBREW_MONTHS.map(([v, t]) => h('option', { value: v }, t)));
+    const request = h('input', { class: 'input', type: 'text', 'aria-label': 'מה לנגן ביום הזה', maxlength: '120',
+      placeholder: 'מה לנגן ביום הזה (אפשר להשאיר ריק)', value: PERSONAL_REQUEST.birthday });
+    kind.addEventListener('change', () => { request.value = PERSONAL_REQUEST[kind.value] || ''; });
+    const add = h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: async () => {
+      if (!name.value.trim()) { name.focus(); return; }
+      const item = { name: name.value.trim(), kind: kind.value, day: Number(day.value), month: month.value, request: request.value.trim() };
+      if (await save({ personal_dates: [...items, item] })) render({ focus: 'personal' });
+    } }, icon('plus', 'icon-sm'), 'להוסיף');
+    const form = h('div', { class: 'personal-form' }, name, kind, day, month, request, add);
+    return h('section', { class: 'set-group', id: 'set-personal' },
+      h('h2', {}, 'ימים אישיים'),
+      row('ימי הולדת, נישואין ויארצייט',
+        'לפי התאריך העברי, בכל שנה. היום מופיע בדף הבית כשהוא מגיע (ושבוע לפני), עם מה שבחרת לנגן בו: בקשה רגילה, כמו „סט ליום הולדת”, או שם של רשימה שמורה. אדר של שנה רגילה נופל בשנה מעוברת באדר ב׳; מי שנוהג באדר א׳ יכול לבחור בו.',
+        null, { wide: h('div', {}, items.length ? list : null, form) }));
+  }
+
   // Details and covers for the whole library, filled in only for a sure match.
   let detailsRunning = false;
   let detailsLine = null;
@@ -538,7 +578,7 @@
     H.clear(root).append(
       h('header', { class: 'page-head' }, h('h1', {}, 'הגדרות')),
       h('div', { class: 'settings' },
-        appearance(), library(overview), artistsGroup(artistData, singersSt), sound(), voiceGroup(voiceSt), ai(status, info), suggestions(), shabbat(), listening(vocal), online(info), updates(info),
+        appearance(), library(overview), artistsGroup(artistData, singersSt), sound(), voiceGroup(voiceSt), ai(status, info), suggestions(), shabbat(), personal(), listening(vocal), online(info), updates(info),
         about(info, shell)));
     if (params.focus) {
       const target = H.$(`#set-${params.focus}`);
