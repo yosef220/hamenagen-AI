@@ -488,7 +488,7 @@
     const list = h('div', { class: 'roots' });
     items.forEach((it, i) => {
       list.appendChild(h('div', { class: 'root-item' }, icon('calendar-heart', 'icon-sm'),
-        h('span', { class: 'path' }, `${it.name} · ${kindName[it.kind] || ''} · ${HEBREW_DAYS[it.day - 1]} ב${monthName[it.month]}`
+        h('span', { class: 'personal-item' }, `${it.name} · ${kindName[it.kind] || ''} · ${HEBREW_DAYS[it.day - 1]} ב${monthName[it.month]}`
           + (it.request ? ` · „${it.request}”` : '')),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': `להסיר את ${it.name}`, onclick: async () => {
           if (await save({ personal_dates: items.filter((_, j) => j !== i) })) render({ focus: 'personal' });

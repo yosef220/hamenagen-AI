@@ -417,6 +417,60 @@ async function run() {
         for (const t of tracks) await H.api.setTrackDisliked(t.id, false);
       });
 
+      // 1.6: a mood marked from the song's menu.
+      await page.locator('#view-library .track', { hasText: 'אמת' }).first().click({ button: 'right' });
+      await page.waitForSelector('#track-menu .mood-row');
+      await page.evaluate(() => document.querySelector('#track-menu .mood-row').scrollIntoView({ block: 'end' }));
+      await shot(page, `40-mood-menu${suffix}`);
+      await page.locator('#track-menu .mood-row').first().locator('button', { hasText: /^מתאים$/ }).click();
+      await page.waitForTimeout(400);
+      const marked = await page.evaluate(async () => {
+        const { tracks } = await H.api.listTracks({ text: 'אמת', limit: 5 });
+        const t = tracks.find((x) => x.title === 'אמת');
+        const moods = t ? t.moods : null;
+        if (t) await H.api.setMoodMark(t.id, 'calm', null);
+        return moods;
+      });
+      if (!marked || marked.calm !== 1) errors.push(`the mood mark was not kept: ${JSON.stringify(marked)}`);
+
+      // 1.6: the listener's own days — in the settings, and on the luach on the day.
+      await page.evaluate(async () => {
+        const t = await H.api.today();
+        const month = t.hebrew.month === 12 && t.hebrew.is_leap ? '12a' : String(t.hebrew.month);
+        await H.api.updateSettings({ personal_dates: [
+          { name: 'שרה', kind: 'birthday', month, day: t.hebrew.day, request: 'השירים שאהבתי' },
+          { name: 'סבא משה', kind: 'yahrzeit', month: '7', day: 10 },
+        ] });
+        H.go('home');
+      });
+      await page.waitForSelector('.luach-personal', { timeout: 10000 })
+        .catch(() => errors.push('the personal day is not on the home page'));
+      await shot(page, `41-home-personal${suffix}`);
+      await page.evaluate(() => H.go('settings'));
+      await page.waitForSelector('#set-personal');
+      await page.evaluate(() => document.querySelector('#set-personal').scrollIntoView({ block: 'start' }));
+      await shot(page, `42-settings-personal${suffix}`);
+      await page.evaluate(() => H.api.updateSettings({ personal_dates: [] }));
+
+      // 1.6: playlists out (M3U8) and back in.
+      const io = await page.evaluate(async (dir) => {
+        const { playlists } = await H.api.playlists();
+        if (!playlists.length) return 'no playlist';
+        const out = await H.api.playlistExport(playlists[0].id, dir);
+        if (!out.ok) return `export: ${out.message}`;
+        const back = await H.api.playlistImport(out.path);
+        if (!back.ok || back.missing) return `import: ${JSON.stringify(back)}`;
+        await H.api.playlistDelete(back.playlists[0].id);
+        return '';
+      }, path.resolve(music));
+      if (io) errors.push(`playlist file: ${io}`);
+
+      // 1.6: names to clean, approved in a dialog.
+      await page.evaluate(() => H.go('settings'));
+      await page.waitForSelector('#set-library');
+      await page.evaluate(() => document.querySelector('#set-library').scrollIntoView({ block: 'end' }));
+      await shot(page, `43-settings-names${suffix}`);
+
       // Settings: sound, names of singers, requests by voice.
       await page.evaluate(() => H.go('settings', { focus: 'artists' }));
       await page.waitForSelector('#set-voice');
