@@ -186,6 +186,9 @@ class Settings:
     # 1.5: stations the listener added by address ([{title, url}], https only:
     # the window plays secure addresses only).
     custom_stations: list = field(default_factory=list)
+    # 1.6: the listener's own days by the Hebrew date — birthdays, anniversaries,
+    # yahrzeits ([{name, kind, month, day, request}], personal_dates.py).
+    personal_dates: list = field(default_factory=list)
 
     @classmethod
     def load(cls, path: str | Path) -> "Settings":
@@ -225,6 +228,8 @@ class Settings:
                 if url.lower().startswith("https://") and len(url) < 1000:
                     stations.append({"title": title or url.split("/")[2], "url": url})
         self.custom_stations = stations[:50]
+        from .personal_dates import sanitize as personal_sanitize
+        self.personal_dates = personal_sanitize(self.personal_dates)
         from .zmanim import CITIES, DEFAULT_CITY, HAVDALAH_CHOICES
         if self.shabbat_city not in CITIES:
             self.shabbat_city = DEFAULT_CITY

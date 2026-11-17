@@ -929,6 +929,20 @@ input[type="range"]:hover::-webkit-slider-thumb, input[type="range"]:focus-visib
   line-height: 1.8;
   padding: var(--s2) var(--s3);
 }
+.lyrics-timed { display: flex; flex-direction: column; align-items: stretch; white-space: normal; }
+.lyrics-line {
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  text-align: start;
+  padding: 2px var(--s2);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: color .2s, background-color .2s;
+}
+.lyrics-line:hover { background: var(--sunken); }
+.lyrics-line.sung { color: var(--ink); font-weight: 600; }
 
 /* ------------------------------------------------------------- menus etc. */
 .menu {
@@ -1358,7 +1372,7 @@ body.at-rest .app { visibility: hidden; }
 .pl-grip { display: grid; place-items: center; color: var(--ink-3); }
 .pl-row:hover .pl-grip, .pl-row:focus-visible .pl-grip { color: var(--ink); }
 .pl-form { display: flex; gap: var(--s2); }
-.pl-form .input, .dialog .input {
+.pl-form .input, .dialog .input, .personal-form .input {
   flex: 1 1 auto;
   min-width: 0;
   height: 36px;
@@ -1637,3 +1651,26 @@ body.at-rest .app { visibility: hidden; }
   pointer-events: none;
 }
 .hf-caption[hidden] { display: none; }
+
+/* 1.6: the listener's own days on the luach, and the form that adds them. */
+.luach-mine { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s3); }
+.luach-personal { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; font-size: var(--fs-sm); }
+.personal-item { flex: 1; min-width: 0; }
+.personal-form { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s2); }
+.personal-form .input { min-width: 12rem; flex: 1 1 12rem; }
+
+/* 1.6: clean names, approved one by one. */
+.namefix-dialog { width: min(720px, calc(100vw - 48px)); }
+.namefix-row { display: flex; gap: var(--s3); align-items: flex-start; padding: var(--s2) 0; border-bottom: 1px solid var(--line); }
+.namefix-row > input[type="checkbox"] { width: 16px; height: 16px; margin-top: 4px; accent-color: var(--tekhelet); flex: none; }
+.namefix-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.namefix-old { color: var(--ink-3); font-size: var(--fs-sm); text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.namefix-new { display: flex; gap: var(--s2); }
+.namefix-new .input:first-child { flex: 0 1 40%; }
+.namefix-why { color: var(--ink-3); font-size: var(--fs-xs, 12px); }
+.namefix-row.unsure .namefix-why { color: var(--warn, var(--ink-2)); }
+.namefix-dialog .dialog-foot { justify-content: space-between; }
+
+/* 1.6: a mood per row in the song's menu. */
+.mood-row { justify-content: space-between; align-items: center; gap: var(--s2); }
+.mood-name { font-size: var(--fs-sm); color: var(--ink-2); min-width: 4rem; }

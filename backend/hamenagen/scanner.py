@@ -48,7 +48,7 @@ MIN_SONG_SECONDS = 20.0
 
 # Raised when what the scanner reads from a file changes, so a library
 # scanned by an older version is read again once (see service.rescan).
-SCAN_VERSION = "2"
+SCAN_VERSION = "3"   # 3 (1.6): the words of a song kept in its tags
 
 # Folder names that say nothing about the songs in them.
 GENERIC_FOLDERS = {
@@ -165,7 +165,7 @@ def _pick(pictures: list[tuple[int, bytes]]) -> bytes | None:
 
 
 def _read_tags(path: Path) -> dict:
-    """Title, artist, album, date, length and the cover picture of a song,
+    """Title, artist, album, date, length, words and the cover picture of a song,
     from ID3 (MP3, WAV), MP4 (M4A), ASF (WMA), Vorbis comments (FLAC, OGG,
     Opus) and APE tags."""
     info: dict = {}
@@ -199,18 +199,21 @@ def _read_tags(path: Path) -> dict:
                 info["artist"] = get("TPE1", "TPE2")
                 info["album"] = get("TALB")
                 info["release_date"] = get("TDRC", "TYER", "TDOR", "TORY")
+                info["lyrics"] = get(*sorted(k for k in keys if k.startswith("USLT")))
                 pictures += [(getattr(tags[k], "type", 0), tags[k].data) for k in keys if k.startswith("APIC")]
             elif any(k.startswith("©") or k in ("covr", "aART") for k in keys):  # MP4
                 info["title"] = get("©nam")
                 info["artist"] = get("©ART", "aART")
                 info["album"] = get("©alb")
                 info["release_date"] = get("©day")
+                info["lyrics"] = get("©lyr")
                 pictures += [(3, bytes(c)) for c in (tags.get("covr") or [])]
             elif any(k.startswith("WM/") or k in ("Title", "Author") for k in keys):  # ASF (WMA)
                 info["title"] = get("Title")
                 info["artist"] = get("Author", "WM/AlbumArtist")
                 info["album"] = get("WM/AlbumTitle")
                 info["release_date"] = get("WM/Year")
+                info["lyrics"] = get("WM/Lyrics")
                 for value in tags.get("WM/Picture") or []:
                     pic = _asf_picture(bytes(getattr(value, "value", b"") or b""))
                     if pic:
@@ -230,6 +233,7 @@ def _read_tags(path: Path) -> dict:
                 info["artist"] = vget("artist", "albumartist", "album artist")
                 info["album"] = vget("album")
                 info["release_date"] = vget("date", "originaldate", "year")
+                info["lyrics"] = vget("lyrics", "unsyncedlyrics", "unsynced lyrics")
                 for raw in tags.get("metadata_block_picture", []) if hasattr(tags, "get") else []:
                     try:
                         from mutagen.flac import Picture  # type: ignore
@@ -340,26 +344,72 @@ def folder_picture(folder: str | Path, cache: dict | None = None) -> bytes | Non
     return found
 
 
-def read_sidecar_lyrics(path: str | Path, *, max_chars: int = 4000) -> str:
+_LRC_TIME = re.compile(r"\[(\d{1,3}):(\d{1,2}(?:[.:]\d{1,3})?)\]")
+_LRC_TAG = re.compile(r"^\s*\[(?:ar|ti|al|au|by|length|offset|re|ve|#)\s*:[^\]]*\]\s*$", re.IGNORECASE)
+MAX_LYRICS_CHARS = 20000
+
+
+def read_sidecar_lyrics(path: str | Path, *, max_chars: int = 4000, keep_times: bool = False) -> str:
     """Return lyrics from a sibling .lrc/.txt file next to the track, if any.
 
     Used by the topic classifier when ``classify_by_lyrics`` is on (spec §8.2,
-    §19.3). Timestamps in .lrc files are stripped. Returns "" when none found.
+    §19.3). Timestamps in .lrc files are stripped unless ``keep_times``.
+    Returns "" when none found.
     """
     p = Path(path)
     for ext in (".lrc", ".txt"):
         cand = p.with_suffix(ext)
         if cand.exists() and cand.is_file():
             try:
-                text = cand.read_text(encoding="utf-8", errors="ignore")[:max_chars]
+                raw = cand.read_bytes()[: max_chars * 4]
             except OSError:
                 return ""
-            if ext == ".lrc":  # drop [mm:ss.xx] timestamps
-                import re
-
-                text = re.sub(r"\[\d+:\d+(?:\.\d+)?\]", " ", text)
+            text = _decode_text(raw)[:max_chars]
+            if ext == ".lrc" and not keep_times:
+                text = plain_lyrics(text)
             return text.strip()
     return ""
+
+
+def _decode_text(raw: bytes) -> str:
+    """UTF-8 (with or without a BOM), UTF-16, or the old Hebrew Windows code page."""
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16", errors="ignore")
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("cp1255", errors="ignore")
+
+
+def plain_lyrics(text: str) -> str:
+    """Words without LRC times and header tags ([ar:…], [00:12.30])."""
+    out = []
+    for line in (text or "").splitlines():
+        if _LRC_TAG.match(line):
+            continue
+        out.append(_LRC_TIME.sub("", line).strip())
+    return "\n".join(out).strip()
+
+
+def timed_lyrics(text: str) -> list[dict]:
+    """``[{"t": seconds, "text": line}]`` for words with LRC times, in order;
+    [] when they have none. A line with several times appears at each."""
+    rows: list[dict] = []
+    offset = 0.0
+    for line in (text or "").splitlines():
+        m = re.match(r"^\s*\[offset\s*:\s*([+-]?\d+)\]", line, re.IGNORECASE)
+        if m:
+            offset = int(m.group(1)) / 1000.0
+            continue
+        times = _LRC_TIME.findall(line)
+        if not times:
+            continue
+        words = _LRC_TIME.sub("", line).strip()
+        for mins, secs in times:
+            t = int(mins) * 60 + float(secs.replace(":", "."))
+            rows.append({"t": round(max(0.0, t - offset), 2), "text": words})
+    rows.sort(key=lambda r: r["t"])
+    return rows if len(rows) >= 3 else []
 
 
 def is_media(path: str | Path, *, include_video: bool = False) -> bool:
@@ -416,6 +466,7 @@ def scan_file(path: str | Path, *, include_video: bool = False, stat: os.stat_re
         # release_date := from tags if present (may be back-filled later).
         release_date=tags.get("release_date"),
         cover=cover,
+        lyrics=(tags.get("lyrics") or "")[:MAX_LYRICS_CHARS],
     )
 
 

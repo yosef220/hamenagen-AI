@@ -39,6 +39,7 @@ _SLOW = {
     "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
     "online_set", "listen_prepare", "station", "voice_recognize", "voice_prepare", "write_tags",
     "export_drives", "export_plan", "make_ringtone", "import_singers", "ringtone_info",
+    "playlist_import", "playlist_export", "name_suggestions", "apply_name_fixes", "undo_name_fixes",
 }
 
 
@@ -159,6 +160,17 @@ class RpcServer:
     def rpc_record_play(self, params):
         return self.service.record_play(params.get("id", ""))
 
+    def rpc_save_position(self, params):
+        return self.service.save_position(params.get("id", ""), float(params.get("seconds") or 0),
+                                          params.get("duration"), bool(params.get("paused")))
+
+    def rpc_record_skip(self, params):
+        return self.service.record_skip(params.get("id", ""), float(params.get("seconds") or 0),
+                                        bool(params.get("burst")))
+
+    def rpc_set_mood_mark(self, params):
+        return self.service.set_mood_mark(params.get("id", ""), params.get("mood", ""), params.get("value"))
+
     def rpc_track_lyrics(self, params):
         return self.service.track_lyrics(params.get("id", ""))
 
@@ -187,6 +199,21 @@ class RpcServer:
 
     def rpc_playlist_set_order(self, params):
         return self.service.playlist_set_order(params.get("id", 0), params.get("track_ids") or [])
+
+    def rpc_playlist_import(self, params):
+        return self.service.playlist_import(params.get("path", ""))
+
+    def rpc_playlist_export(self, params):
+        return self.service.playlist_export(params.get("id", 0), params.get("folder", ""))
+
+    def rpc_name_suggestions(self, params):
+        return self.service.name_suggestions()
+
+    def rpc_apply_name_fixes(self, params):
+        return self.service.apply_name_fixes(params.get("items") or [])
+
+    def rpc_undo_name_fixes(self, params):
+        return self.service.undo_name_fixes()
 
     def rpc_track_copies(self, params):
         return self.service.track_copies(params.get("id", ""))

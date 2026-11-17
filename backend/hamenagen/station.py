@@ -70,6 +70,7 @@ class Candidate:
     hours_since_played: float | None = None
     vocal: bool = False
     duration: float | None = None
+    skips: int = 0                    # skipped early, quick browsing left out (1.6)
     score: float = field(default=0.0, compare=False)
 
     def topics(self) -> set[str]:
@@ -112,6 +113,8 @@ def _taste(c: Candidate) -> float:
         s += 0.25                          # a little discovery
     if c.hours_since_played is not None and c.hours_since_played < 48:
         s -= 0.4
+    if c.skips >= 2:                       # 1.6: a song the listener keeps skipping
+        s -= 1.5 * c.skips / (c.skips + c.plays + 1)
     return s
 
 

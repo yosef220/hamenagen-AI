@@ -102,7 +102,9 @@
     const row = opts.compact
       ? h('div', { class: 'track', role: 'listitem', tabindex: '0', 'data-id': track.id },
         H.cover(track), main,
-        h('div', { class: 'track-dur' }, track.duration ? H.clock(track.duration) : ''))
+        h('div', { class: 'track-dur' }, track.long && track.resume && track.duration
+          ? `${H.clock(track.resume)} / ${H.clock(track.duration)}`
+          : track.duration ? H.clock(track.duration) : ''))
       : h('div', { class: 'track', role: 'listitem', tabindex: '0', 'data-id': track.id },
         h('div', { class: 'track-idx' },
           h('span', { class: 'idx-n' }, String(i + 1)),
@@ -210,6 +212,25 @@
     api.emit('track-changed', { id: track.id, track });
   }
 
+  const MOODS = [['calm', 'רגוע'], ['moving', 'מרגש'], ['children', 'לילדים']];
+  async function chooseMood(track, mood, value) {
+    closeTrackMenu();
+    try {
+      const r = await api.setMoodMark(track.id, mood, value);
+      if (!r.ok) return;
+      track.moods = { ...(track.moods || {}) };
+      if (value === null) delete track.moods[mood];
+      else track.moods[mood] = value ? 1 : 0;
+      const side = value ? r.yes : r.no;
+      const learning = value === null ? `„${r.label}” חזר לזיהוי האוטומטי`
+        : side >= r.min ? `נשמר. המנגן לומד מ-${H.n(side)} הסימונים שלך ב„${r.label}”`
+          : `נשמר. מ-${H.n(r.min)} סימונים ${value ? '„מתאים”' : '„לא מתאים”'} המנגן ילמד איך „${r.label}” נשמעים לך (עכשיו ${H.n(side)})`;
+      H.toast(learning, { icon: 'ear' });
+    } catch (err) {
+      H.toast(`לא נשמר: ${err.message}`, { kind: 'bad' });
+    }
+  }
+
   async function chooseTopic(track, topic) {
     closeTrackMenu();
     try {
@@ -297,7 +318,8 @@
     H.clear(songMenu).append(
       h('div', { class: 'menu-head' },
         h('div', { class: 'menu-song' }, H.trackTitle(track)),
-        h('div', { class: 'menu-why' }, icon('info', 'icon-sm'), h('span', {}, topicWhy(track)))),
+        h('div', { class: 'menu-why' }, icon('info', 'icon-sm'), h('span', {}, topicWhy(track))),
+        track.key ? h('div', { class: 'menu-why' }, icon('music-2', 'icon-sm'), h('span', {}, `סולם: ${track.key}`)) : null),
       h('div', { class: 'menu-group' },
         item('list-start', 'לנגן אחרי השיר הזה', () => { closeTrackMenu(); H.player.playNext(track); H.toast('יתנגן אחרי השיר הזה', { icon: 'list-start' }); }),
         item('list-plus', 'להוסיף לסוף התור', () => { closeTrackMenu(); H.player.enqueue([track]); H.toast('נוסף לתור', { icon: 'list-plus' }); }),
@@ -332,6 +354,20 @@
           ? h('p', { class: 'menu-note' }, icon('ear', 'icon-sm'), 'המנגן שמע כאן דיבור, ולכן זה לא מתנגן בערבובים ובסטים.') : null,
         item(track.disliked ? 'undo-2' : 'thumbs-down', track.disliked ? 'להחזיר לערבובים' : 'לא אהוב: לא לנגן בערבובים',
           () => chooseDisliked(track, !track.disliked), { 'aria-pressed': track.disliked ? 'true' : 'false' })),
+      // 1.6: the listener's word on a mood; from three marks the player learns it.
+      h('div', { class: 'menu-group' },
+        h('div', { class: 'menu-label' }, 'מצב רוח'),
+        MOODS.map(([key, label]) => {
+          const state = (track.moods || {})[key];
+          return h('div', { class: 'menu-row mood-row' },
+            h('span', { class: 'mood-name' }, label),
+            h('div', { class: 'segmented segmented-sm', role: 'group', 'aria-label': label },
+              [['yes', 'מתאים', true], ['no', 'לא מתאים', false], ['auto', 'אוטומטי', null]].map(([k, text, value]) => {
+                const on = k === (state === 1 ? 'yes' : state === 0 ? 'no' : 'auto');
+                return h('button', { type: 'button', role: 'menuitemradio', 'aria-pressed': on ? 'true' : 'false', 'aria-checked': on ? 'true' : 'false',
+                  onclick: () => chooseMood(track, key, value) }, text);
+              })));
+        })),
     );
     // Other files of the same song (another folder or format), shown once.
     api.trackCopies(track.id).then(({ copies }) => {
@@ -567,20 +603,49 @@
     } else {
       const cur = P.current();
       if (!cur) {
-        body.appendChild(h('p', { class: 'queue-note' }, 'המילים מופיעות כאן כשמתנגן שיר שיש לו קובץ מילים (‎.lrc או ‎.txt באותו שם, באותה תיקייה).'));
+        body.appendChild(h('p', { class: 'queue-note' }, 'המילים מופיעות כאן כשמתנגן שיר שהמילים שלו שמורות בקובץ עצמו, או בקובץ ‎.lrc או ‎.txt באותו שם ליד השיר.'));
         return;
       }
       const box = h('div', { class: 'lyrics' }, '…');
       body.appendChild(h('p', { class: 'queue-note' }, H.trackTitle(cur)));
       body.appendChild(box);
       lyricsFor = cur.id;
+      timedLines = [];
+      sungIndex = -1;
       api.lyrics(cur.id).then((res) => {
         if (lyricsFor !== cur.id) return;
-        box.textContent = res.lyrics || 'לשיר הזה אין קובץ מילים. אפשר להניח לידו קובץ ‎.lrc או ‎.txt באותו שם.';
+        H.clear(box);
+        if (res.lines && res.lines.length) {
+          // 1.6: words with times (LRC) follow the song; a line plays from its time.
+          box.classList.add('lyrics-timed');
+          timedLines = res.lines.map((row) => {
+            const el = h('button', { class: 'lyrics-line', type: 'button', onclick: () => P.seekTo(row.t) }, row.text || '♪');
+            box.appendChild(el);
+            return { t: row.t, el };
+          });
+          followLyrics(true);
+          return;
+        }
+        box.textContent = res.lyrics || 'לשיר הזה אין מילים. אפשר לשמור אותן בתגיות של הקובץ, או להניח לידו קובץ ‎.lrc או ‎.txt באותו שם.';
         if (!res.lyrics) box.classList.add('muted');
       }).catch(() => { box.textContent = ''; });
     }
   }
+
+  // The line being sung, while the words of the song are open.
+  let timedLines = [];
+  let sungIndex = -1;
+  function followLyrics(jump = false) {
+    if (drawer.hidden || tab !== 'lyrics' || !timedLines.length) return;
+    const now = H.$('#audio').currentTime || 0;
+    let i = -1;
+    for (let k = 0; k < timedLines.length && timedLines[k].t <= now + 0.2; k++) i = k;
+    if (i === sungIndex && !jump) return;
+    sungIndex = i;
+    timedLines.forEach((row, k) => row.el.classList.toggle('sung', k === i));
+    if (i >= 0) timedLines[i].el.scrollIntoView({ block: 'center', behavior: jump ? 'auto' : 'smooth' });
+  }
+  H.$('#audio').addEventListener('timeupdate', () => followLyrics());
 
   for (const t of H.$$('.tab', drawer)) t.addEventListener('click', () => H.openDrawer(t.dataset.tab));
   H.$('#drawer-close').addEventListener('click', closeDrawer);

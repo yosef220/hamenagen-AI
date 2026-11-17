@@ -17,7 +17,7 @@ import threading
 import time
 from collections import Counter
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from . import __version__
@@ -33,10 +33,13 @@ from .zmanim import ZmanimService
 from .smart_update import SmartUpdater
 from . import artists as artists_mod
 from . import cloudfiles
+from . import personal_dates
 from . import tags as tags_mod
 from . import export as export_mod
 from . import ringtone as ringtone_mod
 from . import chorus as chorus_mod
+from . import mood_learn
+from . import rhythm as rhythm_mod
 from . import sets as sets_mod
 from . import sound as sound_mod
 from . import station as station_mod
@@ -52,8 +55,11 @@ from .scanner import (
     is_placeholder_title,
     is_too_short,
     iter_media_files,
+    MAX_LYRICS_CHARS,
+    plain_lyrics,
     read_sidecar_lyrics,
     scan_file,
+    timed_lyrics,
     store_cover,
     track_id_for,
 )
@@ -296,8 +302,12 @@ class PlayerService:
                             track.cover = track.cover or old.cover
                             track.duration = track.duration or old.duration
                     self._apply_details(track, details.get(tid))
-                    self._classify_track(track, override=overrides.get(tid), analysis=analyses.get(tid))
+                    words, where = self._song_words(track, fresh=True)
+                    self._classify_track(track, override=overrides.get(tid), analysis=analyses.get(tid),
+                                         words=words)
                     idx.upsert(track, commit=False)
+                    if not by_name:
+                        idx.set_lyrics(tid, words, where, timed=bool(timed_lyrics(words)), commit=False)
                     if previous:
                         updated += 1
                     else:
@@ -382,13 +392,32 @@ class PlayerService:
                 track.cover = chosen["cover"]
         return track
 
+    def _song_words(self, track: Track, *, fresh: bool = False) -> tuple[str, str]:
+        """The words of a song and where they come from: an .lrc/.txt beside
+        it ("file"), else its tags ("tag"). ``fresh``: the file was just read,
+        so what the index kept from before does not count."""
+        if track.path:
+            text = read_sidecar_lyrics(track.path, max_chars=MAX_LYRICS_CHARS, keep_times=True)
+            if text:
+                return text, "file"
+        if track.lyrics:
+            return track.lyrics, "tag"
+        if not fresh:
+            kept = self.index.get_lyrics(track.id)
+            if kept and kept.get("text"):
+                return kept["text"], kept.get("source") or "tag"
+        return "", ""
+
     def _classify_track(self, track: Track, *, override: dict | None = None,
-                        analysis: dict | None = None) -> Track:
+                        analysis: dict | None = None, words: str | None = None) -> Track:
         """Classify a song, then apply what the listener decided about it and
-        (when allowed) what the vocal detector heard."""
+        (when allowed) what the vocal detector heard. ``words``: the song's
+        words when the caller already has them."""
         lyrics = ""
-        if self.settings.classify_by_lyrics and track.path:
-            lyrics = read_sidecar_lyrics(track.path)
+        if self.settings.classify_by_lyrics:
+            if words is None:
+                words = self._song_words(track)[0]
+            lyrics = plain_lyrics(words)[:4000]
         folder = self._folder_hint(track.path) if track.path else ""
         cls = self.classifier.classify(
             title=track.title,
@@ -931,7 +960,7 @@ class PlayerService:
             need_listen = listen and (changed or a.get("model") != VOCAL_MODEL
                                       or (not unreadable and a.get("profile_v") != sound_mod.PROFILE_VERSION))
             need_rhythm = rhythm and not unreadable and (changed or a.get("energy") is None
-                                                        or a.get("lead") is None)
+                                                        or a.get("lead") is None or a.get("musical_key") is None)
             if need_listen or need_rhythm:
                 out.append((t, need_listen))
         return out
@@ -969,7 +998,8 @@ class PlayerService:
                     row.update({"model": None, "verdict": None})
                 rh = result.rhythm or {}
                 row.update({"tempo": rh.get("tempo"), "energy": rh.get("energy", 0.0),
-                            "pulse": rh.get("pulse"), "loudness": rh.get("loudness")})
+                            "pulse": rh.get("pulse"), "loudness": rh.get("loudness"),
+                            "musical_key": rh.get("musical_key", -1), "key_conf": rh.get("key_conf")})
                 if result.profile:
                     row.update(result.profile)
                 # Edges it could not read count as none, so the song is not read again.
@@ -1218,6 +1248,73 @@ class PlayerService:
                 "cover": bool(cover), "propagated": spread, "covered_ids": covered, "cover_key": track.cover,
                 "message": "" if values or cover else "לא היה מה להוסיף מהפרטים שנבחרו."}
 
+    # -- clean names for songs from the web (1.6) ------------------------------------
+    def name_suggestions(self, limit: int = 1000) -> dict:
+        """Songs whose name holds a video title's noise, or the singer, with a
+        cleaner name to approve (name_fix.py). Songs whose details the
+        listener already chose are left alone."""
+        from . import name_fix
+
+        chosen = self.index.details()
+        out = []
+        for t in self.index.all_tracks():
+            if t.dup_of or t.id in chosen or t.is_video:
+                continue
+            fix = name_fix.suggest(t.title, t.artist)
+            if fix is None:
+                continue
+            out.append({"id": t.id, "title": t.title, "artist": t.artist, "new_title": fix.title,
+                        "new_artist": fix.artist, "sure": fix.sure, "why": fix.why,
+                        "folder": display_folder(t.path) if t.path else ""})
+            if len(out) >= limit:
+                break
+        out.sort(key=lambda r: (not r["sure"], normalize(r["new_artist"]), normalize(r["new_title"])))
+        return {"suggestions": out, "applied": sum(1 for d in chosen.values() if d.get("source") == "names")}
+
+    def apply_name_fixes(self, items: list[dict]) -> dict:
+        """Keep the names the listener approved (never written to the files
+        unless the listener writes the tags)."""
+        done = 0
+        overrides = self.index.overrides()
+        for item in items or []:
+            track = self.index.get(str(item.get("id", "")))
+            title = " ".join(str(item.get("title") or "").split())[:300]
+            if track is None or not title:
+                continue
+            row = {"title": title, "artist": " ".join(str(item.get("artist") or "").split())[:200],
+                   "album": track.album, "source": "names"}
+            self.index.set_details(track.id, row, commit=False)
+            self._apply_details(track, row)
+            if not row["artist"]:
+                track.artist = ""
+            self._classify_track(track, override=overrides.get(track.id),
+                                 analysis=self.index.analyses_for([track.id]).get(track.id))
+            self.index.upsert(track, commit=False)
+            done += 1
+        self.index.commit()
+        if done:
+            self._forget_artists()
+            self._propagate(self.index)
+        return {"ok": True, "applied": done}
+
+    def undo_name_fixes(self) -> dict:
+        """Every name fixed here goes back to what the file says."""
+        ids = [tid for tid, d in self.index.details().items() if d.get("source") == "names"]
+        self.index.delete_details(ids)
+        overrides = self.index.overrides()
+        for track in self.index.get_many(ids):
+            fresh = scan_file(track.path, read_contents=bool(track.mtime)) if track.path else None
+            if fresh is not None:
+                track.title, track.artist = fresh.title, fresh.artist
+            self._classify_track(track, override=overrides.get(track.id),
+                                 analysis=self.index.analyses_for([track.id]).get(track.id))
+            self.index.upsert(track, commit=False)
+        self.index.commit()
+        if ids:
+            self._forget_artists()
+            self._propagate(self.index)
+        return {"ok": True, "restored": len(ids)}
+
     def _search_text(self, query: str) -> str:
         """A singer's other spellings, written as the name shown."""
         mapping, _, shown = self._artists()
@@ -1258,6 +1355,9 @@ class PlayerService:
         d["speech_chosen"] = None if not override or override.get("speech") is None else bool(override["speech"])
         d["disliked"] = bool(override and override.get("disliked"))
         a = analysis or {}
+        d["long"] = self._is_long(track)
+        # 1.6: the key the listening heard ("" when not clear).
+        d["key"] = rhythm_mod.key_name(a.get("musical_key"))
         d["gain"] = sound_mod.gain_db(a.get("loudness"))
         d["lead"] = a.get("lead") or 0.0
         d["tail"] = a.get("tail") or 0.0
@@ -1268,7 +1368,17 @@ class PlayerService:
         ids = [t.id for t in tracks]
         overrides = self.index.overrides_for(ids)
         analyses = self.index.analyses_for(ids)
-        return [self._track_dict(t, favs, overrides.get(t.id), analyses.get(t.id)) for t in tracks]
+        stopped = self.index.positions_for(ids)
+        moods = self.index.mood_marks_for(ids)
+        out = []
+        for t in tracks:
+            d = self._track_dict(t, favs, overrides.get(t.id), analyses.get(t.id))
+            # 1.6: where the listener stopped it, to go on from there; the moods
+            # the listener said it fits (1) or not (0).
+            d["resume"] = (stopped.get(t.id) or {}).get("seconds") or 0
+            d["moods"] = moods.get(t.id, {})
+            out.append(d)
+        return out
 
     # -- the main request path --------------------------------------------
     def handle_request(self, text: str, spoken: bool = False) -> dict:
@@ -1367,6 +1477,7 @@ class PlayerService:
         analyses = self.index.analyses_for(ids)
         overrides = self.index.overrides_for(ids)
         plays = self.index.play_counts(ids)
+        skips = self.index.skip_counts(since=(datetime.now() - timedelta(days=180)).isoformat(timespec="seconds"))
         last = self.index.last_played_map()
         hearts = self.index.favorite_ids()
         now = datetime.now()
@@ -1385,20 +1496,46 @@ class PlayerService:
                 energy=a.get("energy"), tempo=a.get("tempo"), profile=sound_mod.unpack(a.get("profile")),
                 favorite=t.id in hearts, plays=plays.get(t.id, 0), hours_since_played=hours,
                 vocal=o.get("vocal") == 1 or VOCAL_TOPIC in ((t.topic,) + tuple(t.tag_list)),
-                duration=t.duration))
+                duration=t.duration, skips=skips.get(t.id, 0)))
         return out, {t.id: t for t in tracks}
 
     def _mood_tracks(self, mood, limit: int) -> list[Track]:
         """Songs that sound like the mood asked for ("משהו רגוע"), best
-        first with a little variety. Only songs the listening has heard."""
+        first with a little variety. Only songs the listening has heard —
+        and those the listener marked: in, always; marked out, never. The
+        marks also teach what the mood sounds like (mood_learn.py)."""
         candidates, by_id = self._station_candidates()
-        heard = [c for c in candidates if c.energy is not None or c.profile is not None]
+        marks = self.index.mood_marks(mood.key)
+        candidates = [c for c in candidates if marks.get(c.id) != 0]
+        heard = [c for c in candidates if c.energy is not None or c.profile is not None or marks.get(c.id) == 1]
         if len(heard) < 3:
             return []
+        vectors = {c.id: mood_learn.vector(c.profile) for c in candidates if c.profile is not None}
+        model = mood_learn.fit(marks, vectors) if marks and vectors else mood_learn.MoodModel()
         rng = random.Random()
-        ranked = sorted(heard, key=lambda c: -station_mod.score_for_mood(c, mood) * rng.uniform(0.9, 1.1))
+
+        def score(c) -> float:
+            if marks.get(c.id) == 1:
+                return 1000.0 + rng.random()
+            s = station_mod.score_for_mood(c, mood) + 3.0 * model.adjust(vectors.get(c.id))
+            return s * rng.uniform(0.9, 1.1)
+
+        ranked = sorted(heard, key=lambda c: -score(c))
         keep = ranked[: max(3, min(limit, int(len(ranked) * 0.5) or 3))]
         return [by_id[c.id] for c in keep]
+
+    def set_mood_mark(self, track_id: str, mood: str, value: bool | None) -> dict:
+        """The listener's word: a song fits a mood (True), does not (False),
+        or back to what is heard (None)."""
+        moods = {m.key: m for m in station_mod.MOODS}
+        if mood not in moods or self.index.get(track_id) is None:
+            return {"ok": False}
+        self.index.set_mood_mark(track_id, mood, None if value is None else int(bool(value)))
+        marks = self.index.mood_marks(mood)
+        yes = sum(1 for v in marks.values() if v == 1)
+        no = len(marks) - yes
+        return {"ok": True, "mood": mood, "label": moods[mood].label, "value": value, "yes": yes, "no": no,
+                "min": mood_learn.MIN_MARKS}
 
     def _station_mood(self, now: datetime) -> station_mod.Mood:
         part = station_mod.daypart(now)
@@ -1468,7 +1605,7 @@ class PlayerService:
             if t.duration and not self.SET_MIN_SECONDS <= t.duration <= self.SET_MAX_SECONDS:
                 continue
             a = analyses.get(t.id) or {}
-            song = sets_mod.SetSong(t, a.get("tempo"), a.get("energy"))
+            song = sets_mod.SetSong(t, a.get("tempo"), a.get("energy"), key=a.get("musical_key"))
             if topic:
                 if t.topic != topic and topic not in t.tag_list:
                     continue
@@ -1651,6 +1788,55 @@ class PlayerService:
             return {"ok": False, "message": "הרשימה לא נמצאה."}
         return {"ok": True, "count": self.index.set_playlist_order(int(playlist_id), list(track_ids or []))}
 
+    # -- playlists in and out (1.6) ------------------------------------------------
+    def playlist_import(self, path: str) -> dict:
+        """Playlists from another player (M3U, PLS, CSV) or Google Takeout
+        (ZIP), matched to the library's songs. A playlist none of whose songs
+        is here is not created; what was not found is counted."""
+        from . import playlist_io
+
+        try:
+            parsed = playlist_io.read_file(path)
+        except (OSError, ValueError, UnicodeError) as exc:
+            return {"ok": False, "message": f"לא הצלחתי לקרוא את הקובץ: {exc}"}
+        except Exception as exc:  # noqa: BLE001 - a broken ZIP or CSV
+            return {"ok": False, "message": f"הקובץ לא נקרא כרשימה: {exc}"}
+        if not parsed:
+            return {"ok": False, "message": "לא נמצאו בקובץ שירים. אפשר לייבא M3U, M3U8, PLS, CSV, "
+                                            "או את קובץ ה-ZIP של Google Takeout (YouTube ו-YouTube Music)."}
+        matcher = playlist_io.Matcher(self.index.all_tracks(), self.artist_name)
+        made, found, missing, skipped = [], 0, 0, []
+        for pl in parsed:
+            ids = [i for i in (matcher.find(e) for e in pl.entries) if i]
+            ids = list(dict.fromkeys(ids))
+            found += len(ids)
+            missing += len(pl.entries) - len(ids)
+            if not ids:
+                skipped.append(pl.name)
+                continue
+            pid = self.index.create_playlist(self._unique_name(pl.name), ids)
+            made.append({"id": pid, "name": self.index.playlist_name(pid), "count": len(ids),
+                         "missing": len(pl.entries) - len(ids)})
+        return {"ok": bool(made), "playlists": made, "found": found, "missing": missing, "empty": skipped,
+                "message": "" if made else "אף שיר מהרשימה לא נמצא במחשב."}
+
+    def playlist_export(self, playlist_id: int, folder: str) -> dict:
+        """The playlist as an M3U8 file in ``folder``, for other players and phones."""
+        from . import playlist_io
+
+        name = self.index.playlist_name(int(playlist_id))
+        if name is None:
+            return {"ok": False, "message": "הרשימה לא נמצאה."}
+        if not folder or not Path(folder).is_dir():
+            return {"ok": False, "message": "התיקייה לא נמצאה."}
+        tracks = self.index.playlist_tracks(int(playlist_id))
+        dest = Path(folder) / f"{playlist_io.safe_file_name(name)}.m3u8"
+        try:
+            playlist_io.write_m3u8(tracks, dest, artist_name=self.artist_name)
+        except OSError as exc:
+            return {"ok": False, "message": f"לא הצלחתי לכתוב את הקובץ: {exc}"}
+        return {"ok": True, "path": str(dest), "count": len(tracks)}
+
     def play_playlist(self, playlist_id: int) -> dict:
         """A saved playlist as the answer to a request."""
         name = self.index.playlist_name(int(playlist_id)) or ""
@@ -1776,6 +1962,14 @@ class PlayerService:
                     intent.topic, intent.action = hint, Action.PLAY_TOPIC
                     return (self._fill_minutes(tracks, minutes) if minutes else tracks), understood, \
                         f"שמעתי „{_display_query(intent.raw)}”. הבנתי: {understood}."
+            if not found:
+                # 1.6: a line of the song the listener remembers, when its name is forgotten.
+                said = [w for w in normalize(intent.raw or query).split()
+                        if w not in intent_mod._PLAY_VERBS and len(w) >= 2]
+                sung = self.index.search_lyrics(said, limit=limit) if len(said) >= 3 else []
+                if sung:
+                    shown = _display_query(intent.raw) or query
+                    return [t for t, _ in sung], f"שירים שיש בהם „{shown}”", "נמצא לפי מילות השיר:"
             near = False
             if not found:
                 found = near_matches(query, candidates, limit=limit)
@@ -1855,10 +2049,48 @@ class PlayerService:
         self.index.record_play(track_id)
         return {"ok": True}
 
-    def track_lyrics(self, track_id: str) -> dict:
+    # -- where the listener stopped, and what was skipped (1.6) --------------------
+    # A recording this long (a shiur, a story) goes on from where it stopped.
+    LONG_SECONDS = 20 * 60
+
+    def _is_long(self, track: Track) -> bool:
+        return track.kind == "speech" or (track.duration or 0) >= self.LONG_SECONDS
+
+    def save_position(self, track_id: str, seconds: float, duration: float | None = None,
+                      paused: bool = False) -> dict:
+        """Keep where a recording stopped. A long recording keeps it
+        wherever it stopped; a song only when it was paused in the middle (a
+        song skipped was not wanted, and is not offered again from there).
+        Near the start or the end, nothing is kept."""
         track = self.index.get(track_id)
-        text = read_sidecar_lyrics(track.path, max_chars=20000) if track else ""
-        return {"id": track_id, "lyrics": text}
+        if track is None:
+            return {"ok": False}
+        length = duration or track.duration or 0
+        long = self._is_long(track)
+        end_margin = 60 if long else 20
+        keep = seconds >= 30 and (not length or seconds < length - end_margin) and (long or paused)
+        self.index.set_position(track_id, round(float(seconds), 1) if keep else None, length or None)
+        return {"ok": True, "kept": keep, "long": long}
+
+    def started_recordings(self, limit: int = 6) -> list[Track]:
+        """Long recordings stopped in the middle, to go on with them."""
+        return [t for t in self.index.started_recordings(limit * 3) if self._is_long(t)][:limit]
+
+    # A skip after less than this is browsing, and says nothing about the song.
+    SKIP_MIN_SECONDS = 4.0
+
+    def record_skip(self, track_id: str, seconds: float, burst: bool = False) -> dict:
+        if self.index.get(track_id) is None or seconds < self.SKIP_MIN_SECONDS:
+            return {"ok": False}
+        self.index.record_skip(track_id, round(float(seconds), 1), burst=bool(burst))
+        return {"ok": True}
+
+    def track_lyrics(self, track_id: str) -> dict:
+        """The words of a song, plain, and with their times when an LRC has
+        them (``lines``: [{t, text}], to follow the song as it plays)."""
+        track = self.index.get(track_id)
+        text, where = self._song_words(track) if track else ("", "")
+        return {"id": track_id, "lyrics": plain_lyrics(text), "lines": timed_lyrics(text), "source": where}
 
     # -- browsing ------------------------------------------------------------
     def topics(self) -> list[dict]:
@@ -1889,6 +2121,8 @@ class PlayerService:
             "recent": self._tracks_payload(self.index.recent_downloaded(12)),
             "history": self._tracks_payload(self.index.history(12)),
             "favorites": self._tracks_payload(self.index.favorites(12)),
+            # 1.6: shiurim and stories stopped in the middle.
+            "started": self._tracks_payload(self.started_recordings(6)),
             "last_scan_at": self.index.get_meta("last_scan_at"),
             "cloud_files": int(self.index.get_meta("cloud_files") or 0),
             "scanning": self.scanning,
@@ -1931,6 +2165,8 @@ class PlayerService:
             info["primary"]["count"], info["primary"]["phrase"] = shown(info["primary"]["topic"])
         if info["next"] and info["next"].get("topic"):
             info["next"]["count"], info["next"]["phrase"] = shown(info["next"]["topic"])
+        # 1.6: the listener's own days, today and in the coming week.
+        info["personal"] = personal_dates.upcoming(self.settings.personal_dates, on or date.today())
         return info
 
     def opening_suggestion(self, on: date | None = None) -> dict | None:

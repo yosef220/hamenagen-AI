@@ -89,6 +89,34 @@
     return h('div', { class: `pl-art${keys.length === 1 ? ' one' : ''}`, 'aria-hidden': 'true' }, keys.length === 1 ? cells[0] : cells);
   }
 
+  // 1.6: playlists from another player or from Google Takeout.
+  async function importPlaylists(btn) {
+    const file = await api.chooseFile('רשימה מנגן אחר: M3U, PLS, CSV, או ZIP של Google Takeout', 'playlist');
+    if (!file) return;
+    btn.disabled = true;
+    try {
+      const r = await api.playlistImport(file);
+      if (!r.ok) { H.toast(r.message || 'לא הצלחתי לייבא', { kind: 'bad' }); return; }
+      const made = r.playlists.length === 1 ? `הרשימה „${r.playlists[0].name}”` : `${H.n(r.playlists.length)} רשימות`;
+      H.toast(`יובאה ${made} עם ${H.songs(r.found)}${r.missing ? ` · ${H.n(r.missing)} לא נמצאו במחשב` : ''}`, { icon: 'list-music', ms: 7000 });
+      if (r.playlists.length === 1) show({ id: r.playlists[0].id });
+      else renderAll();
+    } catch (err) {
+      H.toast(`לא הצלחתי לייבא: ${err.message}`, { kind: 'bad' });
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function exportPlaylist() {
+    const folder = await api.chooseFolder('איפה לשמור את הרשימה (קובץ M3U8)');
+    if (!folder) return;
+    const r = await api.playlistExport(current.id, folder).catch((err) => ({ ok: false, message: err.message }));
+    if (!r.ok) { H.toast(r.message || 'הרשימה לא נשמרה', { kind: 'bad' }); return; }
+    H.toast(`הרשימה נשמרה כקובץ ${r.path}`, { icon: 'file-down', ms: 7000,
+      action: { label: 'להציג', fn: () => api.showInFolder(r.path) } });
+  }
+
   async function renderAll() {
     current = null;
     const { playlists } = await api.playlists().catch(() => ({ playlists: [] }));
@@ -108,11 +136,12 @@
       h('header', { class: 'page-head' },
         h('h1', {}, 'רשימות'),
         h('div', { class: 'page-meta' }, playlists.length ? `${H.n(playlists.length)} רשימות שמורות` : ''),
-        h('div', { class: 'page-actions' }, newButton)),
+        h('div', { class: 'page-actions' }, newButton,
+          h('button', { class: 'btn btn-outline', type: 'button', onclick: (e) => importPlaylists(e.currentTarget) }, icon('file-down'), 'ייבוא רשימה'))),
       playlists.length ? grid : h('div', { class: 'empty-state' },
         icon('list-music', 'icon-xl'),
         h('h2', {}, 'עוד אין רשימות'),
-        h('p', {}, 'יוצרים רשימה, ומוסיפים אליה שירים מהתפריט ⋯ של כל שיר. אפשר גם לשמור את התור, או תוצאה של בקשה, כרשימה. את הסדר משנים בגרירה.')));
+        h('p', {}, 'יוצרים רשימה, ומוסיפים אליה שירים מהתפריט ⋯ של כל שיר. אפשר גם לשמור את התור, או תוצאה של בקשה, כרשימה. את הסדר משנים בגרירה. ורשימות מנגן אחר (M3U, PLS, CSV) או מ-YouTube Music (קובץ ה-ZIP של Google Takeout) — ב„ייבוא רשימה”.')));
   }
 
   // ------------------------------------------------------------ one playlist
@@ -238,6 +267,7 @@
           total ? h('button', { class: 'btn btn-primary', type: 'button', onclick: () => H.player.playList(current.tracks, 0, { shuffle: false }) }, icon('play'), 'נגן לפי הסדר') : null,
           total ? h('button', { class: 'btn btn-outline', type: 'button', onclick: () => H.player.playList(current.tracks, 0, { shuffle: true }) }, icon('shuffle'), 'ערבב') : null,
           total ? h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => H.openExport(current.tracks, current.name) }, icon('usb'), 'לנגן MP3') : null,
+          total ? h('button', { class: 'btn btn-quiet', type: 'button', onclick: exportPlaylist }, icon('file-down'), 'שמירה כקובץ') : null,
           h('button', { class: 'btn btn-quiet', type: 'button', onclick: rename }, icon('pencil'), 'שינוי שם'),
           h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => { confirmDelete.hidden = false; } }, icon('trash-2'), 'מחיקה')),
         confirmDelete),

@@ -108,7 +108,8 @@
           ? `${H.n(stats.duplicates)} עותקים של שירים שכבר יש (בתיקייה אחרת או בפורמט אחר) מוסתרים, ומוצג העותק הטוב ביותר. את העותקים רואים בתפריט ⋯ של השיר.`
           : 'שיר שנמצא בכמה תיקיות או בכמה פורמטים יוצג פעם אחת, בעותק הטוב ביותר.',
         () => { render({ focus: 'library' }); H.refreshRail && H.refreshRail(); }),
-      isolatedRow());
+      isolatedRow(),
+      nameFixRow(overview));
   }
 
   // Folders kept apart: they play when chosen, never in mixes, sets or the radio.
@@ -129,6 +130,75 @@
     return row('תיקיות בנפרד',
       'למשל שירי ילדים או הקלטות של המשפחה: הם בספרייה ומתנגנים כשבוחרים אותם, אבל לא נכנסים לערבובים, לסטים ולרדיו. הקלטות דיבור ושיעורים מופרדות כך מעצמן.',
       add, kept.length ? { wide: list } : {});
+  }
+
+  // 1.6: clean names for songs from the web, approved one by one.
+  function nameFixRow(overview) {
+    const help = h('div', { class: 'set-help' }, '');
+    const undo = h('button', { class: 'btn btn-quiet btn-sm', type: 'button', hidden: true, onclick: async () => {
+      const r = await api.undoNameFixes().catch(() => null);
+      if (r) H.toast(`${H.songs(r.restored)} חזרו לשם שבקובץ`, { icon: 'undo-2' });
+      render({ focus: 'library' });
+    } }, icon('undo-2', 'icon-sm'), 'להחזיר את השמות');
+    const open = h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: () => openNameFixes() }, icon('wand-sparkles', 'icon-sm'), 'לבדוק');
+    api.nameSuggestions().then((r) => {
+      const n = r.suggestions.length;
+      help.textContent = n ? `יש ${H.songs(n)} שאפשר לנקות להם את השם.` : 'כל השמות נראים נקיים.';
+      open.disabled = !n;
+      undo.hidden = !r.applied;
+    }).catch(() => {});
+    return row('תיקון שמות',
+      'לקבצים מהאינטרנט: „Official Video”, „הקליפ הרשמי”, כתובת של אתר וחצי השם באנגלית יורדים מהשם, ושם הזמר יוצא משם השיר. כל תיקון מוצג לאישור, הקבצים עצמם לא משתנים, ואפשר להחזיר הכל.',
+      h('div', { style: { display: 'flex', gap: '8px' } }, undo, open), { wide: help });
+  }
+
+  async function openNameFixes() {
+    const r = await api.nameSuggestions().catch(() => ({ suggestions: [] }));
+    const items = r.suggestions;
+    if (!items.length) return;
+    const el = h('dialog', { class: 'dialog tool-dialog namefix-dialog', 'aria-labelledby': 'namefix-title' });
+    document.body.appendChild(el);
+    el.addEventListener('close', () => el.remove());
+    el.addEventListener('click', (e) => { if (e.target === el) el.close(); });
+    const rows = items.map((it) => {
+      const box = h('input', { type: 'checkbox', checked: it.sure, 'aria-label': it.new_title });
+      const artist = h('input', { class: 'input', type: 'text', value: it.new_artist, 'aria-label': 'הזמר', placeholder: 'הזמר' });
+      const title = h('input', { class: 'input', type: 'text', value: it.new_title, 'aria-label': 'שם השיר', placeholder: 'שם השיר' });
+      const node = h('div', { class: `namefix-row${it.sure ? '' : ' unsure'}` },
+        box,
+        h('div', { class: 'namefix-main' },
+          h('div', { class: 'namefix-old', title: it.folder || '' }, [it.artist, it.title].filter(Boolean).join(' · ')),
+          h('div', { class: 'namefix-new' }, artist, title),
+          h('div', { class: 'namefix-why' }, (it.sure ? '' : 'לא בטוח · ') + it.why)));
+      return { it, box, artist, title, node };
+    });
+    const count = h('span', {}, '');
+    const recount = () => { count.textContent = `${H.n(rows.filter((x) => x.box.checked).length)} מסומנים`; };
+    rows.forEach((x) => x.box.addEventListener('change', recount));
+    recount();
+    const apply = h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: async () => {
+      const chosen = rows.filter((x) => x.box.checked && x.title.value.trim())
+        .map((x) => ({ id: x.it.id, title: x.title.value.trim(), artist: x.artist.value.trim() }));
+      if (!chosen.length) return;
+      apply.disabled = true;
+      const res = await api.applyNameFixes(chosen).catch((err) => ({ ok: false, message: err.message }));
+      el.close();
+      if (res.ok) {
+        H.toast(`תוקנו השמות של ${H.songs(res.applied)}`, { icon: 'wand-sparkles' });
+        api.emit('library-changed', {});
+      } else {
+        H.toast(res.message || 'התיקון לא נשמר', { kind: 'bad' });
+      }
+      render({ focus: 'library' });
+    } }, 'להחיל');
+    el.append(
+      h('header', { class: 'dialog-head' },
+        h('div', { class: 'dialog-heading' }, h('h2', { id: 'namefix-title' }, 'תיקון שמות'),
+          h('p', { class: 'muted' }, 'תיקון בטוח מסומן מראש, ניחוש לא. אפשר לערוך כל שם לפני שמחילים.')),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'סגירה', onclick: () => el.close() }, icon('x'))),
+      h('div', { class: 'dialog-body' }, rows.map((x) => x.node)),
+      h('footer', { class: 'dialog-foot' }, count, apply));
+    el.showModal();
   }
 
   // 1.5: a list of singers the listener brings (CSV, text or JSON).
@@ -302,7 +372,7 @@
       knowledgeRow(info),
       row('מודל הסיווג', `${where} ${st.model ? `(${st.model.split('/').pop()})` : ''}`, h('div', { style: { display: 'flex', gap: '8px', 'align-items': 'center' } }, modelPill(st), install)),
       toggle('use_embeddings', 'סיווג חכם לשירים בלי מילת מפתח', 'כשהשם של שיר לא מגלה את הנושא, המודל משווה את המשמעות שלו לנושאים. כבוי = מילון בלבד.', () => render()),
-      toggle('classify_by_lyrics', 'להיעזר בקובצי מילים', 'אם ליד שיר יש קובץ ‎.lrc או ‎.txt, גם המילים נלקחות בחשבון.'),
+      toggle('classify_by_lyrics', 'להיעזר במילות השירים', 'המילים שבתגיות של השיר, או בקובץ ‎.lrc או ‎.txt לידו: מועד שחוזר בהן (למשל בפזמון) משייך את השיר אליו, כשהשם שלו לא אומר כלום.'),
       row('לסווג מחדש', 'מריץ את הסיווג על כל השירים — למשל אחרי שהמודל הותקן.',
         h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: async () => {
           try { await api.reclassify(); H.toast('הסיווג מחדש רץ ברקע', { icon: 'cpu' }); } catch (err) { H.toast(err.message, { kind: 'bad' }); }
@@ -402,6 +472,46 @@
           const r = H.shabbat.status();
           H.shabbat.preview(r && (r.current || r.next));
         } }, icon('eye', 'icon-sm'), 'להציג')));
+  }
+
+  // 1.6: the listener's own days by the Hebrew date, every year.
+  const PERSONAL_KINDS = [['birthday', 'יום הולדת'], ['anniversary', 'יום נישואין'], ['yahrzeit', 'יארצייט'], ['other', 'יום אחר']];
+  const PERSONAL_REQUEST = { birthday: 'סט ליום הולדת', anniversary: 'סט לשמחה', yahrzeit: '', other: '' };
+  const HEBREW_MONTHS = [['7', 'תשרי'], ['8', 'חשוון'], ['9', 'כסלו'], ['10', 'טבת'], ['11', 'שבט'], ['12', 'אדר'],
+    ['12a', 'אדר א׳'], ['13', 'אדר ב׳'], ['1', 'ניסן'], ['2', 'אייר'], ['3', 'סיוון'], ['4', 'תמוז'], ['5', 'אב'], ['6', 'אלול']];
+  const HEBREW_DAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ז׳', 'ח׳', 'ט׳', 'י׳', 'י״א', 'י״ב', 'י״ג', 'י״ד', 'ט״ו', 'ט״ז',
+    'י״ז', 'י״ח', 'י״ט', 'כ׳', 'כ״א', 'כ״ב', 'כ״ג', 'כ״ד', 'כ״ה', 'כ״ו', 'כ״ז', 'כ״ח', 'כ״ט', 'ל׳'];
+  function personal() {
+    const items = H.settings.personal_dates || [];
+    const monthName = Object.fromEntries(HEBREW_MONTHS);
+    const kindName = Object.fromEntries(PERSONAL_KINDS);
+    const list = h('div', { class: 'roots' });
+    items.forEach((it, i) => {
+      list.appendChild(h('div', { class: 'root-item' }, icon('calendar-heart', 'icon-sm'),
+        h('span', { class: 'personal-item' }, `${it.name} · ${kindName[it.kind] || ''} · ${HEBREW_DAYS[it.day - 1]} ב${monthName[it.month]}`
+          + (it.request ? ` · „${it.request}”` : '')),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': `להסיר את ${it.name}`, onclick: async () => {
+          if (await save({ personal_dates: items.filter((_, j) => j !== i) })) render({ focus: 'personal' });
+        } }, icon('x', 'icon-sm'))));
+    });
+    const name = h('input', { class: 'input', type: 'text', placeholder: 'שם (למשל: שרה, סבא משה)', 'aria-label': 'שם', maxlength: '60' });
+    const kind = h('select', { class: 'select', 'aria-label': 'סוג' }, PERSONAL_KINDS.map(([v, t]) => h('option', { value: v }, t)));
+    const day = h('select', { class: 'select', 'aria-label': 'יום בחודש' }, HEBREW_DAYS.map((t, i) => h('option', { value: String(i + 1) }, t)));
+    const month = h('select', { class: 'select', 'aria-label': 'חודש' }, HEBREW_MONTHS.map(([v, t]) => h('option', { value: v }, t)));
+    const request = h('input', { class: 'input', type: 'text', 'aria-label': 'מה לנגן ביום הזה', maxlength: '120',
+      placeholder: 'מה לנגן ביום הזה (אפשר להשאיר ריק)', value: PERSONAL_REQUEST.birthday });
+    kind.addEventListener('change', () => { request.value = PERSONAL_REQUEST[kind.value] || ''; });
+    const add = h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: async () => {
+      if (!name.value.trim()) { name.focus(); return; }
+      const item = { name: name.value.trim(), kind: kind.value, day: Number(day.value), month: month.value, request: request.value.trim() };
+      if (await save({ personal_dates: [...items, item] })) render({ focus: 'personal' });
+    } }, icon('plus', 'icon-sm'), 'להוסיף');
+    const form = h('div', { class: 'personal-form' }, name, kind, day, month, request, add);
+    return h('section', { class: 'set-group', id: 'set-personal' },
+      h('h2', {}, 'ימים אישיים'),
+      row('ימי הולדת, נישואין ויארצייט',
+        'לפי התאריך העברי, בכל שנה. היום מופיע בדף הבית כשהוא מגיע (ושבוע לפני), עם מה שבחרת לנגן בו: בקשה רגילה, כמו „סט ליום הולדת”, או שם של רשימה שמורה. אדר של שנה רגילה נופל בשנה מעוברת באדר ב׳; מי שנוהג באדר א׳ יכול לבחור בו.',
+        null, { wide: h('div', {}, items.length ? list : null, form) }));
   }
 
   // Details and covers for the whole library, filled in only for a sure match.
@@ -538,7 +648,7 @@
     H.clear(root).append(
       h('header', { class: 'page-head' }, h('h1', {}, 'הגדרות')),
       h('div', { class: 'settings' },
-        appearance(), library(overview), artistsGroup(artistData, singersSt), sound(), voiceGroup(voiceSt), ai(status, info), suggestions(), shabbat(), listening(vocal), online(info), updates(info),
+        appearance(), library(overview), artistsGroup(artistData, singersSt), sound(), voiceGroup(voiceSt), ai(status, info), suggestions(), shabbat(), personal(), listening(vocal), online(info), updates(info),
         about(info, shell)));
     if (params.focus) {
       const target = H.$(`#set-${params.focus}`);
