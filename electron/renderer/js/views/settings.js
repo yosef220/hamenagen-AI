@@ -108,7 +108,8 @@
           ? `${H.n(stats.duplicates)} עותקים של שירים שכבר יש (בתיקייה אחרת או בפורמט אחר) מוסתרים, ומוצג העותק הטוב ביותר. את העותקים רואים בתפריט ⋯ של השיר.`
           : 'שיר שנמצא בכמה תיקיות או בכמה פורמטים יוצג פעם אחת, בעותק הטוב ביותר.',
         () => { render({ focus: 'library' }); H.refreshRail && H.refreshRail(); }),
-      isolatedRow());
+      isolatedRow(),
+      nameFixRow(overview));
   }
 
   // Folders kept apart: they play when chosen, never in mixes, sets or the radio.
@@ -129,6 +130,75 @@
     return row('תיקיות בנפרד',
       'למשל שירי ילדים או הקלטות של המשפחה: הם בספרייה ומתנגנים כשבוחרים אותם, אבל לא נכנסים לערבובים, לסטים ולרדיו. הקלטות דיבור ושיעורים מופרדות כך מעצמן.',
       add, kept.length ? { wide: list } : {});
+  }
+
+  // 1.6: clean names for songs from the web, approved one by one.
+  function nameFixRow(overview) {
+    const help = h('div', { class: 'set-help' }, '');
+    const undo = h('button', { class: 'btn btn-quiet btn-sm', type: 'button', hidden: true, onclick: async () => {
+      const r = await api.undoNameFixes().catch(() => null);
+      if (r) H.toast(`${H.songs(r.restored)} חזרו לשם שבקובץ`, { icon: 'undo-2' });
+      render({ focus: 'library' });
+    } }, icon('undo-2', 'icon-sm'), 'להחזיר את השמות');
+    const open = h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: () => openNameFixes() }, icon('wand-sparkles', 'icon-sm'), 'לבדוק');
+    api.nameSuggestions().then((r) => {
+      const n = r.suggestions.length;
+      help.textContent = n ? `יש ${H.songs(n)} שאפשר לנקות להם את השם.` : 'כל השמות נראים נקיים.';
+      open.disabled = !n;
+      undo.hidden = !r.applied;
+    }).catch(() => {});
+    return row('תיקון שמות',
+      'לקבצים מהאינטרנט: „Official Video”, „הקליפ הרשמי”, כתובת של אתר וחצי השם באנגלית יורדים מהשם, ושם הזמר יוצא משם השיר. כל תיקון מוצג לאישור, הקבצים עצמם לא משתנים, ואפשר להחזיר הכל.',
+      h('div', { style: { display: 'flex', gap: '8px' } }, undo, open), { wide: help });
+  }
+
+  async function openNameFixes() {
+    const r = await api.nameSuggestions().catch(() => ({ suggestions: [] }));
+    const items = r.suggestions;
+    if (!items.length) return;
+    const el = h('dialog', { class: 'dialog tool-dialog namefix-dialog', 'aria-labelledby': 'namefix-title' });
+    document.body.appendChild(el);
+    el.addEventListener('close', () => el.remove());
+    el.addEventListener('click', (e) => { if (e.target === el) el.close(); });
+    const rows = items.map((it) => {
+      const box = h('input', { type: 'checkbox', checked: it.sure, 'aria-label': it.new_title });
+      const artist = h('input', { class: 'input', type: 'text', value: it.new_artist, 'aria-label': 'הזמר', placeholder: 'הזמר' });
+      const title = h('input', { class: 'input', type: 'text', value: it.new_title, 'aria-label': 'שם השיר', placeholder: 'שם השיר' });
+      const node = h('div', { class: `namefix-row${it.sure ? '' : ' unsure'}` },
+        box,
+        h('div', { class: 'namefix-main' },
+          h('div', { class: 'namefix-old', title: it.folder || '' }, [it.artist, it.title].filter(Boolean).join(' · ')),
+          h('div', { class: 'namefix-new' }, artist, title),
+          h('div', { class: 'namefix-why' }, (it.sure ? '' : 'לא בטוח · ') + it.why)));
+      return { it, box, artist, title, node };
+    });
+    const count = h('span', {}, '');
+    const recount = () => { count.textContent = `${H.n(rows.filter((x) => x.box.checked).length)} מסומנים`; };
+    rows.forEach((x) => x.box.addEventListener('change', recount));
+    recount();
+    const apply = h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: async () => {
+      const chosen = rows.filter((x) => x.box.checked && x.title.value.trim())
+        .map((x) => ({ id: x.it.id, title: x.title.value.trim(), artist: x.artist.value.trim() }));
+      if (!chosen.length) return;
+      apply.disabled = true;
+      const res = await api.applyNameFixes(chosen).catch((err) => ({ ok: false, message: err.message }));
+      el.close();
+      if (res.ok) {
+        H.toast(`תוקנו השמות של ${H.songs(res.applied)}`, { icon: 'wand-sparkles' });
+        api.emit('library-changed', {});
+      } else {
+        H.toast(res.message || 'התיקון לא נשמר', { kind: 'bad' });
+      }
+      render({ focus: 'library' });
+    } }, 'להחיל');
+    el.append(
+      h('header', { class: 'dialog-head' },
+        h('div', { class: 'dialog-heading' }, h('h2', { id: 'namefix-title' }, 'תיקון שמות'),
+          h('p', { class: 'muted' }, 'תיקון בטוח מסומן מראש, ניחוש לא. אפשר לערוך כל שם לפני שמחילים.')),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'סגירה', onclick: () => el.close() }, icon('x'))),
+      h('div', { class: 'dialog-body' }, rows.map((x) => x.node)),
+      h('footer', { class: 'dialog-foot' }, count, apply));
+    el.showModal();
   }
 
   // 1.5: a list of singers the listener brings (CSV, text or JSON).

@@ -25,6 +25,7 @@
     'appUpdateDownload', 'appUpdateCancel', 'appUpdateResult', 'completeDetails', 'stopCompleteDetails',
     'shabbatStatus', 'playlists', 'playlistGet', 'playlistCreate', 'playlistRename', 'playlistDelete',
     'playlistAdd', 'playlistSetOrder', 'trackCopies', 'onlineSet', 'listenPrepare',
+    'nameSuggestions', 'applyNameFixes', 'undoNameFixes',
     'playlistImport', 'playlistExport',
     'savePosition', 'recordSkip',
   ];

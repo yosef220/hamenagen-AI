@@ -1245,6 +1245,73 @@ class PlayerService:
                 "cover": bool(cover), "propagated": spread, "covered_ids": covered, "cover_key": track.cover,
                 "message": "" if values or cover else "לא היה מה להוסיף מהפרטים שנבחרו."}
 
+    # -- clean names for songs from the web (1.6) ------------------------------------
+    def name_suggestions(self, limit: int = 1000) -> dict:
+        """Songs whose name holds a video title's noise, or the singer, with a
+        cleaner name to approve (name_fix.py). Songs whose details the
+        listener already chose are left alone."""
+        from . import name_fix
+
+        chosen = self.index.details()
+        out = []
+        for t in self.index.all_tracks():
+            if t.dup_of or t.id in chosen or t.is_video:
+                continue
+            fix = name_fix.suggest(t.title, t.artist)
+            if fix is None:
+                continue
+            out.append({"id": t.id, "title": t.title, "artist": t.artist, "new_title": fix.title,
+                        "new_artist": fix.artist, "sure": fix.sure, "why": fix.why,
+                        "folder": display_folder(t.path) if t.path else ""})
+            if len(out) >= limit:
+                break
+        out.sort(key=lambda r: (not r["sure"], normalize(r["new_artist"]), normalize(r["new_title"])))
+        return {"suggestions": out, "applied": sum(1 for d in chosen.values() if d.get("source") == "names")}
+
+    def apply_name_fixes(self, items: list[dict]) -> dict:
+        """Keep the names the listener approved (never written to the files
+        unless the listener writes the tags)."""
+        done = 0
+        overrides = self.index.overrides()
+        for item in items or []:
+            track = self.index.get(str(item.get("id", "")))
+            title = " ".join(str(item.get("title") or "").split())[:300]
+            if track is None or not title:
+                continue
+            row = {"title": title, "artist": " ".join(str(item.get("artist") or "").split())[:200],
+                   "album": track.album, "source": "names"}
+            self.index.set_details(track.id, row, commit=False)
+            self._apply_details(track, row)
+            if not row["artist"]:
+                track.artist = ""
+            self._classify_track(track, override=overrides.get(track.id),
+                                 analysis=self.index.analyses_for([track.id]).get(track.id))
+            self.index.upsert(track, commit=False)
+            done += 1
+        self.index.commit()
+        if done:
+            self._forget_artists()
+            self._propagate(self.index)
+        return {"ok": True, "applied": done}
+
+    def undo_name_fixes(self) -> dict:
+        """Every name fixed here goes back to what the file says."""
+        ids = [tid for tid, d in self.index.details().items() if d.get("source") == "names"]
+        self.index.delete_details(ids)
+        overrides = self.index.overrides()
+        for track in self.index.get_many(ids):
+            fresh = scan_file(track.path, read_contents=bool(track.mtime)) if track.path else None
+            if fresh is not None:
+                track.title, track.artist = fresh.title, fresh.artist
+            self._classify_track(track, override=overrides.get(track.id),
+                                 analysis=self.index.analyses_for([track.id]).get(track.id))
+            self.index.upsert(track, commit=False)
+        self.index.commit()
+        if ids:
+            self._forget_artists()
+            self._propagate(self.index)
+        return {"ok": True, "restored": len(ids)}
+
     def _search_text(self, query: str) -> str:
         """A singer's other spellings, written as the name shown."""
         mapping, _, shown = self._artists()

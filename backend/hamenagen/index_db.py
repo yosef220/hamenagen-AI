@@ -341,6 +341,11 @@ class MusicIndex:
             if commit:
                 self._conn.commit()
 
+    def delete_details(self, track_ids: list[str]) -> None:
+        with self._lock:
+            self._conn.executemany("DELETE FROM details WHERE track_id=?", [(t,) for t in track_ids])
+            self._conn.commit()
+
     def set_cover(self, track_id: str, cover: str, *, commit: bool = True) -> None:
         with self._lock:
             self._conn.execute("UPDATE tracks SET cover=? WHERE id=?", (cover, track_id))

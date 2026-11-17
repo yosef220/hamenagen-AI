@@ -1657,3 +1657,15 @@ body.at-rest .app { visibility: hidden; }
 .luach-personal { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; font-size: var(--fs-sm); }
 .personal-form { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s2); }
 .personal-form .input { min-width: 12rem; flex: 1 1 12rem; }
+
+/* 1.6: clean names, approved one by one. */
+.namefix-dialog { width: min(720px, calc(100vw - 48px)); }
+.namefix-row { display: flex; gap: var(--s3); align-items: flex-start; padding: var(--s2) 0; border-bottom: 1px solid var(--line); }
+.namefix-row > input[type="checkbox"] { width: 16px; height: 16px; margin-top: 4px; accent-color: var(--tekhelet); flex: none; }
+.namefix-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.namefix-old { color: var(--ink-3); font-size: var(--fs-sm); text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.namefix-new { display: flex; gap: var(--s2); }
+.namefix-new .input:first-child { flex: 0 1 40%; }
+.namefix-why { color: var(--ink-3); font-size: var(--fs-xs, 12px); }
+.namefix-row.unsure .namefix-why { color: var(--warn, var(--ink-2)); }
+.namefix-dialog .dialog-foot { justify-content: space-between; }
