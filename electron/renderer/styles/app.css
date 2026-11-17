@@ -929,6 +929,20 @@ input[type="range"]:hover::-webkit-slider-thumb, input[type="range"]:focus-visib
   line-height: 1.8;
   padding: var(--s2) var(--s3);
 }
+.lyrics-timed { display: flex; flex-direction: column; align-items: stretch; white-space: normal; }
+.lyrics-line {
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  text-align: start;
+  padding: 2px var(--s2);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: color .2s, background-color .2s;
+}
+.lyrics-line:hover { background: var(--sunken); }
+.lyrics-line.sung { color: var(--ink); font-weight: 600; }
 
 /* ------------------------------------------------------------- menus etc. */
 .menu {

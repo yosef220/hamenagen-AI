@@ -34,13 +34,18 @@ class Track:
     cover: str = ""                 # key of the cover picture in data/covers ("" = none)
     dup_of: str = ""                # another copy of this song is the one shown ("" = shown)
     kind: str = ""                  # "speech" for a spoken recording (sound.py); "" for a song
+    # The words kept in the file's tags, as the scanner read them (1.6). Not a
+    # column of the tracks table: they are kept in the lyrics table.
+    lyrics: str = field(default="", repr=False, compare=False)
 
     @property
     def tag_list(self) -> list[str]:
         return [t for t in (self.tags or "").split("|") if t]
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d.pop("lyrics", None)
+        return d
 
     @classmethod
     def from_row(cls, row: dict) -> "Track":

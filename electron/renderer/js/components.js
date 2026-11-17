@@ -567,20 +567,49 @@
     } else {
       const cur = P.current();
       if (!cur) {
-        body.appendChild(h('p', { class: 'queue-note' }, 'המילים מופיעות כאן כשמתנגן שיר שיש לו קובץ מילים (‎.lrc או ‎.txt באותו שם, באותה תיקייה).'));
+        body.appendChild(h('p', { class: 'queue-note' }, 'המילים מופיעות כאן כשמתנגן שיר שהמילים שלו שמורות בקובץ עצמו, או בקובץ ‎.lrc או ‎.txt באותו שם ליד השיר.'));
         return;
       }
       const box = h('div', { class: 'lyrics' }, '…');
       body.appendChild(h('p', { class: 'queue-note' }, H.trackTitle(cur)));
       body.appendChild(box);
       lyricsFor = cur.id;
+      timedLines = [];
+      sungIndex = -1;
       api.lyrics(cur.id).then((res) => {
         if (lyricsFor !== cur.id) return;
-        box.textContent = res.lyrics || 'לשיר הזה אין קובץ מילים. אפשר להניח לידו קובץ ‎.lrc או ‎.txt באותו שם.';
+        H.clear(box);
+        if (res.lines && res.lines.length) {
+          // 1.6: words with times (LRC) follow the song; a line plays from its time.
+          box.classList.add('lyrics-timed');
+          timedLines = res.lines.map((row) => {
+            const el = h('button', { class: 'lyrics-line', type: 'button', onclick: () => P.seekTo(row.t) }, row.text || '♪');
+            box.appendChild(el);
+            return { t: row.t, el };
+          });
+          followLyrics(true);
+          return;
+        }
+        box.textContent = res.lyrics || 'לשיר הזה אין מילים. אפשר לשמור אותן בתגיות של הקובץ, או להניח לידו קובץ ‎.lrc או ‎.txt באותו שם.';
         if (!res.lyrics) box.classList.add('muted');
       }).catch(() => { box.textContent = ''; });
     }
   }
+
+  // The line being sung, while the words of the song are open.
+  let timedLines = [];
+  let sungIndex = -1;
+  function followLyrics(jump = false) {
+    if (drawer.hidden || tab !== 'lyrics' || !timedLines.length) return;
+    const now = H.$('#audio').currentTime || 0;
+    let i = -1;
+    for (let k = 0; k < timedLines.length && timedLines[k].t <= now + 0.2; k++) i = k;
+    if (i === sungIndex && !jump) return;
+    sungIndex = i;
+    timedLines.forEach((row, k) => row.el.classList.toggle('sung', k === i));
+    if (i >= 0) timedLines[i].el.scrollIntoView({ block: 'center', behavior: jump ? 'auto' : 'smooth' });
+  }
+  H.$('#audio').addEventListener('timeupdate', () => followLyrics());
 
   for (const t of H.$$('.tab', drawer)) t.addEventListener('click', () => H.openDrawer(t.dataset.tab));
   H.$('#drawer-close').addEventListener('click', closeDrawer);

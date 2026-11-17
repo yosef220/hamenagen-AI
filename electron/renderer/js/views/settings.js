@@ -302,7 +302,7 @@
       knowledgeRow(info),
       row('מודל הסיווג', `${where} ${st.model ? `(${st.model.split('/').pop()})` : ''}`, h('div', { style: { display: 'flex', gap: '8px', 'align-items': 'center' } }, modelPill(st), install)),
       toggle('use_embeddings', 'סיווג חכם לשירים בלי מילת מפתח', 'כשהשם של שיר לא מגלה את הנושא, המודל משווה את המשמעות שלו לנושאים. כבוי = מילון בלבד.', () => render()),
-      toggle('classify_by_lyrics', 'להיעזר בקובצי מילים', 'אם ליד שיר יש קובץ ‎.lrc או ‎.txt, גם המילים נלקחות בחשבון.'),
+      toggle('classify_by_lyrics', 'להיעזר במילות השירים', 'המילים שבתגיות של השיר, או בקובץ ‎.lrc או ‎.txt לידו: מועד שחוזר בהן (למשל בפזמון) משייך את השיר אליו, כשהשם שלו לא אומר כלום.'),
       row('לסווג מחדש', 'מריץ את הסיווג על כל השירים — למשל אחרי שהמודל הותקן.',
         h('button', { class: 'btn btn-outline btn-sm', type: 'button', onclick: async () => {
           try { await api.reclassify(); H.toast('הסיווג מחדש רץ ברקע', { icon: 'cpu' }); } catch (err) { H.toast(err.message, { kind: 'bad' }); }

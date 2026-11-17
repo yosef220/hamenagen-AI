@@ -44,7 +44,7 @@ from .text_normalize import contains_phrase, normalize
 @dataclass(frozen=True)
 class Classification:
     topic: str | None
-    source: str          # "title" | "index" | "keyword" | "artist" | "lexicon" | "embedding" | "none"
+    source: str          # "title" | "index" | "keyword" | "lyrics" | "artist" | "lexicon" | "embedding" | "none"
     confidence: float    # 0..1
     tags: tuple[str, ...] = ()  # further topics the song also belongs to
     note: str = ""       # why, in a few Hebrew words, for the listener
@@ -380,6 +380,33 @@ class HybridClassifier:
                     break
         return hits
 
+    def lyrics_topic(self, lyrics: str) -> tuple[str, str] | None:
+        """The occasion a song's words are about, with the word that says it:
+        its keywords must come back at least twice, or once in the opening
+        lines, and more often than any other occasion's."""
+        lines = [normalize(x) for x in lyrics.splitlines() if x.strip()]
+        if not lines:
+            return None
+        opening = " ".join(lines[:2])
+        counts: dict[str, int] = {}
+        first_word: dict[str, str] = {}
+        for topic, keywords in self._keywords:
+            n = 0
+            for i, nkw in enumerate(keywords):
+                hits = sum(1 for line in lines if contains_phrase(line, nkw))
+                if hits:
+                    n += hits + (1 if contains_phrase(opening, nkw) else 0)
+                    first_word.setdefault(topic, self._keyword_text[topic][i])
+            if n:
+                counts[topic] = n
+        if not counts:
+            return None
+        ranked = sorted(counts.items(), key=lambda kv: -kv[1])
+        best, n = ranked[0]
+        if n < 2 or (len(ranked) > 1 and ranked[1][1] * 2 > n):
+            return None
+        return best, first_word[best]
+
     def keyword_topics(self, text: str) -> list[str]:
         """Every topic whose keywords appear in ``text``, in precedence order."""
         return [topic for topic, _ in self.keyword_matches(text)]
@@ -394,8 +421,11 @@ class HybridClassifier:
         lyrics: str = "",
         use_embeddings: bool = True,
     ) -> Classification:
-        combined = " ".join(p for p in (title, artist, album, filename, lyrics) if p)
-        matches = self.keyword_matches(combined)
+        names = " ".join(p for p in (title, artist, album, filename) if p)
+        combined = " ".join(p for p in (names, lyrics) if p)
+        # The words of a song are long and say many things in passing, so they
+        # are read apart from its name (layer 3b), and never add tags.
+        matches = self.keyword_matches(names)
         keyword_hits = [t for t, _ in matches]
 
         def with_tags(topic: str, source: str, confidence: float, note: str, extra=()) -> Classification:
@@ -424,6 +454,14 @@ class HybridClassifier:
         if matches:
             return Classification(keyword_hits[0], "keyword", 0.9, tuple(keyword_hits[1:]),
                                   f"המילה „{matches[0][1]}”")
+
+        # Layer 3b (1.6): the song's words — an occasion's word that comes back
+        # in them (the chorus), or that opens them, and leads every other one.
+        if lyrics:
+            found = self.lyrics_topic(lyrics)
+            if found is not None:
+                topic, word = found
+                return Classification(topic, "lyrics", 0.75, note=f"במילות השיר: „{word}”")
 
         # Layer 4: artist default (weak).
         artist_topic = self._artists.get(normalize(artist))

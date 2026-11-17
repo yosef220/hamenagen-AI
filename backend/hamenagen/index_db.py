@@ -104,6 +104,33 @@ CREATE TABLE IF NOT EXISTS playlist_items (
     duration    REAL,
     PRIMARY KEY (playlist_id, pos)
 );
+-- 1.6: the words of a song (its tags, or an .lrc/.txt beside it), for
+-- finding a song by a line the listener remembers. "norm" is the text
+-- normalised for search (text_normalize.normalize).
+CREATE TABLE IF NOT EXISTS lyrics (
+    track_id  TEXT PRIMARY KEY,
+    text      TEXT,
+    norm      TEXT,
+    source    TEXT,                 -- tag | file
+    timed     INTEGER DEFAULT 0     -- 1: has LRC times
+);
+-- 1.6: where the listener stopped a long recording or left a song.
+CREATE TABLE IF NOT EXISTS positions (
+    track_id   TEXT PRIMARY KEY,
+    seconds    REAL NOT NULL,
+    duration   REAL,
+    updated_at TEXT
+);
+-- 1.6: a song skipped early. "burst" marks a skip in quick browsing, which
+-- says little about the song.
+CREATE TABLE IF NOT EXISTS skips (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id   TEXT NOT NULL,
+    skipped_at TEXT NOT NULL,
+    seconds    REAL,
+    burst      INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_skips_track          ON skips(track_id);
 CREATE INDEX IF NOT EXISTS idx_tracks_topic         ON tracks(topic);
 CREATE INDEX IF NOT EXISTS idx_tracks_download_date ON tracks(download_date);
 CREATE INDEX IF NOT EXISTS idx_tracks_release_date  ON tracks(release_date);
@@ -424,6 +451,112 @@ class MusicIndex:
                 "AND verdict IS NOT NULL AND verdict != '' GROUP BY verdict").fetchall()
         return {r["verdict"]: r["n"] for r in rows}
 
+    # -- the words of songs (1.6) ---------------------------------------------------
+    def set_lyrics(self, track_id: str, text: str, source: str, *, timed: bool = False,
+                   commit: bool = True) -> None:
+        from .text_normalize import normalize
+
+        with self._lock:
+            if not (text or "").strip():
+                self._conn.execute("DELETE FROM lyrics WHERE track_id=?", (track_id,))
+            else:
+                norm = " \n ".join(normalize(line) for line in text.splitlines() if line.strip())
+                self._conn.execute(
+                    "INSERT INTO lyrics (track_id, text, norm, source, timed) VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(track_id) DO UPDATE SET text=excluded.text, norm=excluded.norm, "
+                    "source=excluded.source, timed=excluded.timed",
+                    (track_id, text, norm, source, 1 if timed else 0))
+            if commit:
+                self._conn.commit()
+
+    def get_lyrics(self, track_id: str) -> dict | None:
+        with self._lock:
+            r = self._conn.execute("SELECT * FROM lyrics WHERE track_id=?", (track_id,)).fetchone()
+        return dict(r) if r else None
+
+    def lyrics_count(self) -> int:
+        with self._lock:
+            return self._conn.execute(
+                f"SELECT COUNT(*) AS n FROM lyrics WHERE track_id IN (SELECT id FROM tracks WHERE {self._shown()})"
+            ).fetchone()["n"]
+
+    def search_lyrics(self, words: list[str], limit: int = 50) -> list[tuple[Track, str]]:
+        """Songs whose words hold every one of ``words`` (normalised), with
+        the line where the first of them is found."""
+        words = [w for w in words if w]
+        if not words:
+            return []
+        like = " AND ".join("l.norm LIKE ?" for _ in words)
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT t.*, l.text AS _text, l.norm AS _norm FROM tracks t JOIN lyrics l ON l.track_id = t.id "
+                f"WHERE {like} AND {self._shown('t')} LIMIT ?",
+                [*[f"%{w}%" for w in words], limit]).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            text, norm = d.pop("_text") or "", d.pop("_norm") or ""
+            line = ""
+            for raw, n in zip([x for x in text.splitlines() if x.strip()], norm.split(" \n ")):
+                if all(w in n for w in words):
+                    line = raw.strip()
+                    break
+            d["is_video"] = bool(d.get("is_video"))
+            out.append((Track.from_row(d), line))
+        return out
+
+    # -- where the listener stopped (1.6) ------------------------------------------
+    def set_position(self, track_id: str, seconds: float | None, duration: float | None = None) -> None:
+        with self._lock:
+            if seconds is None:
+                self._conn.execute("DELETE FROM positions WHERE track_id=?", (track_id,))
+            else:
+                self._conn.execute(
+                    "INSERT INTO positions (track_id, seconds, duration, updated_at) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(track_id) DO UPDATE SET seconds=excluded.seconds, duration=excluded.duration, "
+                    "updated_at=excluded.updated_at",
+                    (track_id, float(seconds), duration, datetime.now().isoformat(timespec="seconds")))
+            self._conn.commit()
+
+    def get_position(self, track_id: str) -> dict | None:
+        with self._lock:
+            r = self._conn.execute("SELECT * FROM positions WHERE track_id=?", (track_id,)).fetchone()
+        return dict(r) if r else None
+
+    def positions_for(self, track_ids: list[str]) -> dict[str, dict]:
+        return self._rows_by_id("positions", track_ids) if track_ids else {}
+
+    def started_recordings(self, limit: int = 12) -> list[Track]:
+        """Long recordings the listener stopped in the middle, the latest first."""
+        return self._query(
+            "SELECT t.* FROM tracks t JOIN positions p ON p.track_id = t.id "
+            "ORDER BY p.updated_at DESC LIMIT ?", (limit,))
+
+    # -- skips (1.6) -----------------------------------------------------------
+    def record_skip(self, track_id: str, seconds: float | None = None, *, burst: bool = False,
+                    when: datetime | None = None) -> None:
+        stamp = (when or datetime.now()).isoformat(timespec="seconds")
+        with self._lock:
+            self._conn.execute("INSERT INTO skips (track_id, skipped_at, seconds, burst) VALUES (?, ?, ?, ?)",
+                               (track_id, stamp, seconds, 1 if burst else 0))
+            self._conn.commit()
+
+    def skip_counts(self, since: str | None = None) -> dict[str, int]:
+        """{track id: skips that count} — skips in quick browsing are left out."""
+        sql = "SELECT track_id, COUNT(*) AS n FROM skips WHERE burst = 0"
+        params: list = []
+        if since:
+            sql += " AND skipped_at >= ?"
+            params.append(since)
+        with self._lock:
+            rows = self._conn.execute(sql + " GROUP BY track_id", params).fetchall()
+        return {r["track_id"]: r["n"] for r in rows}
+
+    def all_play_counts(self) -> dict[str, int]:
+        with self._lock:
+            rows = self._conn.execute("SELECT track_id, COUNT(*) AS n FROM plays GROUP BY track_id").fetchall()
+        return {r["track_id"]: r["n"] for r in rows}
+
     # -- reads -------------------------------------------------------------
     def _mixable(self, alias: str = "") -> str:
         """SQL for songs that may play in a mix, a set or the radio: not a
@@ -609,8 +742,15 @@ class MusicIndex:
             # Every spelling of a singer the text names (artists.py).
             same = [a for a in (artists or []) if a][:50]
             extra = f" OR artist IN ({', '.join('?' * len(same))})" if same else ""
-            where.append(f"(title LIKE ? OR artist LIKE ? OR album LIKE ? OR filename LIKE ?{extra})")
-            params += [like, like, like, like, *same]
+            # 1.6: three words or more may be a line of the song.
+            from .text_normalize import normalize
+
+            norm = normalize(text)
+            sung = ""
+            if len(norm.split()) >= 3:
+                sung = " OR id IN (SELECT track_id FROM lyrics WHERE norm LIKE ?)"
+            where.append(f"(title LIKE ? OR artist LIKE ? OR album LIKE ? OR filename LIKE ?{extra}{sung})")
+            params += [like, like, like, like, *same, *([f"%{norm}%"] if sung else [])]
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         order = ", ".join(
             f"{expr} DESC" if descending else expr for expr in _SORTS.get(sort, _SORTS["title"])

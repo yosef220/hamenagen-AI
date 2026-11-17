@@ -52,8 +52,11 @@ from .scanner import (
     is_placeholder_title,
     is_too_short,
     iter_media_files,
+    MAX_LYRICS_CHARS,
+    plain_lyrics,
     read_sidecar_lyrics,
     scan_file,
+    timed_lyrics,
     store_cover,
     track_id_for,
 )
@@ -296,8 +299,12 @@ class PlayerService:
                             track.cover = track.cover or old.cover
                             track.duration = track.duration or old.duration
                     self._apply_details(track, details.get(tid))
-                    self._classify_track(track, override=overrides.get(tid), analysis=analyses.get(tid))
+                    words, where = self._song_words(track, fresh=True)
+                    self._classify_track(track, override=overrides.get(tid), analysis=analyses.get(tid),
+                                         words=words)
                     idx.upsert(track, commit=False)
+                    if not by_name:
+                        idx.set_lyrics(tid, words, where, timed=bool(timed_lyrics(words)), commit=False)
                     if previous:
                         updated += 1
                     else:
@@ -382,13 +389,32 @@ class PlayerService:
                 track.cover = chosen["cover"]
         return track
 
+    def _song_words(self, track: Track, *, fresh: bool = False) -> tuple[str, str]:
+        """The words of a song and where they come from: an .lrc/.txt beside
+        it ("file"), else its tags ("tag"). ``fresh``: the file was just read,
+        so what the index kept from before does not count."""
+        if track.path:
+            text = read_sidecar_lyrics(track.path, max_chars=MAX_LYRICS_CHARS, keep_times=True)
+            if text:
+                return text, "file"
+        if track.lyrics:
+            return track.lyrics, "tag"
+        if not fresh:
+            kept = self.index.get_lyrics(track.id)
+            if kept and kept.get("text"):
+                return kept["text"], kept.get("source") or "tag"
+        return "", ""
+
     def _classify_track(self, track: Track, *, override: dict | None = None,
-                        analysis: dict | None = None) -> Track:
+                        analysis: dict | None = None, words: str | None = None) -> Track:
         """Classify a song, then apply what the listener decided about it and
-        (when allowed) what the vocal detector heard."""
+        (when allowed) what the vocal detector heard. ``words``: the song's
+        words when the caller already has them."""
         lyrics = ""
-        if self.settings.classify_by_lyrics and track.path:
-            lyrics = read_sidecar_lyrics(track.path)
+        if self.settings.classify_by_lyrics:
+            if words is None:
+                words = self._song_words(track)[0]
+            lyrics = plain_lyrics(words)[:4000]
         folder = self._folder_hint(track.path) if track.path else ""
         cls = self.classifier.classify(
             title=track.title,
@@ -1776,6 +1802,14 @@ class PlayerService:
                     intent.topic, intent.action = hint, Action.PLAY_TOPIC
                     return (self._fill_minutes(tracks, minutes) if minutes else tracks), understood, \
                         f"שמעתי „{_display_query(intent.raw)}”. הבנתי: {understood}."
+            if not found:
+                # 1.6: a line of the song the listener remembers, when its name is forgotten.
+                said = [w for w in normalize(intent.raw or query).split()
+                        if w not in intent_mod._PLAY_VERBS and len(w) >= 2]
+                sung = self.index.search_lyrics(said, limit=limit) if len(said) >= 3 else []
+                if sung:
+                    shown = _display_query(intent.raw) or query
+                    return [t for t, _ in sung], f"שירים שיש בהם „{shown}”", "נמצא לפי מילות השיר:"
             near = False
             if not found:
                 found = near_matches(query, candidates, limit=limit)
@@ -1856,9 +1890,11 @@ class PlayerService:
         return {"ok": True}
 
     def track_lyrics(self, track_id: str) -> dict:
+        """The words of a song, plain, and with their times when an LRC has
+        them (``lines``: [{t, text}], to follow the song as it plays)."""
         track = self.index.get(track_id)
-        text = read_sidecar_lyrics(track.path, max_chars=20000) if track else ""
-        return {"id": track_id, "lyrics": text}
+        text, where = self._song_words(track) if track else ("", "")
+        return {"id": track_id, "lyrics": plain_lyrics(text), "lines": timed_lyrics(text), "source": where}
 
     # -- browsing ------------------------------------------------------------
     def topics(self) -> list[dict]:
