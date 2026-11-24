@@ -87,3 +87,54 @@ def test_following_offers_only_what_comes_after(tmp_path, monkeypatch):
         assert not service.follow_singer("x", "not-a-channel")["ok"]
     finally:
         service.close()
+
+
+def test_channels_in_a_search_engine_page():
+    from hamenagen import websearch
+
+    page = ('<a href="/url?q=https://www.youtube.com/%40avrahamfried&amp;sa=U">אברהם פריד</a>'
+            '<a href="https://www.youtube.com/channel/' + CID + '/videos">x</a>'
+            '<a href="https://www.youtube.com/@avrahamfried">again</a>'
+            '<a href="https://www.youtube.com/watch?v=abcdefghijk">a song</a>'
+            '<a href="https://www.youtube.com/@YouTube">YouTube</a>')
+    assert websearch.extract_channels(page) == ["https://www.youtube.com/@avrahamfried",
+                                                f"https://www.youtube.com/channel/{CID}"]
+    calls = []
+
+    def get(url):
+        calls.append(url)
+        if "google" in url:
+            raise OSError("418")
+        return page
+
+    assert websearch.find_channels("אברהם פריד", get=get)[0] == "https://www.youtube.com/@avrahamfried"
+    assert "bing" in calls[1]
+
+
+class _BlockedSearch(_Fetcher):
+    def search(self, query, limit=5):
+        return FetchOutcome(False, "חסום", code="netfree", blocked=True)
+
+    def link_info(self, url, limit=300):
+        self.links.append(url)
+        if "wrong" in url:
+            return FetchOutcome(False, "חסום", code="netfree", blocked=True)
+        return FetchOutcome(True, kind="list", artist="Avraham Fried",
+                            results=[_r("aaaaaaaaaaa", "אברהם פריד - אבינו מלכנו", channel="Avraham Fried")])
+
+
+def test_a_blocked_search_finds_the_channel_through_a_search_engine(tmp_path, monkeypatch):
+    monkeypatch.setattr("hamenagen.websearch.find_channels",
+                        lambda name, **kw: ["https://www.youtube.com/@wrong", "https://www.youtube.com/@avrahamfried"])
+    service = PlayerService(data_dir=tmp_path / "data")
+    try:
+        service.fetcher = _BlockedSearch()
+        out = service.singer_songs("אברהם פריד")
+        assert out["ok"] and out["via_web"] and out["channel"]["name"] == "Avraham Fried"
+        assert out["channel"]["id"] == CID
+        assert service.fetcher.links == ["https://www.youtube.com/@wrong", "https://www.youtube.com/@avrahamfried"]
+        monkeypatch.setattr("hamenagen.websearch.find_channels", lambda name, **kw: [])
+        out = service.singer_songs("אברהם פריד")
+        assert not out["ok"] and out["blocked"] and "מנוע חיפוש" in out["message"]
+    finally:
+        service.close()

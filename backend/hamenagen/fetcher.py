@@ -415,9 +415,12 @@ class YouTubeSource:
             return self._failed(res.code or "other", res.err)
         items = [r for e in data.get("entries") or [] if e and (r := _entry_result(e))]
         owner = data.get("channel") or data.get("uploader") or ""
+        owner_id = data.get("channel_id") or (data.get("id") if str(data.get("id") or "").startswith("UC") else "")
         for it in items:
             it.channel = it.channel or owner
             it.uploader = it.uploader or owner
+            it.channel_id = it.channel_id or owner_id or ""
+            it.channel_url = it.channel_url or (f"https://www.youtube.com/channel/{owner_id}" if owner_id else "")
         title = (data.get("title") or owner or "").replace(" - Videos", "").strip()
         return FetchOutcome(True, "", results=items, kind="list", title=title, artist=owner)
 

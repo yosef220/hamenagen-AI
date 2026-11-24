@@ -91,3 +91,45 @@ def search_youtube(query: str, count: int = 8, *, get=None) -> list[dict]:
         if found:
             return found
     return []
+
+
+# 1.7: a singer's channel, for networks that block YouTube's own search.
+_CHANNEL = re.compile(r"(?:https?://)?(?:www\.|m\.)?youtube\.com/(@[\w.\-]+|channel/UC[\w-]{22}|c/[\w.\-]+|user/[\w.\-]+)",
+                      re.UNICODE)
+_NOT_A_CHANNEL = {"@youtube", "c/youtube", "user/youtube"}
+
+
+def extract_channels(page: str, count: int = 5) -> list[str]:
+    """Links to YouTube channels in a results page, in page order, each once
+    (``https://www.youtube.com/@name`` or ``…/channel/UC…``)."""
+    text = urllib.parse.unquote(html_mod.unescape(page or ""))
+    out: list[str] = []
+    for m in _CHANNEL.finditer(text):
+        path = m.group(1).rstrip(".")
+        if path.lower() in _NOT_A_CHANNEL:
+            continue
+        url = f"https://www.youtube.com/{path}"
+        if url not in out:
+            out.append(url)
+        if len(out) >= count:
+            break
+    return out
+
+
+def find_channels(name: str, count: int = 3, *, get=None) -> list[str]:
+    """Channel links for a singer's name from the first engine that has any."""
+    get = get or http_get
+    q = urllib.parse.quote_plus(f"{name.strip()} ערוץ youtube")
+    engines = (
+        f"https://www.google.com/search?q={q}&num=10&hl=iw",
+        f"https://www.bing.com/search?q={q}&count=10",
+        f"https://html.duckduckgo.com/html/?q={q}",
+    )
+    for url in engines:
+        try:
+            found = extract_channels(get(url), count)
+        except Exception:  # noqa: BLE001 - blocked, offline, a CAPTCHA: the next engine
+            continue
+        if found:
+            return found
+    return []
