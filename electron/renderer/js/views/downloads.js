@@ -145,7 +145,7 @@
   singerForm.addEventListener('submit', (e) => { e.preventDefault(); showSinger(singerInput.value); });
   const singerSection = h('section', { class: 'section singer-section', 'aria-label': 'שירים של זמר' },
     h('div', { class: 'section-head' }, h('h2', {}, 'כל השירים של זמר')),
-    h('p', { class: 'muted' }, 'כותבים שם של זמר, והמנגן מוצא את הערוץ שלו ביוטיוב ומציג את כל השירים שהעלה. בוחרים מה להוריד; מה שכבר במחשב מסומן.'),
+    h('p', { class: 'muted' }, 'כותבים שם של זמר, והמנגן מוצא את הערוץ שלו ביוטיוב ומציג את כל השירים שהעלה — רק להורדה, שום דבר לא מתנגן. בוחרים מה להוריד; מה שכבר במחשב מסומן. אפשר גם לעקוב אחרי הזמר, ושיר חדש שלו יקפוץ עם כפתור הורדה.'),
     singerForm, singerHolder);
 
   async function showSinger(name) {
@@ -229,6 +229,37 @@
       chips,
       rows.length ? h('div', { class: 'online-list' }, rows) : h('p', { class: 'muted' }, 'אין כרגע שירים חדשים. המנגן בודק כל כמה שעות.'));
   }
+
+  // 1.7: a new song from a followed singer pops up, with a button to download
+  // it — checked a little after the player opens, then every hour (the core
+  // reads each singer's channel at most every few hours). Each song once.
+  async function announceNew() {
+    let r;
+    try {
+      r = await api.followedNew(false);
+    } catch {
+      return;
+    }
+    const told = new Set(H.storage.get('newSongsTold', []));
+    const fresh = (r.new || []).filter((it) => !told.has(it.id));
+    if (!fresh.length) return;
+    for (const it of fresh) told.add(it.id);
+    H.storage.set('newSongsTold', [...told].slice(-500));
+    if (!root.hidden) refreshNew(false);
+    if (fresh.length === 1) {
+      const it = fresh[0];
+      H.toast(`יצא שיר חדש של ${it.singer}: ${it.display || it.title}`, {
+        icon: 'bell-ring', ms: 20000, action: { label: 'להוריד', fn: () => H.download(it) },
+      });
+    } else {
+      const singers = [...new Set(fresh.map((it) => it.singer))].join(', ');
+      H.toast(`יצאו ${H.songs(fresh.length)} חדשים של ${singers}`, {
+        icon: 'bell-ring', ms: 20000, action: { label: 'להציג ולהוריד', fn: () => H.go('downloads') },
+      });
+    }
+  }
+  setTimeout(announceNew, 20000);
+  setInterval(announceNew, 60 * 60 * 1000);
 
   function stateText(job) {
     switch (job.status) {
