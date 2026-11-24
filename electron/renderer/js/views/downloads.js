@@ -157,16 +157,19 @@
       const info = await api.singerSongs(name, 300);
       if (!info.ok) {
         singerHolder.replaceChildren(h('p', { class: 'online-error' }, icon('circle-alert', 'icon-sm'),
-          info.blocked || info.code === 'netfree'
-            ? 'החיפוש ביוטיוב חסום ברשת שלך (נטפרי או סינון דומה). אפשר להדביק קישור לערוץ של הזמר בעמוד החיפוש.'
-            : info.message || 'לא נמצא'));
+          info.message || (info.blocked ? 'החיפוש ביוטיוב חסום ברשת שלך (נטפרי או סינון דומה).' : 'לא נמצא')));
         return;
       }
       if (!info.results.length) {
         singerHolder.replaceChildren(h('p', { class: 'muted' }, `בערוץ של ${info.channel.name} אין שירים להורדה.`));
         return;
       }
-      singerHolder.replaceChildren(H.songPicker(info, singerHolder, { extra: followButton(info.channel, info.followed) }));
+      // Found through a search engine when YouTube's own search is blocked; a channel
+      // whose id is not known cannot be followed.
+      const extra = info.channel.id ? followButton(info.channel, info.followed) : null;
+      singerHolder.replaceChildren(
+        info.via_web ? h('p', { class: 'muted' }, icon('search', 'icon-sm'), 'החיפוש ביוטיוב חסום ברשת שלך, אז הערוץ נמצא דרך מנוע חיפוש.') : '',
+        H.songPicker(info, singerHolder, { extra }));
     } catch (err) {
       singerHolder.replaceChildren(h('p', { class: 'online-error' }, `החיפוש נכשל: ${err.message}`));
     } finally {

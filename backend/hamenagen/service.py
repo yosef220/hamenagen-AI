@@ -1142,19 +1142,47 @@ class PlayerService:
             channel = singers_online.main_channel(last.results)
             if channel:
                 break
-        if channel is None:
-            if last is not None and (last.blocked or last.code):
-                return {"ok": False, "code": last.code, "blocked": last.blocked, "message": last.message}
-            return {"ok": False, "code": "no_channel",
-                    "message": f"לא מצאתי ערוץ של „{name}” ביוטיוב. אפשר להדביק קישור לערוץ שלו."}
-        info = self.fetcher.link_info(f"https://www.youtube.com/channel/{channel.id}/videos", limit=limit)
+        via_web = False
+        if channel is not None:
+            info = self.fetcher.link_info(f"https://www.youtube.com/channel/{channel.id}/videos", limit=limit)
+        else:
+            # 1.7: YouTube's search is blocked (NetFree) or found no channel: find the
+            # singer's channel through a search engine, as the songs' search does.
+            info = None
+            for url in self._web_channels(name):
+                got = self.fetcher.link_info(url, limit=limit)
+                if got.ok and got.results:
+                    info, via_web = got, True
+                    first = got.results[0]
+                    channel = singers_online.Channel(first.channel_id, got.artist or got.title or name,
+                                                     first.channel_url or url)
+                    break
+            if info is None:
+                if last is not None and (last.blocked or last.code):
+                    return {"ok": False, "code": last.code, "blocked": last.blocked,
+                            "message": "החיפוש ביוטיוב חסום ברשת שלך, וגם דרך מנוע חיפוש לא מצאתי את הערוץ. "
+                                       "אפשר להדביק קישור לערוץ של הזמר בעמוד החיפוש."}
+                return {"ok": False, "code": "no_channel",
+                        "message": f"לא מצאתי ערוץ של „{name}” ביוטיוב. אפשר להדביק קישור לערוץ שלו."}
         if not info.ok:
             return {"ok": False, "code": info.code, "blocked": info.blocked, "message": info.message}
         have = self._library_matcher()
         followed = any(f["channel_id"] == channel.id for f in self.settings.followed_singers)
         return {"ok": True, "kind": "list", "title": f"השירים של {channel.name or name}", "artist": channel.name,
                 "channel": {"id": channel.id, "name": channel.name or name, "url": channel.url},
-                "followed": followed, "results": [dict(r.__dict__, in_library=have.has(r)) for r in info.results]}
+                "followed": followed, "via_web": via_web,
+                "results": [dict(r.__dict__, in_library=have.has(r)) for r in info.results]}
+
+    def _web_channels(self, name: str) -> list[str]:
+        """Channel links for a singer from a search engine (none in the demo harness)."""
+        if os.environ.get("HAMENAGEN_DEMO_ONLINE"):
+            return []
+        from . import websearch
+
+        try:
+            return websearch.find_channels(name)
+        except Exception:  # noqa: BLE001
+            return []
 
     def spotify_link(self, url: str) -> dict:
         """A Spotify playlist, album or song as songs to pick and download
