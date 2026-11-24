@@ -138,3 +138,21 @@ def test_a_blocked_search_finds_the_channel_through_a_search_engine(tmp_path, mo
         assert not out["ok"] and out["blocked"] and "מנוע חיפוש" in out["message"]
     finally:
         service.close()
+
+
+def test_when_no_channel_page_opens_the_songs_come_from_a_search_engine(tmp_path, monkeypatch):
+    monkeypatch.setattr("hamenagen.websearch.find_channels", lambda name, **kw: ["https://www.youtube.com/@wrong"])
+    pages = {
+        "אלי הרצליך": [{"id": "aaaaaaaaaaa", "title": "אלי הרצליך - המלאך"}, {"id": "zzzzzzzzzzz", "title": "שיר של מישהו"}],
+        "אלי הרצליך שירים": [{"id": "aaaaaaaaaaa", "title": "אלי הרצליך - המלאך"},
+                             {"id": "ddddddddddd", "title": "אלי הרצליך - רק לתת"}],
+    }
+    monkeypatch.setattr("hamenagen.websearch.search_youtube", lambda q, count=8, **kw: pages.get(q, []))
+    service = PlayerService(data_dir=tmp_path / "data")
+    try:
+        service.fetcher = _BlockedSearch()
+        out = service.singer_songs("אלי הרצליך")
+        assert out["ok"] and out["web_list"] and out["channel"]["id"] == ""
+        assert [r["id"] for r in out["results"]] == ["aaaaaaaaaaa", "ddddddddddd", "zzzzzzzzzzz"]
+    finally:
+        service.close()

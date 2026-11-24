@@ -98,6 +98,15 @@ def _display_query(raw: str) -> str:
     return " ".join(words).strip() or (raw or "").strip()
 
 
+def _log(text: str) -> None:
+    """A line in the core's log (data/logs/core.log, through the window's bridge),
+    for the diagnostics report."""
+    try:
+        print(f"[{datetime.now():%H:%M:%S}] {text}", file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _give_memory_back() -> None:
     """Hand freed memory back to the system, so it shows in the Task Manager."""
     import ctypes
@@ -1149,8 +1158,11 @@ class PlayerService:
             # 1.7: YouTube's search is blocked (NetFree) or found no channel: find the
             # singer's channel through a search engine, as the songs' search does.
             info = None
-            for url in self._web_channels(name):
+            links = self._web_channels(name)
+            _log(f"singer {name!r}: youtube search {last.code if last else '-'}; channels by search engine: {links}")
+            for url in links:
                 got = self.fetcher.link_info(url, limit=limit)
+                _log(f"singer {name!r}: {url} -> {'ok' if got.ok else got.code} ({len(got.results)} songs)")
                 if got.ok and got.results:
                     info, via_web = got, True
                     first = got.results[0]
@@ -1158,6 +1170,15 @@ class PlayerService:
                                                      first.channel_url or url)
                     break
             if info is None:
+                # 1.7.2: no channel page opens (a filter may block channel pages): the
+                # singer's songs as a search engine lists them, each to download on its own.
+                songs = self._web_singer_songs(name)
+                _log(f"singer {name!r}: songs by search engine: {len(songs)}")
+                if songs:
+                    have = self._library_matcher()
+                    return {"ok": True, "kind": "list", "title": f"שירים של {name} (לפי מנוע חיפוש)", "artist": name,
+                            "channel": {"id": "", "name": name, "url": ""}, "followed": False, "via_web": True,
+                            "web_list": True, "results": [dict(r.__dict__, in_library=have.has(r)) for r in songs]}
                 if last is not None and (last.blocked or last.code):
                     return {"ok": False, "code": last.code, "blocked": last.blocked,
                             "message": "החיפוש ביוטיוב חסום ברשת שלך, וגם דרך מנוע חיפוש לא מצאתי את הערוץ. "
@@ -1172,6 +1193,33 @@ class PlayerService:
                 "channel": {"id": channel.id, "name": channel.name or name, "url": channel.url},
                 "followed": followed, "via_web": via_web,
                 "results": [dict(r.__dict__, in_library=have.has(r)) for r in info.results]}
+
+    def _web_singer_songs(self, name: str, limit: int = 60) -> list[SearchResult]:
+        """A singer's songs from a search engine (YouTube links in its results),
+        from a few searches, each song once; those whose name carries the
+        singer's name first."""
+        if os.environ.get("HAMENAGEN_DEMO_ONLINE"):
+            return []
+        from .fetcher import thumbnail_url
+        from . import websearch
+
+        seen: dict[str, SearchResult] = {}
+        for query in (name, f"{name} שירים", f"{name} קליפ רשמי"):
+            try:
+                found = websearch.search_youtube(query, 20)
+            except Exception:  # noqa: BLE001
+                found = []
+            for f in found:
+                if f["id"] not in seen:
+                    seen[f["id"]] = SearchResult("youtube", f["id"], f["title"] or "סרטון מיוטיוב",
+                                                 f"https://www.youtube.com/watch?v={f['id']}",
+                                                 thumbnail=thumbnail_url(f["id"], "mqdefault"))
+            if len(seen) >= limit:
+                break
+        words = [w for w in normalize(name).split() if len(w) > 1]
+        songs = list(seen.values())
+        songs.sort(key=lambda r: not all(w in normalize(r.title) for w in words))
+        return songs[:limit]
 
     def _web_channels(self, name: str) -> list[str]:
         """Channel links for a singer from a search engine (none in the demo harness)."""

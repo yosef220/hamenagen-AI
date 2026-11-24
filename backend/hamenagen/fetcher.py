@@ -315,6 +315,30 @@ def _entry_result(e: dict, source: str = "youtube") -> SearchResult | None:
     )
 
 
+def _oembed_result(url: str, *, get=None) -> SearchResult | None:
+    """A video's name and channel from YouTube's oEmbed answer (a small JSON,
+    no player), or None when it does not answer."""
+    from urllib.parse import quote
+
+    m = re.search(rf"[?&]v=({_VIDEO_ID})", url or "")
+    if not m:
+        return None
+    if get is None:
+        from .network import get_bytes as get
+    data = get(f"https://www.youtube.com/oembed?format=json&url={quote(url, safe='')}", timeout=10, limit=200_000)
+    try:
+        doc = json.loads(data.decode("utf-8")) if data else None
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(doc, dict) or not doc.get("title"):
+        return None
+    vid = m.group(1)
+    author = str(doc.get("author_name") or "")
+    return SearchResult("youtube", vid, str(doc["title"]), f"https://www.youtube.com/watch?v={vid}", uploader=author,
+                        channel=author, channel_url=str(doc.get("author_url") or ""),
+                        thumbnail=thumbnail_url(vid, "mqdefault"))
+
+
 class YouTubeSource:
     """YouTube through yt-dlp in its own process."""
 
@@ -400,12 +424,27 @@ class YouTubeSource:
             return self._failed("not_installed")
         kind, url = parsed
         if kind == "video":
-            res = self.runner.run([url, "--skip-download", "--no-playlist", "--flat-playlist", "--dump-single-json"],
-                                  timeout=30)
-            data = next(iter(self.runner.json_lines(res)), None)
-            item = _entry_result(data) if data else None
+            # 1.7.2: the player clients in turn, as a download does — one client may be
+            # told "This video is not available" while another is given the song.
+            item, res = None, None
+            for client in self.runner.client_order():
+                res = self.runner.run([url, "--skip-download", "--no-playlist", "--flat-playlist",
+                                       "--dump-single-json"], timeout=30, client=client)
+                data = next(iter(self.runner.json_lines(res)), None)
+                item = _entry_result(data) if data else None
+                if item:
+                    self.runner.remember(client)
+                    break
+                if res.code != "extract":
+                    break
+            if not item and res is not None and res.code in ("extract", "other"):
+                # Every client refused, but YouTube's own short description of the
+                # video (oEmbed) still says it is there: offer it, and let the
+                # download try its own ways (other clients, the regular file).
+                item = _oembed_result(url)
             if not item:
-                return self._failed(res.code or "other", res.err)
+                return self._failed(res.code if res is not None and res.code else "other",
+                                    res.err if res is not None else "")
             artist, title = clean_video_title(item.title, item.channel)
             return FetchOutcome(True, "", result=item, results=[item], kind="video", title=title, artist=artist)
         res = self.runner.run([url, "--flat-playlist", "--dump-single-json", "--playlist-end", str(int(limit)), *_DATES],

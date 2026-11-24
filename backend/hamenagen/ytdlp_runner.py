@@ -118,6 +118,8 @@ def classify_error(text: str) -> str:
                             "members-only", "this live event will begin")):
         return "unavailable"
     if any(k in t for k in ("failed to extract any player response", "unable to extract",
+                            # 1.7.2: what one player client is told while another is given the song
+                            "this video is not available", "the page needs to be reloaded",
                             "requested format is not available", "no video formats",
                             "sign in to confirm", "403: forbidden", "unable to download video data",
                             "fragment 1 not found")):

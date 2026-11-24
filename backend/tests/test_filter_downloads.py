@@ -113,3 +113,42 @@ def test_the_projects_own_file_is_valid():
 
     doc = json.loads((Path(__file__).resolve().parents[2] / "engine.json").read_text(encoding="utf-8"))
     assert len(engine_cfg.clean_profiles(doc["profiles"])) == len(doc["profiles"])
+
+
+NOT_AVAILABLE = RunResult(1, err="ERROR: [youtube] m9EKlWFPQRQ: This video is not available")
+OK_JSON = RunResult(0, out='{"id": "m9EKlWFPQRQ", "title": "מעוז צור", "channel": "Some Singer"}')
+
+
+def test_this_video_is_not_available_tries_another_client():
+    from hamenagen.ytdlp_runner import classify_error
+
+    assert classify_error(NOT_AVAILABLE.err) == "extract"
+    runner = _FakeRunner(run_results=[NOT_AVAILABLE, OK_JSON])
+    out = YouTubeSource(runner).link_info("https://www.youtube.com/watch?v=m9EKlWFPQRQ")
+    assert out.ok and out.kind == "video" and out.results[0].id == "m9EKlWFPQRQ"
+    assert len(runner.clients) == 2 and runner.remembered == runner.clients[1]
+
+
+def test_when_every_client_refuses_youtubes_oembed_still_offers_the_song(monkeypatch):
+    def get(url, **kw):
+        assert url.startswith("https://www.youtube.com/oembed?format=json&url=")
+        return json.dumps({"title": "שירי חנוכה - מעוז צור", "author_name": "Some Singer",
+                           "author_url": "https://www.youtube.com/@some"}).encode()
+
+    monkeypatch.setattr("hamenagen.network.get_bytes", get)
+    runner = _FakeRunner(run_results=[NOT_AVAILABLE] * 4)
+    out = YouTubeSource(runner).link_info("https://www.youtube.com/watch?v=m9EKlWFPQRQ")
+    assert out.ok and out.results[0].title == "שירי חנוכה - מעוז צור" and out.results[0].channel == "Some Singer"
+    assert out.results[0].url == "https://www.youtube.com/watch?v=m9EKlWFPQRQ"
+    # oEmbed does not answer either: the failure, in Hebrew.
+    monkeypatch.setattr("hamenagen.network.get_bytes", lambda url, **kw: None)
+    out = YouTubeSource(_FakeRunner(run_results=[NOT_AVAILABLE] * 4)).link_info(
+        "https://www.youtube.com/watch?v=m9EKlWFPQRQ")
+    assert not out.ok and out.code == "extract" and "יוטיוב" in out.message
+
+
+def test_a_removed_video_is_not_offered(monkeypatch):
+    monkeypatch.setattr("hamenagen.network.get_bytes", lambda url, **kw: b'{"title": "x"}')
+    gone = RunResult(1, err="ERROR: [youtube] x: Video unavailable. This video has been removed by the uploader")
+    out = YouTubeSource(_FakeRunner(run_results=[gone])).link_info("https://www.youtube.com/watch?v=m9EKlWFPQRQ")
+    assert not out.ok and out.code == "unavailable"
