@@ -1120,6 +1120,122 @@ class PlayerService:
         return {"ok": True, "message": outcome.message, "track": self._tracks_payload([track])[0],
                 "path": outcome.path, "code": "", "blocked": False}
 
+    # -- a singer's songs, and new songs from followed singers (1.7) ----------------
+    def _library_matcher(self):
+        from . import singers_online
+
+        return singers_online.LibraryMatcher(self.index.video_ids(), self.index.all_tracks(), self.artist_name)
+
+    def singer_songs(self, name: str, limit: int = 300) -> dict:
+        """Every song a singer's own channel uploaded, to pick from."""
+        from . import singers_online
+
+        name = " ".join((name or "").split())
+        if not name:
+            return {"ok": False, "message": "צריך לכתוב שם של זמר."}
+        channel = None
+        last = None
+        for query in (name, f"{name} official"):
+            last = self.fetcher.search(query, limit=10)
+            if last.blocked or last.code in ("netfree", "network", "not_installed"):
+                break
+            channel = singers_online.main_channel(last.results)
+            if channel:
+                break
+        if channel is None:
+            if last is not None and (last.blocked or last.code):
+                return {"ok": False, "code": last.code, "blocked": last.blocked, "message": last.message}
+            return {"ok": False, "code": "no_channel",
+                    "message": f"לא מצאתי ערוץ של „{name}” ביוטיוב. אפשר להדביק קישור לערוץ שלו."}
+        info = self.fetcher.link_info(f"https://www.youtube.com/channel/{channel.id}/videos", limit=limit)
+        if not info.ok:
+            return {"ok": False, "code": info.code, "blocked": info.blocked, "message": info.message}
+        have = self._library_matcher()
+        followed = any(f["channel_id"] == channel.id for f in self.settings.followed_singers)
+        return {"ok": True, "kind": "list", "title": f"השירים של {channel.name or name}", "artist": channel.name,
+                "channel": {"id": channel.id, "name": channel.name or name, "url": channel.url},
+                "followed": followed, "results": [dict(r.__dict__, in_library=have.has(r)) for r in info.results]}
+
+    def follow_singer(self, name: str, channel_id: str, on: bool = True) -> dict:
+        from . import singers_online
+
+        if not singers_online.valid_channel_id(channel_id):
+            return {"ok": False, "message": "ערוץ לא תקין"}
+        follows = [f for f in self.settings.followed_singers if f["channel_id"] != channel_id]
+        if on:
+            follows.append({"name": name, "channel_id": channel_id})
+            state = self._follow_state()
+            # What the channel has now is not "new": only what comes after.
+            seen, _ = self._channel_uploads(channel_id)
+            state[channel_id] = {"seen": [r.id for r in seen], "checked_at": time.time(), "new": []}
+            self._save_follow_state(state)
+        self.update_settings({"followed_singers": follows})
+        return {"ok": True, "followed": on, "singers": self.settings.followed_singers}
+
+    def _follow_state(self) -> dict:
+        try:
+            return json.loads((self.data_dir / "follows.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def _save_follow_state(self, state: dict) -> None:
+        tmp = self.data_dir / "follows.json.part"
+        tmp.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(self.data_dir / "follows.json")
+
+    def _channel_uploads(self, channel_id: str) -> tuple[list[SearchResult], bool]:
+        """The channel's latest uploads: its feed, or (a filter blocks the
+        feed) its page through yt-dlp. (results, read at all)."""
+        from . import singers_online
+        from .network import get_bytes
+
+        data = None if os.environ.get("HAMENAGEN_DEMO_ONLINE") else \
+            get_bytes(singers_online.FEED_URL.format(id=channel_id), timeout=10, limit=2_000_000)
+        found = singers_online.parse_feed(data) if data else []
+        if found:
+            return found, True
+        info = self.fetcher.link_info(f"https://www.youtube.com/channel/{channel_id}/videos", limit=15)
+        return (info.results, True) if info.ok else ([], False)
+
+    def followed_new(self, force: bool = False) -> dict:
+        """New songs from the singers the listener follows, newest first."""
+        from . import singers_online
+
+        state = self._follow_state()
+        have = self._library_matcher()
+        now = time.time()
+        out = []
+        for f in self.settings.followed_singers:
+            cid = f["channel_id"]
+            st = state.setdefault(cid, {"seen": [], "checked_at": 0, "new": []})
+            if force or now - st.get("checked_at", 0) > singers_online.CHECK_HOURS * 3600:
+                uploads, read = self._channel_uploads(cid)
+                if read:
+                    seen = set(st.get("seen") or [])
+                    known = {n["id"] for n in st.get("new") or []}
+                    for r in uploads:
+                        if r.id not in seen and r.id not in known:
+                            st.setdefault("new", []).append(dict(r.__dict__, singer=f["name"]))
+                    st["checked_at"] = now
+            for item in st.get("new") or []:
+                r = SearchResult(**{k: v for k, v in item.items() if k in SearchResult.__dataclass_fields__})
+                if not have.has(r):
+                    out.append(dict(item, in_library=False))
+        self._save_follow_state(state)
+        out.sort(key=lambda r: r.get("upload_date") or "", reverse=True)
+        return {"ok": True, "singers": self.settings.followed_singers, "new": out[:60]}
+
+    def dismiss_new(self, video_id: str) -> dict:
+        """A new song the listener does not want offered again."""
+        state = self._follow_state()
+        for st in state.values():
+            new = st.get("new") or []
+            if any(n.get("id") == video_id for n in new):
+                st["new"] = [n for n in new if n.get("id") != video_id]
+                st.setdefault("seen", []).append(video_id)
+        self._save_follow_state(state)
+        return {"ok": True}
+
     # -- a report to send when something does not work (1.7) --------------------
     def _note_failure(self, result: SearchResult, outcome, stages: dict[str, float]) -> None:
         start = stages.get("start", time.monotonic())

@@ -656,6 +656,23 @@ async function run() {
       await page.evaluate(() => H.go('downloads'));
       await page.waitForTimeout(300);
       await shot(page, `09-downloads${suffix}`);
+
+      // 1.7: a singer's name lists all the singer's songs to pick from; following them.
+      await page.fill('.singer-form .input', 'אלי הרצליך');
+      await page.click('.singer-form button[type="submit"]');
+      await page.waitForSelector('.singer-result .picker .pick', { timeout: 15000 })
+        .catch(() => errors.push("a singer's songs were not listed"));
+      await page.evaluate(() => document.querySelector('.singer-section').scrollIntoView({ block: 'start' }));
+      await shot(page, `44-downloads-singer${suffix}`);
+      await page.locator('.singer-result .picker-tools button[aria-pressed]').click();
+      await page.waitForSelector('.singer-result .picker-tools button[aria-pressed="true"]', { timeout: 10000 })
+        .catch(() => errors.push('following a singer did not stick'));
+      await page.waitForSelector('.new-songs:not([hidden]) .follow-chip', { timeout: 10000 })
+        .catch(() => errors.push('a followed singer is not listed'));
+      await page.evaluate(async () => {
+        const r = await H.api.followedNew(false);
+        for (const s of r.singers) await H.api.followSinger(s.name, s.channel_id, false);
+      });
     } catch (err) {
       errors.push(`${theme}: ${err.message}`);
       await shot(page, `error${suffix}`).catch(() => {});

@@ -229,7 +229,7 @@
   }
 
   /** Songs of a playlist or a channel, to tick and download together. */
-  function listPicker(info, holder) {
+  function listPicker(info, holder, opts = {}) {
     const items = info.results;
     const chosen = new Set(items.filter((it) => !it.in_library && !(it.duration && (it.duration > LONG || it.duration < SHORT))).map((it) => it.id));
     const count = h('span', { class: 'muted num' });
@@ -267,11 +267,14 @@
         h('div', {}, h('div', { class: 'picker-title' }, info.title || info.artist || 'רשימה'),
           h('div', { class: 'muted' }, count)),
         h('div', { class: 'picker-tools' },
+          opts.extra || null,
           h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => all(true) }, icon('list-checks', 'icon-sm'), 'לבחור הכל'),
           h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => all(false) }, 'לנקות'))),
       h('div', { class: 'picker-list' }, rows),
       h('div', { class: 'picker-foot' }, go));
   }
+
+  H.songPicker = listPicker;
 
   /** Read a pasted link and show what it is: a song, or a list to pick from. */
   async function openLink(url, holder) {
