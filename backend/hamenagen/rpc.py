@@ -39,7 +39,7 @@ _SLOW = {
     "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
     "online_set", "listen_prepare", "station", "voice_recognize", "voice_prepare", "write_tags",
     "export_drives", "export_plan", "make_ringtone", "import_singers", "ringtone_info",
-    "playlist_import", "playlist_export", "singer_songs", "follow_singer", "followed_new", "name_suggestions", "apply_name_fixes", "undo_name_fixes",
+    "playlist_import", "playlist_export", "singer_songs", "singer_from_links", "follow_singer", "followed_new", "name_suggestions", "apply_name_fixes", "undo_name_fixes",
 }
 
 
@@ -216,7 +216,14 @@ class RpcServer:
         return self.service.undo_name_fixes()
 
     def rpc_singer_songs(self, params):
-        out = self.service.singer_songs(params.get("name", ""), int(params.get("limit") or 300))
+        out = self.service.singer_songs(params.get("name", ""), int(params.get("limit") or 300),
+                                        web=bool(params.get("web", True)))
+        if out.get("ok"):
+            out["results"] = [_shown(_result_from(r), in_library=r.get("in_library", False)) for r in out["results"]]
+        return out
+
+    def rpc_singer_from_links(self, params):
+        out = self.service.singer_from_links(params.get("name", ""), params.get("links") or [])
         if out.get("ok"):
             out["results"] = [_shown(_result_from(r), in_library=r.get("in_library", False)) for r in out["results"]]
         return out

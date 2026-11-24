@@ -64,7 +64,8 @@ contextBridge.exposeInMainWorld('hamenagen', {
   setFavorite: (id, on) => core('set_favorite', { id, on }),
   recordPlay: (id) => core('record_play', { id }),
   lyrics: (id) => core('track_lyrics', { id }),
-  singerSongs: (name, limit) => core('singer_songs', { name, limit }),
+  singerFromLinks: (name, links) => core('singer_from_links', { name, links }),
+  singerSongs: (name, limit, web) => core('singer_songs', { name, limit, web: web !== false }),
   followSinger: (name, channel_id, on) => core('follow_singer', { name, channel_id, on }),
   followedNew: (force) => core('followed_new', { force }),
   dismissNew: (id) => core('dismiss_new', { id }),
@@ -138,6 +139,7 @@ contextBridge.exposeInMainWorld('hamenagen', {
   // Google inside the window (electron/main.js): open it over the given
   // rectangle of the page, follow the rectangle, hide it, move in its history.
   searchOpen: (query, rect, source) => ipcRenderer.invoke('search:open', query, rect, source),
+  webLinks: (query) => ipcRenderer.invoke('search:links', query),
   searchPlace: (rect) => ipcRenderer.invoke('search:place', rect),
   searchHide: () => ipcRenderer.invoke('search:hide'),
   searchNav: (action) => ipcRenderer.invoke('search:nav', action),

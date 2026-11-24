@@ -154,7 +154,15 @@
     singerGo.disabled = true;
     singerHolder.replaceChildren(h('p', { class: 'muted' }, icon('loader-circle', 'icon-sm spin'), `מחפש את הערוץ של ${name} ביוטיוב…`));
     try {
-      const info = await api.singerSongs(name, 300);
+      // The core asks YouTube; when its search is blocked (NetFree) or finds no channel, the player's own
+      // browser engine searches Google, as the listener would, and the core reads the results' links.
+      let info = await api.singerSongs(name, 300, false);
+      if (!info.ok && info.code !== 'not_installed' && info.code !== 'network') {
+        singerHolder.replaceChildren(h('p', { class: 'muted' }, icon('loader-circle', 'icon-sm spin'),
+          `היוטיוב חסום לחיפוש מכאן — מחפש את ${name} בגוגל, דרך הדפדפן של המנגן…`));
+        const page = await api.webLinks(`${name} יוטיוב`).catch(() => null);
+        if (page && page.ok) info = await api.singerFromLinks(name, page.links);
+      }
       if (!info.ok) {
         singerHolder.replaceChildren(h('p', { class: 'online-error' }, icon('circle-alert', 'icon-sm'),
           info.message || (info.blocked ? 'החיפוש ביוטיוב חסום ברשת שלך (נטפרי או סינון דומה).' : 'לא נמצא')));
@@ -169,7 +177,7 @@
       const extra = info.channel.id ? followButton(info.channel, info.followed) : null;
       singerHolder.replaceChildren(
         info.web_list
-          ? h('p', { class: 'muted' }, icon('search', 'icon-sm'), 'החיפוש ביוטיוב ודף הערוץ חסומים ברשת שלך, אז אלה השירים של הזמר כפי שמנוע חיפוש מציג אותם. כל שיר שהסינון מתיר יורד.')
+          ? h('p', { class: 'muted' }, icon('search', 'icon-sm'), 'החיפוש ביוטיוב ודף הערוץ חסומים ברשת שלך, אז אלה השירים של הזמר כפי שגוגל מציג אותם. כל שיר שהסינון מתיר יורד.')
           : info.via_web ? h('p', { class: 'muted' }, icon('search', 'icon-sm'), 'החיפוש ביוטיוב חסום ברשת שלך, אז הערוץ נמצא דרך מנוע חיפוש.') : '',
         H.songPicker(info, singerHolder, { extra }));
     } catch (err) {

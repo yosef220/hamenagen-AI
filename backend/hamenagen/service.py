@@ -1135,8 +1135,10 @@ class PlayerService:
 
         return singers_online.LibraryMatcher(self.index.video_ids(), self.index.all_tracks(), self.artist_name)
 
-    def singer_songs(self, name: str, limit: int = 300) -> dict:
-        """Every song a singer's own channel uploaded, to pick from."""
+    def singer_songs(self, name: str, limit: int = 300, web: bool = True) -> dict:
+        """Every song a singer's own channel uploaded, to pick from. ``web``:
+        also look through a search engine from the core when YouTube's search
+        fails (the window looks with its browser engine instead, 1.7.3)."""
         from . import singers_online
 
         name = " ".join((name or "").split())
@@ -1158,7 +1160,7 @@ class PlayerService:
             # 1.7: YouTube's search is blocked (NetFree) or found no channel: find the
             # singer's channel through a search engine, as the songs' search does.
             info = None
-            links = self._web_channels(name)
+            links = self._web_channels(name) if web else []
             _log(f"singer {name!r}: youtube search {last.code if last else '-'}; channels by search engine: {links}")
             for url in links:
                 got = self.fetcher.link_info(url, limit=limit)
@@ -1172,7 +1174,7 @@ class PlayerService:
             if info is None:
                 # 1.7.2: no channel page opens (a filter may block channel pages): the
                 # singer's songs as a search engine lists them, each to download on its own.
-                songs = self._web_singer_songs(name)
+                songs = self._web_singer_songs(name) if web else []
                 _log(f"singer {name!r}: songs by search engine: {len(songs)}")
                 if songs:
                     have = self._library_matcher()
@@ -1193,6 +1195,52 @@ class PlayerService:
                 "channel": {"id": channel.id, "name": channel.name or name, "url": channel.url},
                 "followed": followed, "via_web": via_web,
                 "results": [dict(r.__dict__, in_library=have.has(r)) for r in info.results]}
+
+    def singer_from_links(self, name: str, links: list, limit: int = 300) -> dict:
+        """A singer's songs from the links of a search engine's results page,
+        read by the window's browser engine (1.7.3): the singer's channel when
+        one opens, else the songs those links point to."""
+        from . import singers_online, websearch
+        from .fetcher import thumbnail_url
+
+        name = " ".join((name or "").split())
+        pairs = [(str(h), str(t)) for h, t in (links or [])[:300]
+                 if isinstance(h, str) and isinstance(t, str)] if isinstance(links, list) else []
+        text = "\n".join(h for h, _ in pairs)
+        channels = websearch.extract_channels(text, 5)
+        _log(f"singer {name!r}: {len(pairs)} links from the window; channels {channels}")
+        for url in channels:
+            got = self.fetcher.link_info(url, limit=limit)
+            _log(f"singer {name!r}: {url} -> {'ok' if got.ok else got.code} ({len(got.results)} songs)")
+            if got.ok and got.results:
+                first = got.results[0]
+                channel = singers_online.Channel(first.channel_id, got.artist or got.title or name, first.channel_url or url)
+                have = self._library_matcher()
+                followed = any(f["channel_id"] == channel.id for f in self.settings.followed_singers)
+                return {"ok": True, "kind": "list", "title": f"השירים של {channel.name or name}", "artist": channel.name,
+                        "channel": {"id": channel.id, "name": channel.name or name, "url": channel.url},
+                        "followed": followed, "via_web": True,
+                        "results": [dict(r.__dict__, in_library=have.has(r)) for r in got.results]}
+        songs: dict[str, SearchResult] = {}
+        for href, title in pairs:
+            m = websearch._VIDEO.search(href.replace("%3D", "=").replace("%3F", "?").replace("%2F", "/"))
+            if not m or m.group(1) in songs:
+                continue
+            vid = m.group(1)
+            line = next((ln.strip() for ln in title.splitlines() if ln.strip() and "youtube" not in ln.lower()), "")
+            songs[vid] = SearchResult("youtube", vid, line or "סרטון מיוטיוב", f"https://www.youtube.com/watch?v={vid}",
+                                      thumbnail=thumbnail_url(vid, "mqdefault"))
+        _log(f"singer {name!r}: {len(songs)} songs from the window's links")
+        if not songs:
+            return {"ok": False, "code": "no_channel",
+                    "message": f"גם בחיפוש דרך הדפדפן של המנגן לא נמצאו שירים של „{name}”. "
+                               "אפשר לצור „דוח אבחון” בהגדרות ← אודות ולשלוח אותו."}
+        words = [w for w in normalize(name).split() if len(w) > 1]
+        ordered = sorted(songs.values(), key=lambda r: not all(w in normalize(r.title) for w in words))
+        have = self._library_matcher()
+        return {"ok": True, "kind": "list", "title": f"שירים של {name} (לפי חיפוש בגוגל)", "artist": name,
+                "channel": {"id": "", "name": name, "url": ""}, "followed": False, "via_web": True, "web_list": True,
+                "results": [dict(r.__dict__, in_library=have.has(r)) for r in ordered[:limit]]}
 
     def _web_singer_songs(self, name: str, limit: int = 60) -> list[SearchResult]:
         """A singer's songs from a search engine (YouTube links in its results),

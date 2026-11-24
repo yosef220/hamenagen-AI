@@ -284,7 +284,11 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => mainWindow.show());
   for (const evt of ['resize', 'move', 'maximize', 'unmaximize']) mainWindow.on(evt, debounce(saveBounds, 500));
   mainWindow.on('close', saveBounds);
-  mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    // 1.7.3: the hidden search window must not keep the app running.
+    if (linksWindow && !linksWindow.isDestroyed()) linksWindow.destroy();
+  });
   watchFront();
 
   // Links never navigate the app window; web pages open in the browser.
@@ -331,6 +335,7 @@ const BACKEND_METHODS = new Set([
   'voice_status', 'voice_prepare', 'voice_recognize', 'install_voice_async',
   'write_tags', 'write_all_tags_async', 'export_drives', 'export_plan', 'export_run_async', 'export_stop',
   'ringtone_info', 'make_ringtone', 'import_singers', 'clear_singers', 'singers_status',
+  'singer_from_links',
   'singer_songs', 'follow_singer', 'followed_new', 'dismiss_new',
   'diagnostics_report',
   'set_mood_mark',
@@ -769,6 +774,60 @@ function placeSearch(rect) {
     width: Math.max(0, Math.round(rect.width * z)), height: Math.max(0, Math.round(rect.height * z)),
   });
 }
+
+// --- 1.7.3: a search engine's links, read by the browser engine -------------------------------------------
+// Behind NetFree a search from the core (a program, not a browser) gets nothing useful from Google or Bing,
+// while the same search in a browser works. So the singer's channel and songs are looked for in a hidden
+// window of the player's own browser engine, with the search window's session (its cookies and consent),
+// as a browser: the links of the results page are read and handed to the core. Nothing is shown or played.
+let linksWindow = null;
+function ensureLinksWindow() {
+  if (linksWindow && !linksWindow.isDestroyed()) return linksWindow;
+  const ses = session.fromPartition('persist:websearch');
+  ses.setUserAgent(browserUserAgent(ses.getUserAgent()), 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7');
+  linksWindow = new BrowserWindow({
+    show: false, width: 1200, height: 900,
+    webPreferences: { session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false,
+      backgroundThrottling: false },
+  });
+  linksWindow.webContents.setAudioMuted(true);
+  linksWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  linksWindow.webContents.session.on('will-download', (e) => e.preventDefault());
+  return linksWindow;
+}
+
+const LINK_ENGINES = SEARCH_BASE ? [(q) => `${SEARCH_BASE}?q=${encodeURIComponent(q)}`] : [
+  (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}&num=20`,
+  (q) => `https://www.bing.com/search?q=${encodeURIComponent(q)}&count=20`,
+  (q) => `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
+];
+
+async function pageLinks(win, url) {
+  const wc = win.webContents;
+  await Promise.race([
+    wc.loadURL(url).catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 20000)),
+  ]);
+  await new Promise((resolve) => setTimeout(resolve, 700));   // results drawn by the page's scripts
+  return wc.executeJavaScript(`Array.from(document.querySelectorAll('a[href]')).slice(0, 600)
+    .map((a) => [a.href, (a.innerText || a.textContent || '').trim().slice(0, 300)])`, true);
+}
+
+ipcMain.handle('search:links', async (_evt, query) => {
+  if (typeof query !== 'string' || !query.trim() || query.length > 200) return { ok: false, links: [] };
+  const win = ensureLinksWindow();
+  for (const engine of LINK_ENGINES) {
+    try {
+      const links = (await pageLinks(win, engine(query.trim()))) || [];
+      const youtube = links.filter(([href]) => /youtube\.com|youtu\.be/i.test(String(href)));
+      searchLog(`links for "${query}" from ${new URL(engine('x')).hostname}: ${links.length} links, ${youtube.length} to YouTube`);
+      if (youtube.length) return { ok: true, links: youtube.slice(0, 200) };
+    } catch (err) {
+      searchLog(`links for "${query}": ${err.message}`);
+    }
+  }
+  return { ok: false, links: [] };
+});
 
 ipcMain.handle('search:open', async (_evt, query, rect, source) => {
   if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
