@@ -1156,6 +1156,30 @@ class PlayerService:
                 "channel": {"id": channel.id, "name": channel.name or name, "url": channel.url},
                 "followed": followed, "results": [dict(r.__dict__, in_library=have.has(r)) for r in info.results]}
 
+    def spotify_link(self, url: str) -> dict:
+        """A Spotify playlist, album or song as songs to pick and download
+        (spotify.py): each one is found on YouTube by its singer and name."""
+        from . import spotify
+        from .network import get_bytes
+
+        found = spotify.parse_link(url)
+        if found is None:
+            return {"ok": False, "code": "bad_link", "message": "זה לא קישור של ספוטיפיי."}
+        kind, sid = found
+        data = get_bytes(spotify.EMBED_URL.format(kind=kind, id=sid), timeout=15, limit=5_000_000)
+        if not data:
+            return {"ok": False, "code": "network", "message": "לא הצלחתי לקרוא את הקישור מספוטיפיי. אולי אין חיבור, או שהאתר חסום ברשת."}
+        name, songs = spotify.parse_embed(data.decode("utf-8", errors="replace"))
+        if not songs:
+            return {"ok": False, "code": "empty", "message": "בקישור הזה לא נמצאו שירים."}
+        have = self._library_matcher()
+        results = []
+        for song in songs[:300]:
+            r = spotify.as_result(song)
+            results.append(dict(r.__dict__, in_library=have.has(r)))
+        return {"ok": True, "kind": "video" if kind == "track" and len(results) == 1 else "list", "spotify": True,
+                "title": f"מספוטיפיי: {name}" if name else "מספוטיפיי", "artist": "", "results": results}
+
     def follow_singer(self, name: str, channel_id: str, on: bool = True) -> dict:
         from . import singers_online
 

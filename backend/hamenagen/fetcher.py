@@ -54,6 +54,12 @@ class SearchResult:
     channel_id: str = ""
     channel_url: str = ""
     thumbnail: str = ""
+    date_approx: bool = False       # 1.7: the date comes from "2 years ago" on a list page
+
+
+# 1.7: dates for the songs of a channel or a search page too ("3 months ago"
+# turned into a date), so a list can show when each song came out.
+_DATES = ["--extractor-args", "youtubetab:approximate_date"]
 
 
 @dataclass
@@ -283,6 +289,16 @@ _SQUARE_COVER = ("ThumbnailsConvertor+ffmpeg_o:-c:v mjpeg -vf "
                  "crop=\"'if(gt(ih,iw),iw,ih)':'if(gt(iw,ih),ih,iw)'\"")
 
 
+def _day(timestamp) -> str | None:
+    """YYYYMMDD of a Unix time (UTC), or None."""
+    from datetime import datetime, timezone
+
+    try:
+        return datetime.fromtimestamp(float(timestamp), tz=timezone.utc).strftime("%Y%m%d") if timestamp else None
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
 def _entry_result(e: dict, source: str = "youtube") -> SearchResult | None:
     vid = e.get("id") or ""
     if not re.fullmatch(_VIDEO_ID, vid):
@@ -291,7 +307,8 @@ def _entry_result(e: dict, source: str = "youtube") -> SearchResult | None:
         source=source, id=vid, title=e.get("title") or vid,
         url=f"https://www.youtube.com/watch?v={vid}",
         uploader=e.get("uploader") or e.get("channel") or "",
-        duration=e.get("duration"), upload_date=e.get("upload_date"),
+        duration=e.get("duration"), upload_date=e.get("upload_date") or _day(e.get("timestamp")),
+        date_approx=not e.get("upload_date") and bool(e.get("timestamp")),
         channel=e.get("channel") or e.get("uploader") or "",
         channel_id=e.get("channel_id") or "", channel_url=e.get("channel_url") or "",
         thumbnail=thumbnail_url(vid, "mqdefault"),
@@ -341,7 +358,7 @@ class YouTubeSource:
         # every word literally and found nothing for "שבוע טוב יותר מוטיבייס".
         # ``ytsearch`` stays as the second try (a block on one does not always
         # block the other).
-        attempts = [[self.search_url(query), "--flat-playlist", "--dump-json", "--playlist-end", str(limit * 2)],
+        attempts = [[self.search_url(query), "--flat-playlist", "--dump-json", "--playlist-end", str(limit * 2), *_DATES],
                     [f"ytsearch{limit}:{query}", "--flat-playlist", "--dump-json"]]
         for client in self.runner.client_order()[:2]:
             for args in attempts:
@@ -391,7 +408,7 @@ class YouTubeSource:
                 return self._failed(res.code or "other", res.err)
             artist, title = clean_video_title(item.title, item.channel)
             return FetchOutcome(True, "", result=item, results=[item], kind="video", title=title, artist=artist)
-        res = self.runner.run([url, "--flat-playlist", "--dump-single-json", "--playlist-end", str(int(limit))],
+        res = self.runner.run([url, "--flat-playlist", "--dump-single-json", "--playlist-end", str(int(limit)), *_DATES],
                               timeout=90)
         data = next(iter(self.runner.json_lines(res)), None)
         if not data:

@@ -57,7 +57,7 @@ def _result_from(r: dict) -> SearchResult:
         source=r.get("source", "youtube"), id=r.get("id", ""), title=r.get("title", ""), url=r.get("url", ""),
         uploader=r.get("uploader", ""), duration=r.get("duration"), upload_date=r.get("upload_date"),
         channel=r.get("channel", ""), channel_id=r.get("channel_id", ""), channel_url=r.get("channel_url", ""),
-        thumbnail=r.get("thumbnail", ""),
+        thumbnail=r.get("thumbnail", ""), date_approx=bool(r.get("date_approx")),
     )
 
 
@@ -539,6 +539,14 @@ class RpcServer:
 
     def rpc_online_link(self, params):
         """What a pasted link is (a song, a playlist, a channel) and its songs."""
+        from . import spotify
+
+        if spotify.parse_link(params.get("url", "")):  # 1.7: a Spotify link: its songs, found on YouTube
+            out = self.service.spotify_link(params.get("url", ""))
+            out.setdefault("blocked", False)
+            out.setdefault("code", "")
+            out["results"] = [_shown(_result_from(r), in_library=r.get("in_library", False)) for r in out.get("results", [])]
+            return out
         outcome = self.fetcher.link_info(params.get("url", ""), limit=int(params.get("limit", 300)))
         have = self.service.index.video_ids()
         return {

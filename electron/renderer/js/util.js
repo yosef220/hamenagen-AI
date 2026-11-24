@@ -119,6 +119,17 @@ H.ago = function ago(iso) {
   return then.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' });
 };
 
+/** 1.7: when a song from the web came out — "יצא ב-3 במרץ 2024", or about when ("בערך מרץ 2024")
+ * when YouTube's list said only "8 months ago". */
+H.songDate = (item) => {
+  const d = item && item.upload_date;
+  if (!d || !/^\d{8}$/.test(d)) return '';
+  const date = new Date(`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T12:00:00`);
+  return item.date_approx
+    ? `בערך ${date.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })}`
+    : `יצא ב-${date.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+};
+
 H.civilDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' });
 
 // ------------------------------------------------------- topics and covers

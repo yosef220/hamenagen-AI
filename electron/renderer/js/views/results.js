@@ -204,7 +204,7 @@
       item.thumbnail ? h('img', { class: 'o-thumb', src: item.thumbnail, alt: '', loading: 'lazy' }) : null,
       h('div', { class: 'o-main' },
         h('div', { class: 'o-title', title: item.title }, item.display || item.title || item.id),
-        h('div', { class: 'o-sub' }, [item.channel || item.uploader, item.duration ? H.clock(item.duration) : ''].filter(Boolean).join(' · '))),
+        h('div', { class: 'o-sub' }, [item.channel || item.uploader, H.songDate(item), item.duration ? H.clock(item.duration) : ''].filter(Boolean).join(' · '))),
       h('div', { class: 'o-actions' },
         h('button', { class: `btn ${primary ? 'btn-primary' : 'btn-outline'} btn-sm`, type: 'button', onclick: () => H.download(item) },
           icon('download', 'icon-sm'), 'הורדה לספרייה'),
@@ -243,7 +243,7 @@
       const box = h('input', { type: 'checkbox', checked: chosen.has(it.id) ? '' : null, 'aria-label': it.title });
       box.checked = chosen.has(it.id);
       box.addEventListener('change', () => { if (box.checked) chosen.add(it.id); else chosen.delete(it.id); refresh(); });
-      const notes = [it.duration ? H.clock(it.duration) : '', it.in_library ? 'כבר בספרייה' : '',
+      const notes = [H.songDate(it), it.duration ? H.clock(it.duration) : '', it.in_library ? 'כבר בספרייה' : '',
         it.duration > LONG ? 'ארוך — כנראה הופעה' : it.duration && it.duration < SHORT ? 'קצר מאוד' : ''].filter(Boolean).join(' · ');
       return h('label', { class: `pick${it.in_library ? ' have' : ''}` }, box,
         h('span', { class: 'pick-title', title: it.title }, it.display || it.title || it.id), h('span', { class: 'pick-sub num' }, notes));
@@ -329,7 +329,7 @@
     };
     window.addEventListener('focus', onFocus);
     return h('div', { class: `paste${prominent ? ' prominent' : ''}` },
-      h('label', { class: 'paste-label' }, icon('link', 'icon-sm'), 'יש קישור? מדביקים כאן קישור לשיר, לפלייליסט או לערוץ ביוטיוב:'),
+      h('label', { class: 'paste-label' }, icon('link', 'icon-sm'), 'יש קישור? מדביקים כאן קישור לשיר, לפלייליסט או לערוץ ביוטיוב, או לפלייליסט, לאלבום או לשיר בספוטיפיי:'),
       h('div', { class: 'paste-row' }, input, paste, go));
   }
 

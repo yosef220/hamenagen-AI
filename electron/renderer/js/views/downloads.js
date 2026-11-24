@@ -218,7 +218,7 @@
       item.thumbnail ? h('img', { class: 'o-thumb', src: item.thumbnail, alt: '', loading: 'lazy' }) : null,
       h('div', { class: 'o-main' },
         h('div', { class: 'o-title', title: item.title }, item.display || item.title),
-        h('div', { class: 'o-sub' }, [item.singer, item.upload_date ? H.civilDate(`${item.upload_date.slice(0, 4)}-${item.upload_date.slice(4, 6)}-${item.upload_date.slice(6, 8)}`) : ''].filter(Boolean).join(' · '))),
+        h('div', { class: 'o-sub' }, [item.singer, H.songDate(item)].filter(Boolean).join(' · '))),
       h('div', { class: 'o-actions' },
         h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: () => H.download(item) }, icon('download', 'icon-sm'), 'הורדה לספרייה'),
         h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => H.player.playList([H.listenTrack(item)], 0) }, icon('play', 'icon-sm'), 'להשמיע בלי לשמור'),

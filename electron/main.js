@@ -822,7 +822,8 @@ ipcMain.handle('search:nav', (_evt, action) => {
 // searching from the app). Only such a link is handed to the window.
 ipcMain.handle('app:clipboardLink', () => {
   const text = (clipboard.readText() || '').trim();
-  const m = text.match(/https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be)\/[^\s<>"']+/i);
+  const m = text.match(/https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be)\/[^\s<>"']+/i)
+    || text.match(/https?:\/\/open\.spotify\.com\/[^\s<>"']+/i);   // 1.7: Spotify links too
   return m ? m[0] : '';
 });
 
