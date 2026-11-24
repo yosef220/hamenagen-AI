@@ -673,6 +673,11 @@ async function run() {
         const r = await H.api.followedNew(false);
         for (const s of r.singers) await H.api.followSinger(s.name, s.channel_id, false);
       });
+      // 1.7.3: a search engine's page read by the browser engine (the harness's own "Google").
+      const links = await page.evaluate(() => H.api.webLinks('אלי הרצליך יוטיוב'));
+      if (!links || !links.ok || !links.links.some(([href]) => /youtube\.com/.test(href))) {
+        errors.push(`the browser engine read no YouTube link: ${JSON.stringify(links)}`);
+      }
     } catch (err) {
       errors.push(`${theme}: ${err.message}`);
       await shot(page, `error${suffix}`).catch(() => {});

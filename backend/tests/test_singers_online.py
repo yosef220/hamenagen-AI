@@ -156,3 +156,39 @@ def test_when_no_channel_page_opens_the_songs_come_from_a_search_engine(tmp_path
         assert [r["id"] for r in out["results"]] == ["aaaaaaaaaaa", "ddddddddddd", "zzzzzzzzzzz"]
     finally:
         service.close()
+
+
+def test_the_singer_from_the_links_the_window_read(tmp_path):
+    """1.7.3: the links of a Google page, read by the window's browser engine."""
+    service = PlayerService(data_dir=tmp_path / "data")
+    try:
+        service.fetcher = _BlockedSearch()
+        links = [["https://www.youtube.com/@avrahamfried", "Avraham Fried - YouTube"],
+                 ["https://www.google.com/preferences", "הגדרות"]]
+        out = service.singer_from_links("אברהם פריד", links)
+        assert out["ok"] and out["channel"]["name"] == "Avraham Fried" and not out.get("web_list")
+        assert service.fetcher.links == ["https://www.youtube.com/@avrahamfried"]
+        # No channel opens: the songs the page links to.
+        links = [["https://www.youtube.com/@wrong", "x"],
+                 ["https://www.youtube.com/watch?v=aaaaaaaaaaa", "אברהם פריד - אבינו מלכנו\nYouTube · Avraham Fried"],
+                 ["https://m.youtube.com/watch?v=bbbbbbbbbbb&t=3", "שיר אחר"],
+                 ["https://www.youtube.com/watch?v=aaaaaaaaaaa", "again"]]
+        out = service.singer_from_links("אברהם פריד", links)
+        assert out["ok"] and out["web_list"]
+        assert [(r["id"], r["title"]) for r in out["results"]] == [
+            ("aaaaaaaaaaa", "אברהם פריד - אבינו מלכנו"), ("bbbbbbbbbbb", "שיר אחר")]
+        assert not service.singer_from_links("אברהם פריד", [["https://example.com", "x"]])["ok"]
+        assert not service.singer_from_links("אברהם פריד", "not a list")["ok"]
+    finally:
+        service.close()
+
+
+def test_the_window_asks_the_core_not_to_search_the_web_itself(tmp_path, monkeypatch):
+    called = []
+    monkeypatch.setattr("hamenagen.websearch.find_channels", lambda name, **kw: called.append(name) or [])
+    service = PlayerService(data_dir=tmp_path / "data")
+    try:
+        service.fetcher = _BlockedSearch()
+        assert not service.singer_songs("אברהם פריד", web=False)["ok"] and called == []
+    finally:
+        service.close()

@@ -25,6 +25,7 @@
     'appUpdateDownload', 'appUpdateCancel', 'appUpdateResult', 'completeDetails', 'stopCompleteDetails',
     'shabbatStatus', 'playlists', 'playlistGet', 'playlistCreate', 'playlistRename', 'playlistDelete',
     'playlistAdd', 'playlistSetOrder', 'trackCopies', 'onlineSet', 'listenPrepare',
+    'singerFromLinks',
     'singerSongs', 'followSinger', 'followedNew', 'dismissNew',
     'diagnosticsReport',
     'setMoodMark',
@@ -34,7 +35,7 @@
   ];
   const SHELL = [
     'shellInfo', 'setTheme', 'openExternal', 'showInFolder', 'openFolder', 'chooseFolder', 'chooseFile', 'playerState',
-    'clipboardLink', 'searchOpen', 'searchPlace', 'searchHide', 'searchNav', 'applyAppUpdate', 'isFront',
+    'clipboardLink', 'webLinks', 'searchOpen', 'searchPlace', 'searchHide', 'searchNav', 'applyAppUpdate', 'isFront',
   ];
 
   const api = {};
