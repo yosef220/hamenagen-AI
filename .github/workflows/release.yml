@@ -266,6 +266,9 @@ jobs:
           # 1.7: yt-dlp sees the bundled QuickJS and the challenge scripts (yt-dlp-ejs).
           & "$res/python/python.exe" -c "import sys; sys.path.insert(0, r'$res/backend'); import yt_dlp_ejs; from hamenagen.ytdlp_runner import find_js_runtime; from yt_dlp.utils._jsruntime import QuickJsRuntime; rt = find_js_runtime(r'$res/js'); info = QuickJsRuntime(rt[1]).info if rt else None; print('js engine:', rt, info); assert rt and rt[0] == 'quickjs' and info and info.supported"
           if ($LASTEXITCODE -ne 0) { throw "yt-dlp does not find the bundled JavaScript engine" }
+          # 1.7: Windows lets the core opt out of "efficiency mode" in the background.
+          & "$res/python/python.exe" -c "import sys; sys.path.insert(0, r'$res/backend'); from hamenagen.winpower import no_throttling; assert no_throttling(), 'SetProcessInformation refused'; print('power throttling: off')"
+          if ($LASTEXITCODE -ne 0) { throw "the core cannot turn power throttling off" }
 
       - name: The search window in Edge's engine (WebView2) opens and catches a click on a YouTube result
         shell: pwsh

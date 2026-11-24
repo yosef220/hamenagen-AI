@@ -215,6 +215,9 @@ class RpcServer:
     def rpc_undo_name_fixes(self, params):
         return self.service.undo_name_fixes()
 
+    def rpc_diagnostics_report(self, params):
+        return self.service.diagnostics_report()
+
     def rpc_track_copies(self, params):
         return self.service.track_copies(params.get("id", ""))
 
@@ -600,6 +603,10 @@ def main() -> None:
     # Verify HTTPS with Windows' certificate store, where a filter that
     # inspects TLS (NetFree) keeps its root certificate.
     network.use_system_trust()
+    # 1.7: no "efficiency mode" while the window is in the background.
+    from .winpower import no_throttling
+
+    no_throttling()
     RpcServer().serve()
 
 

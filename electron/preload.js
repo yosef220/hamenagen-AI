@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('hamenagen', {
   setFavorite: (id, on) => core('set_favorite', { id, on }),
   recordPlay: (id) => core('record_play', { id }),
   lyrics: (id) => core('track_lyrics', { id }),
+  diagnosticsReport: () => core('diagnostics_report', {}),
   setMoodMark: (id, mood, value) => core('set_mood_mark', { id, mood, value }),
   nameSuggestions: () => core('name_suggestions', {}),
   applyNameFixes: (items) => core('apply_name_fixes', { items }),

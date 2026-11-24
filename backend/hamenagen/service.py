@@ -15,7 +15,7 @@ import random
 import sys
 import threading
 import time
-from collections import Counter
+from collections import Counter, deque
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -145,6 +145,7 @@ class PlayerService:
 
             self.fetcher = OnlineFetcher(DemoSource())
         self.download_stop = threading.Event()
+        self.recent_failures: deque = deque(maxlen=20)
         self.export_stop = threading.Event()
         self.downloading = False
         self.radio = RadioProvider(
@@ -1075,8 +1076,17 @@ class PlayerService:
         library, gets indexed + classified, and the caller (UI) auto-plays it
         unless the user opted out.
         """
-        outcome = self.fetcher.download(result, self.downloads_dir, on_progress=on_progress, cancel=cancel)
+        # 1.7: when each stage began, for the diagnostics report.
+        stages: dict[str, float] = {"start": time.monotonic()}
+
+        def progress(ev: dict) -> None:
+            stages.setdefault(ev.get("status") or "?", time.monotonic())
+            if on_progress:
+                on_progress(ev)
+
+        outcome = self.fetcher.download(result, self.downloads_dir, on_progress=progress, cancel=cancel)
         if not outcome.ok or not outcome.path:
+            self._note_failure(result, outcome, stages)
             return {"ok": False, "message": outcome.message, "track": None,
                     "code": getattr(outcome, "code", ""), "blocked": bool(getattr(outcome, "blocked", False))}
 
@@ -1109,6 +1119,58 @@ class PlayerService:
         self.index.mark_duplicates()
         return {"ok": True, "message": outcome.message, "track": self._tracks_payload([track])[0],
                 "path": outcome.path, "code": "", "blocked": False}
+
+    # -- a report to send when something does not work (1.7) --------------------
+    def _note_failure(self, result: SearchResult, outcome, stages: dict[str, float]) -> None:
+        start = stages.get("start", time.monotonic())
+        timeline = ", ".join(f"{k} {v - start:.1f}s" for k, v in stages.items() if k != "start")
+        self.recent_failures.append({
+            "at": datetime.now().isoformat(timespec="seconds"), "url": result.url, "title": result.title,
+            "code": getattr(outcome, "code", ""), "message": getattr(outcome, "message", ""),
+            "stages": f"{timeline}{', ' if timeline else ''}end {time.monotonic() - start:.1f}s",
+            "detail": getattr(outcome, "detail", ""),
+        })
+
+    def diagnostics_report(self) -> dict:
+        """One text file with what is needed to understand a problem — the
+        versions, the download engine, the last failures with when each stage
+        began, the settings and the end of the core's log — in data/logs, for
+        the listener to send. Nothing is sent by itself."""
+        from . import engine_cfg
+
+        runner = self.runner
+        js = runner.js_runtime
+        lines = [
+            "המנגן — דוח אבחון",
+            f"נוצר: {datetime.now().isoformat(timespec='seconds')}",
+            "",
+            "== גרסאות ==",
+            f"המנגן {__version__} ({self.edition}) · Python {platform.python_version()} · {platform.platform()}",
+            f"yt-dlp {runner.version() or '-'} · yt-dlp-ejs {runner.ejs_version() or '-'} · "
+            f"מנוע JS: {f'{js[0]} ({js[1]})' if js else 'אין'} · ffmpeg: {self.ffmpeg or 'אין'}",
+            f"סדר הניסיונות: {[p or 'default' for p in runner.client_order()]}",
+            f"מה שעבד לאחרונה: {engine_cfg.last_good(self.data_dir)}",
+            f"שירים בספרייה: {self.index.count()}",
+            "",
+            "== הורדות שנכשלו לאחרונה ==",
+        ]
+        for f in reversed(self.recent_failures):
+            lines += [f"[{f['at']}] {f['title']} — {f['url']}", f"  {f['code']}: {f['message']}",
+                      f"  שלבים: {f['stages']}"]
+            lines += [f"  | {ln}" for ln in (f["detail"] or "").splitlines()[-12:]]
+        if not self.recent_failures:
+            lines.append("(אין מאז שהמנגן נפתח)")
+        settings = {k: v for k, v in self.settings.to_dict().items() if k not in ("personal_dates",)}
+        lines += ["", "== הגדרות ==", json.dumps(settings, ensure_ascii=False, indent=1), "", "== סוף היומן =="]
+        log = self.data_dir / "logs" / "core.log"
+        try:
+            lines += log.read_text(encoding="utf-8", errors="replace").splitlines()[-300:]
+        except OSError:
+            lines.append("(אין יומן)")
+        out = self.data_dir / "logs" / f"diagnostics-{datetime.now():%Y%m%d-%H%M%S}.txt"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return {"ok": True, "path": str(out)}
 
     def download_many(self, items: list[SearchResult], on_event: Callable[[dict], None] | None = None) -> dict:
         """Download songs one after another (a channel, a playlist, a pick

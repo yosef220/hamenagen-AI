@@ -633,7 +633,17 @@
       h('h2', {}, 'אודות'),
       h('div', { class: 'set-row' }, h('div', { class: 'set-wide' }, kv)),
       row('תיקיית הנתונים', 'הספרייה, ההגדרות, השירים שאהבת וההיסטוריה. בגרסה הניידת — ליד התוכנה.',
-        h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => api.openFolder(shell.dataDir) }, icon('folder-open', 'icon-sm'), 'לפתוח')));
+        h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => api.openFolder(shell.dataDir) }, icon('folder-open', 'icon-sm'), 'לפתוח')),
+      // 1.7: one file with what is needed to understand a problem.
+      row('דוח אבחון', 'כשהורדה לא עובדת או משהו נתקע: קובץ אחד עם הגרסאות, מנוע ההורדה, ההורדות שנכשלו (עם הזמן של כל שלב), ההגדרות וסוף היומן — לשליחה למפתח. שום דבר לא נשלח לבד.',
+        h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: async () => {
+          try {
+            const r = await api.diagnosticsReport();
+            H.toast('דוח האבחון נשמר', { icon: 'file-down', ms: 7000, action: { label: 'להציג', fn: () => api.showInFolder(r.path) } });
+          } catch (err) {
+            H.toast(`הדוח לא נוצר: ${err.message}`, { kind: 'bad' });
+          }
+        } }, icon('file-down', 'icon-sm'), 'ליצור דוח')));
   }
 
   async function render(params = {}) {

@@ -69,6 +69,7 @@ class FetchOutcome:
     title: str = ""                # a clean song (or list) name
     artist: str = ""
     cover: bytes | None = None     # the picture that came with a download
+    detail: str = ""               # 1.7: the end of what yt-dlp said, for the diagnostics report
 
 
 class SourcePlugin(Protocol):
@@ -314,7 +315,8 @@ class YouTubeSource:
 
     @staticmethod
     def _failed(code: str, detail: str = "") -> FetchOutcome:
-        return FetchOutcome(False, message_for(code, detail), code=code, blocked=code == "netfree")
+        tail = "\n".join(ln for ln in (detail or "").splitlines() if ln.strip())[-1500:]
+        return FetchOutcome(False, message_for(code, detail), code=code, blocked=code == "netfree", detail=tail)
 
     @staticmethod
     def _web_results(query: str, limit: int) -> list[SearchResult]:
