@@ -68,6 +68,7 @@ from .settings import (
     bundled_audio_models_dir,
     bundled_voice_models_dir,
     bundled_ffmpeg_dir,
+    bundled_js_dir,
     bundled_models_dir,
     default_data_dir,
     default_downloads_dir,
@@ -76,7 +77,7 @@ from .text_normalize import normalize
 from .updater import Updater, current_ytdlp_version
 from . import voice as voice_mod
 from .vocal import MODEL_NAME as VOCAL_MODEL, VocalDetector
-from .ytdlp_runner import YtDlpRunner
+from .ytdlp_runner import YtDlpRunner, find_js_runtime
 
 ScanProgress = Callable[[dict], None]
 
@@ -131,7 +132,8 @@ class PlayerService:
         # yt-dlp runs as its own process (ytdlp_runner); a newer copy can live
         # in data/engine; ffmpeg ships with the app for MP3 downloads.
         self.ffmpeg = find_ffmpeg(bundled_ffmpeg_dir())
-        self.runner = YtDlpRunner(engine_dir=self.data_dir / "engine", ffmpeg=self.ffmpeg)
+        self.runner = YtDlpRunner(engine_dir=self.data_dir / "engine", ffmpeg=self.ffmpeg,
+                                  js_runtime=find_js_runtime(bundled_js_dir()))
         self.fetcher = OnlineFetcher(runner=self.runner)
         if os.environ.get("HAMENAGEN_DEMO_ONLINE"):  # the UI harness: YouTube from memory
             from .demo_online import DemoSource

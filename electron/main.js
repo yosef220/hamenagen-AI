@@ -79,6 +79,7 @@ const bridge = new BackendBridge({
     HAMENAGEN_AUDIO_MODELS_DIR: bundledResource('audio-models'),
     HAMENAGEN_VOICE_MODELS_DIR: bundledResource('voice-models'),
     HAMENAGEN_FFMPEG_DIR: bundledResource('ffmpeg'),
+    HAMENAGEN_JS_DIR: bundledResource('js'),
     HAMENAGEN_MUSIC_DIR: safePath('music'),
     HAMENAGEN_EDITION: EDITION,
   },

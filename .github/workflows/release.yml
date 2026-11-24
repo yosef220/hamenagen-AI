@@ -158,6 +158,24 @@ jobs:
           $versionLine | Set-Content -Encoding utf8 build/ffmpeg/VERSION.txt
           "{0:N1} MB" -f ((Get-Item build/ffmpeg/ffmpeg.exe).Length / 1MB)
 
+      - name: QuickJS-ng for YouTube's JavaScript challenges (every edition)
+        shell: pwsh
+        run: |
+          # Full YouTube support in yt-dlp runs its challenge scripts (yt-dlp-ejs)
+          # in a JavaScript engine. QuickJS-ng is small (1.8 MB) and MIT; pinned by digest.
+          $ver = 'v0.18.0'
+          $sha = 'ff03398d74ea6e6bd3a8e58058f7003225abcac229d7d57775b7aaae812a49c7'
+          New-Item -ItemType Directory -Force build/js | Out-Null
+          curl.exe -L --fail --retry 5 --retry-delay 10 -o build/js/qjs.exe "https://github.com/quickjs-ng/quickjs/releases/download/$ver/qjs-windows-x86_64.exe"
+          if ($LASTEXITCODE -ne 0) { throw "QuickJS could not be downloaded" }
+          $got = (Get-FileHash build/js/qjs.exe -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $sha) { throw "QuickJS does not match its digest: $got" }
+          curl.exe -L --fail --retry 5 --retry-delay 10 -o build/js/LICENSE.txt "https://raw.githubusercontent.com/quickjs-ng/quickjs/$ver/LICENSE"
+          if ($LASTEXITCODE -ne 0) { throw "QuickJS's license could not be downloaded" }
+          "QuickJS-ng $ver (MIT) - https://github.com/quickjs-ng/quickjs" | Set-Content -Encoding utf8 build/js/README.txt
+          & build/js/qjs.exe -e "console.log('quickjs answers', 6 * 7)"
+          if ($LASTEXITCODE -ne 0) { throw "QuickJS does not run" }
+
       - name: Stamp the build
         shell: pwsh
         run: |
@@ -245,6 +263,9 @@ jobs:
           & "$res/python/python.exe" -c "import truststore, sys; sys.path.insert(0, r'$res/backend'); from hamenagen.fetcher import find_ffmpeg; f = find_ffmpeg(r'$res/ffmpeg'); print('ffmpeg:', f); assert f.endswith('ffmpeg.exe')"
           if ($LASTEXITCODE -ne 0) { throw "the packaged core cannot find ffmpeg or truststore" }
           & "$res/ffmpeg/ffmpeg.exe" -hide_banner -version | Select-Object -First 1
+          # 1.7: yt-dlp sees the bundled QuickJS and the challenge scripts (yt-dlp-ejs).
+          & "$res/python/python.exe" -c "import sys; sys.path.insert(0, r'$res/backend'); import yt_dlp_ejs; from hamenagen.ytdlp_runner import find_js_runtime; from yt_dlp.utils._jsruntime import QuickJsRuntime; rt = find_js_runtime(r'$res/js'); info = QuickJsRuntime(rt[1]).info if rt else None; print('js engine:', rt, info); assert rt and rt[0] == 'quickjs' and info and info.supported"
+          if ($LASTEXITCODE -ne 0) { throw "yt-dlp does not find the bundled JavaScript engine" }
 
       - name: The search window in Edge's engine (WebView2) opens and catches a click on a YouTube result
         shell: pwsh

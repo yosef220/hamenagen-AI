@@ -28,6 +28,13 @@ Grabber project, kept here:
 5. **YouTube changes.** When every player client fails to extract, the
    engine is updated once (the newest wheel from PyPI, unpacked into the data
    folder) and the download is tried again.
+6. **YouTube's JavaScript challenges (1.7).** Full YouTube support in yt-dlp
+   needs its challenge solver scripts (yt-dlp-ejs) and a JavaScript engine to
+   run them. The app ships QuickJS-ng (resources/js/qjs.exe, 1.8 MB, MIT) and
+   yt-dlp-ejs, and passes ``--js-runtimes`` to every run; an engine update
+   brings the yt-dlp-ejs version the new yt-dlp asks for. Without an engine
+   (a dev run with neither deno nor node) yt-dlp falls back to the player
+   clients that need none.
 """
 
 from __future__ import annotations
@@ -59,6 +66,25 @@ CLIENT_SETS: list[str | None] = [
 
 MEMORY_LIMIT_MB = 1500
 PYPI_URL = "https://pypi.org/pypi/yt-dlp/json"
+EJS_PYPI_URL = "https://pypi.org/pypi/yt-dlp-ejs/{version}/json"
+
+
+def find_js_runtime(bundled: str | Path | None = None) -> tuple[str, str] | None:
+    """(yt-dlp's name for it, path) of a JavaScript engine for YouTube's
+    challenges: the QuickJS the app ships, else deno, node or a qjs found on
+    the computer (a dev run). None when there is none."""
+    import shutil
+
+    if bundled:
+        for name in ("qjs.exe", "qjs"):
+            p = Path(bundled) / name
+            if p.is_file():
+                return "quickjs", str(p)
+    for runtime, exe in (("deno", "deno"), ("node", "node"), ("quickjs", "qjs")):
+        found = shutil.which(exe)
+        if found:
+            return runtime, found
+    return None
 
 # What went wrong, as far as the listener is concerned.
 MESSAGES = {
@@ -225,8 +251,9 @@ class YtDlpRunner:
 
     def __init__(self, *, python: str | None = None, engine_dir: str | Path | None = None,
                  ffmpeg: str | Path | None = None, backend_dir: str | Path | None = None,
-                 memory_mb: int = MEMORY_LIMIT_MB):
+                 memory_mb: int = MEMORY_LIMIT_MB, js_runtime: tuple[str, str] | None = None):
         self.python = python or sys.executable
+        self.js_runtime = js_runtime
         self.engine_dir = Path(engine_dir) if engine_dir else None
         self.ffmpeg = str(ffmpeg) if ffmpeg else ""
         self.backend_dir = str(backend_dir or Path(__file__).resolve().parents[1])
@@ -263,9 +290,27 @@ class YtDlpRunner:
         common += ["--compat-options", "no-certifi"]  # verify with the system store (see 1. above)
         if self.ffmpeg:
             common += ["--ffmpeg-location", self.ffmpeg]
+        if self.js_runtime:
+            name, path = self.js_runtime
+            common += ["--js-runtimes", f"{name}:{path}"]
         if client:
-            common += ["--extractor-args", f"youtube:player_client={client}"]
+            common += ["--extractor-args", f"youtube:{client}" if "=" in client else f"youtube:player_client={client}"]
         return [self.python, "-m", "hamenagen.ytdlp_child", *common, *args]
+
+    def ejs_version(self) -> str | None:
+        """The challenge scripts' version (yt-dlp-ejs): the data folder's copy
+        when an engine update brought one, else the app's."""
+        local = self.engine_dir / "yt_dlp_ejs" / "_version.py" if self.engine_dir else None
+        if local is not None and local.exists():
+            m = re.search(r"\bversion\s*=\s*['\"]([^'\"]+)", local.read_text(encoding="utf-8", errors="ignore"))
+            if m:
+                return m.group(1)
+        try:
+            from importlib.metadata import version as dist_version
+
+            return dist_version("yt-dlp-ejs")
+        except Exception:
+            return None
 
     def _env(self) -> dict:
         env = dict(os.environ)
@@ -397,6 +442,30 @@ class YtDlpRunner:
         return out
 
     # -- keeping the engine current ----------------------------------------
+    def _fetch_ejs(self, version: str, dest: Path, *, timeout: float) -> bool:
+        """Put yt-dlp-ejs ``version`` (a pure-Python wheel from PyPI, checked
+        against its digest) in ``dest``. A failure leaves the app's copy in use."""
+        import hashlib
+
+        try:
+            req = urllib.request.Request(EJS_PYPI_URL.format(version=version),
+                                         headers={"User-Agent": "engine-update/1.7", "Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                meta = json.loads(resp.read().decode("utf-8"))
+            wheel = next(u for u in meta["urls"] if u["filename"].endswith("-py3-none-any.whl"))
+            req = urllib.request.Request(wheel["url"], headers={"User-Agent": "engine-update/1.7"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = resp.read(10_000_000)
+            digest = wheel.get("digests", {}).get("sha256")
+            if not digest or hashlib.sha256(data).hexdigest() != digest:
+                return False
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                zf.extractall(dest, [m for m in zf.namelist() if m.startswith("yt_dlp_ejs/")])
+            return (dest / "yt_dlp_ejs" / "__init__.py").exists()
+        except Exception:
+            return False
+
+
     def update_engine(self, *, timeout: float = 120) -> dict:
         """Put the newest yt-dlp (a pure-Python wheel from PyPI) in the data
         folder; the next run uses it. Never touches the bundled copy."""
@@ -426,8 +495,12 @@ class YtDlpRunner:
             with zipfile.ZipFile(io.BytesIO(data)) as zf:
                 members = [m for m in zf.namelist() if m.startswith("yt_dlp/")]
                 zf.extractall(tmp, members)
+                wanted = _ejs_requirement(zf)
             if not (tmp / "yt_dlp" / "__init__.py").exists():
                 return {"ok": False, "message": "חבילת העדכון לא תקינה"}
+            # 1.7: the challenge scripts this yt-dlp asks for, beside it.
+            if wanted and wanted != self.ejs_version():
+                self._fetch_ejs(wanted, tmp, timeout=timeout)
             import shutil
 
             old = self.engine_dir.with_name(self.engine_dir.name + ".old")
@@ -440,6 +513,17 @@ class YtDlpRunner:
             return {"ok": True, "updated": True, "version": latest}
         except Exception as exc:
             return {"ok": False, "message": f"עדכון מנוע ההורדה נכשל: {type(exc).__name__}"}
+
+
+def _ejs_requirement(zf: zipfile.ZipFile) -> str | None:
+    """The yt-dlp-ejs version a yt-dlp wheel pins ("Requires-Dist:
+    yt-dlp-ejs==0.8.0; extra == 'default'")."""
+    meta = next((m for m in zf.namelist() if m.endswith(".dist-info/METADATA")), None)
+    if not meta:
+        return None
+    text = zf.read(meta).decode("utf-8", errors="ignore")
+    m = re.search(r"^Requires-Dist:\s*yt-dlp-ejs\s*==\s*([\w.]+)", text, re.MULTILINE)
+    return m.group(1) if m else None
 
 
 def _version_key(v: str) -> tuple:

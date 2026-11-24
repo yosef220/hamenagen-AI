@@ -95,6 +95,10 @@ if (fs.existsSync('build/audio-models')) {
 if (fs.existsSync('build/ffmpeg')) {
   config.extraResources.push({ from: 'build/ffmpeg', to: 'ffmpeg', filter: ['**/*'] });
 }
+// 1.7: QuickJS-ng (MIT), for YouTube's JavaScript challenges (yt-dlp-ejs).
+if (fs.existsSync('build/js')) {
+  config.extraResources.push({ from: 'build/js', to: 'js', filter: ['**/*'] });
+}
 const withModel = edition === 'offline' || edition === 'setup-offline';
 if (withModel) {
   config.extraResources.push({ from: 'build/models', to: 'models', filter: ['**/*'] });

@@ -85,6 +85,15 @@ def bundled_voice_models_dir() -> Path | None:
     return None
 
 
+def bundled_js_dir() -> Path | None:
+    """QuickJS shipped inside the app (1.7): yt-dlp runs YouTube's JavaScript
+    challenges with it (yt-dlp-ejs)."""
+    env = os.environ.get("HAMENAGEN_JS_DIR")
+    if env and Path(env).is_dir():
+        return Path(env)
+    return None
+
+
 def bundled_ffmpeg_dir() -> Path | None:
     """ffmpeg shipped inside the app, for MP3 downloads with covers."""
     env = os.environ.get("HAMENAGEN_FFMPEG_DIR")
