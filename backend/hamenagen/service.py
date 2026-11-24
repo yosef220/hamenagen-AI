@@ -33,6 +33,7 @@ from .zmanim import ZmanimService
 from .smart_update import SmartUpdater
 from . import artists as artists_mod
 from . import cloudfiles
+from . import engine_cfg
 from . import personal_dates
 from . import tags as tags_mod
 from . import export as export_mod
@@ -134,6 +135,10 @@ class PlayerService:
         self.ffmpeg = find_ffmpeg(bundled_ffmpeg_dir())
         self.runner = YtDlpRunner(engine_dir=self.data_dir / "engine", ffmpeg=self.ffmpeg,
                                   js_runtime=find_js_runtime(bundled_js_dir()))
+        # 1.7: the player clients' order from the project (engine.json), and the
+        # one that last worked here first.
+        self.runner.state_dir = self.data_dir
+        self.runner.profiles = engine_cfg.load(self.data_dir) or self.runner.profiles
         self.fetcher = OnlineFetcher(runner=self.runner)
         if os.environ.get("HAMENAGEN_DEMO_ONLINE"):  # the UI harness: YouTube from memory
             from .demo_online import DemoSource
@@ -2196,6 +2201,13 @@ class PlayerService:
         if not manual and not self.settings.auto_update:
             return {"online": False, "reason": "auto-update disabled", "updates": [], "app": None}
         result = self.updater.check()
+        if result.get("online") and not os.environ.get("HAMENAGEN_DEMO_ONLINE"):
+            from .network import get_bytes
+
+            try:
+                self.runner.profiles = engine_cfg.refresh(self.data_dir, get_bytes) or self.runner.profiles
+            except Exception:  # noqa: BLE001 - the order kept is fine
+                pass
         app = result.get("app")
         if app:
             self._release = dict(app)

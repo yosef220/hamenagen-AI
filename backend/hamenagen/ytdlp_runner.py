@@ -99,6 +99,8 @@ MESSAGES = {
     "stalled": "ההורדה נתקעה ונעצרה.",
     "memory": "מנוע ההורדה התחיל לצרוך זיכרון בלי סוף (כנראה דף חסימה) ונעצר.",
     "cancelled": "ההורדה בוטלה.",
+    "replaced": ("הסינון ברשת שלח קובץ חסימה במקום השיר, ולכן הוא לא נשמר. אם השיר נפתח אצלך בדפדפן, "
+                 "אפשר לבקש מספק הסינון לאשר אותו."),
     "not_installed": "רכיב ההורדה (yt-dlp) לא מותקן בגרסה הזו.",
     "other": "הפעולה נכשלה.",
 }
@@ -254,6 +256,10 @@ class YtDlpRunner:
                  memory_mb: int = MEMORY_LIMIT_MB, js_runtime: tuple[str, str] | None = None):
         self.python = python or sys.executable
         self.js_runtime = js_runtime
+        # 1.7: the order of player clients (engine_cfg.py) and where the one
+        # that last worked is kept.
+        self.profiles: list[str | None] = list(CLIENT_SETS)
+        self.state_dir: Path | None = None
         self.engine_dir = Path(engine_dir) if engine_dir else None
         self.ffmpeg = str(ffmpeg) if ffmpeg else ""
         self.backend_dir = str(backend_dir or Path(__file__).resolve().parents[1])
@@ -262,6 +268,23 @@ class YtDlpRunner:
         self._job = _JobObject(memory_mb)
         self._procs: set[subprocess.Popen] = set()
         self._lock = threading.Lock()
+
+    # -- which player clients, in which order (1.7) ---------------------------
+    def client_order(self) -> list[str | None]:
+        """The profiles to try: the one that last worked here first."""
+        from . import engine_cfg
+
+        order = list(self.profiles) or list(CLIENT_SETS)
+        good = engine_cfg.last_good(self.state_dir) if self.state_dir else False
+        if good is not False:
+            order = [good] + [p for p in order if p != good]
+        return order
+
+    def remember(self, profile: str | None) -> None:
+        if self.state_dir:
+            from . import engine_cfg
+
+            engine_cfg.remember(self.state_dir, profile)
 
     # -- what is installed --------------------------------------------------
     def _engine_has_package(self) -> bool:

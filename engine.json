@@ -1,0 +1,12 @@
+{
+  "rev": 1,
+  "about": "The order in which the player tries YouTube's player clients (backend/hamenagen/engine_cfg.py). Read by every installed copy at most twice a day: change it here when YouTube changes, no release needed. \"\" is yt-dlp's own default.",
+  "profiles": [
+    "",
+    "android_vr,android,web",
+    "player_client=web_safari,mweb;skip=hls",
+    "tv,mweb,web_safari",
+    "player_client=tv,web_embedded;skip=hls",
+    "ios,tv_embedded"
+  ]
+}

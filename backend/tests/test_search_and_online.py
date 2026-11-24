@@ -180,6 +180,14 @@ class _FakeRunner:
     def available(self):
         return True
 
+    def client_order(self):
+        from hamenagen.ytdlp_runner import CLIENT_SETS
+
+        return list(CLIENT_SETS)
+
+    def remember(self, profile):
+        self.remembered = profile
+
     def run(self, args, *, timeout=30, client=None, cancel=None):
         self.clients.append(client)
         return self.run_results.pop(0)
