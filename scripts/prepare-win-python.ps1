@@ -32,7 +32,11 @@ Invoke-WebRequest -Uri $url -OutFile $tmp
 if (Test-Path $OutDir) { Remove-Item -Recurse -Force $OutDir }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 Write-Host "Extracting to $OutDir ..."
-Expand-Archive -Path $tmp -DestinationPath $OutDir -Force
+# Not Expand-Archive: on the current Windows runners Windows PowerShell's
+# Expand-Archive fails ("Cannot find an overload for ExtractToDirectory and the
+# argument count: 3"); the two-argument .NET call works everywhere.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::ExtractToDirectory((Resolve-Path $tmp).Path, (Resolve-Path $OutDir).Path)
 
 # Enable `import site` so pip-installed packages are importable: uncomment the
 # `#import site` line in the ._pth file.
