@@ -168,7 +168,9 @@
       // whose id is not known cannot be followed.
       const extra = info.channel.id ? followButton(info.channel, info.followed) : null;
       singerHolder.replaceChildren(
-        info.via_web ? h('p', { class: 'muted' }, icon('search', 'icon-sm'), 'החיפוש ביוטיוב חסום ברשת שלך, אז הערוץ נמצא דרך מנוע חיפוש.') : '',
+        info.web_list
+          ? h('p', { class: 'muted' }, icon('search', 'icon-sm'), 'החיפוש ביוטיוב ודף הערוץ חסומים ברשת שלך, אז אלה השירים של הזמר כפי שמנוע חיפוש מציג אותם. כל שיר שהסינון מתיר יורד.')
+          : info.via_web ? h('p', { class: 'muted' }, icon('search', 'icon-sm'), 'החיפוש ביוטיוב חסום ברשת שלך, אז הערוץ נמצא דרך מנוע חיפוש.') : '',
         H.songPicker(info, singerHolder, { extra }));
     } catch (err) {
       singerHolder.replaceChildren(h('p', { class: 'online-error' }, `החיפוש נכשל: ${err.message}`));
