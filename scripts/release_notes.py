@@ -24,6 +24,13 @@ from pathlib import Path
 # it). The newest version's list goes on the release page; its one-line
 # summary goes into update.json.
 WHATS_NEW: dict[str, tuple[str, list[str]]] = {
+    "1.7.2": (
+        "שירים ש„לא זמינים” לסוג נגן אחד יורדים דרך סוג אחר, גם מקישור.",
+        [
+            "**„This video is not available”** — יוטיוב עונה כך לפעמים לסוג נגן אחד ונותן את השיר לאחר. עכשיו המנגן "
+            "עובר לסוג אחר (גם כשמדביקים קישור לשיר), ושיר שקיים מוצע להורדה גם כשכולם סירבו.",
+        ],
+    ),
     "1.7.1": (
         "כל השירים של זמר עובד גם ברשת עם נטפרי: המנגן מוצא לבד את הערוץ דרך מנוע חיפוש.",
         [
