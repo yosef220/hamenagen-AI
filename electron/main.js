@@ -79,6 +79,7 @@ const bridge = new BackendBridge({
     HAMENAGEN_AUDIO_MODELS_DIR: bundledResource('audio-models'),
     HAMENAGEN_VOICE_MODELS_DIR: bundledResource('voice-models'),
     HAMENAGEN_FFMPEG_DIR: bundledResource('ffmpeg'),
+    HAMENAGEN_JS_DIR: bundledResource('js'),
     HAMENAGEN_MUSIC_DIR: safePath('music'),
     HAMENAGEN_EDITION: EDITION,
   },
@@ -330,6 +331,8 @@ const BACKEND_METHODS = new Set([
   'voice_status', 'voice_prepare', 'voice_recognize', 'install_voice_async',
   'write_tags', 'write_all_tags_async', 'export_drives', 'export_plan', 'export_run_async', 'export_stop',
   'ringtone_info', 'make_ringtone', 'import_singers', 'clear_singers', 'singers_status',
+  'singer_songs', 'follow_singer', 'followed_new', 'dismiss_new',
+  'diagnostics_report',
   'set_mood_mark',
   'name_suggestions', 'apply_name_fixes', 'undo_name_fixes',
   'playlist_import', 'playlist_export',
@@ -819,7 +822,8 @@ ipcMain.handle('search:nav', (_evt, action) => {
 // searching from the app). Only such a link is handed to the window.
 ipcMain.handle('app:clipboardLink', () => {
   const text = (clipboard.readText() || '').trim();
-  const m = text.match(/https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be)\/[^\s<>"']+/i);
+  const m = text.match(/https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be)\/[^\s<>"']+/i)
+    || text.match(/https?:\/\/open\.spotify\.com\/[^\s<>"']+/i);   // 1.7: Spotify links too
   return m ? m[0] : '';
 });
 

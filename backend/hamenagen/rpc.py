@@ -39,7 +39,7 @@ _SLOW = {
     "install_offline_pack", "rescan", "reclassify", "vocal_status", "lookup_details", "apply_details",
     "online_set", "listen_prepare", "station", "voice_recognize", "voice_prepare", "write_tags",
     "export_drives", "export_plan", "make_ringtone", "import_singers", "ringtone_info",
-    "playlist_import", "playlist_export", "name_suggestions", "apply_name_fixes", "undo_name_fixes",
+    "playlist_import", "playlist_export", "singer_songs", "follow_singer", "followed_new", "name_suggestions", "apply_name_fixes", "undo_name_fixes",
 }
 
 
@@ -57,7 +57,7 @@ def _result_from(r: dict) -> SearchResult:
         source=r.get("source", "youtube"), id=r.get("id", ""), title=r.get("title", ""), url=r.get("url", ""),
         uploader=r.get("uploader", ""), duration=r.get("duration"), upload_date=r.get("upload_date"),
         channel=r.get("channel", ""), channel_id=r.get("channel_id", ""), channel_url=r.get("channel_url", ""),
-        thumbnail=r.get("thumbnail", ""),
+        thumbnail=r.get("thumbnail", ""), date_approx=bool(r.get("date_approx")),
     )
 
 
@@ -214,6 +214,27 @@ class RpcServer:
 
     def rpc_undo_name_fixes(self, params):
         return self.service.undo_name_fixes()
+
+    def rpc_singer_songs(self, params):
+        out = self.service.singer_songs(params.get("name", ""), int(params.get("limit") or 300))
+        if out.get("ok"):
+            out["results"] = [_shown(_result_from(r), in_library=r.get("in_library", False)) for r in out["results"]]
+        return out
+
+    def rpc_follow_singer(self, params):
+        return self.service.follow_singer(params.get("name", ""), params.get("channel_id", ""),
+                                          bool(params.get("on", True)))
+
+    def rpc_followed_new(self, params):
+        out = self.service.followed_new(bool(params.get("force")))
+        out["new"] = [_shown(_result_from(r), in_library=False, singer=r.get("singer", "")) for r in out["new"]]
+        return out
+
+    def rpc_dismiss_new(self, params):
+        return self.service.dismiss_new(params.get("id", ""))
+
+    def rpc_diagnostics_report(self, params):
+        return self.service.diagnostics_report()
 
     def rpc_track_copies(self, params):
         return self.service.track_copies(params.get("id", ""))
@@ -518,6 +539,14 @@ class RpcServer:
 
     def rpc_online_link(self, params):
         """What a pasted link is (a song, a playlist, a channel) and its songs."""
+        from . import spotify
+
+        if spotify.parse_link(params.get("url", "")):  # 1.7: a Spotify link: its songs, found on YouTube
+            out = self.service.spotify_link(params.get("url", ""))
+            out.setdefault("blocked", False)
+            out.setdefault("code", "")
+            out["results"] = [_shown(_result_from(r), in_library=r.get("in_library", False)) for r in out.get("results", [])]
+            return out
         outcome = self.fetcher.link_info(params.get("url", ""), limit=int(params.get("limit", 300)))
         have = self.service.index.video_ids()
         return {
@@ -600,6 +629,10 @@ def main() -> None:
     # Verify HTTPS with Windows' certificate store, where a filter that
     # inspects TLS (NetFree) keeps its root certificate.
     network.use_system_trust()
+    # 1.7: no "efficiency mode" while the window is in the background.
+    from .winpower import no_throttling
+
+    no_throttling()
     RpcServer().serve()
 
 

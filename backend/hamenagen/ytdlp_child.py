@@ -21,6 +21,12 @@ def main() -> int:
         truststore.inject_into_ssl()
     except Exception:
         pass
+    try:  # 1.7: full speed while the player is in the background (winpower.py)
+        from hamenagen.winpower import no_throttling
+
+        no_throttling()
+    except Exception:
+        pass
     import yt_dlp  # type: ignore
 
     try:

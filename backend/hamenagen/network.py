@@ -32,3 +32,17 @@ def use_system_trust() -> bool:
     except Exception:
         _trust_done = False
     return _trust_done
+
+
+def get_bytes(url: str, *, timeout: float = 10.0, limit: int = 1_000_000) -> bytes | None:
+    """A small file over HTTPS (verified with the system's certificates), or
+    None on any failure."""
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Hamenagen"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = resp.read(limit + 1)
+        return data if len(data) <= limit else None
+    except Exception:
+        return None

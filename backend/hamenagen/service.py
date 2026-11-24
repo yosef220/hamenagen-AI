@@ -15,7 +15,7 @@ import random
 import sys
 import threading
 import time
-from collections import Counter
+from collections import Counter, deque
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -33,6 +33,7 @@ from .zmanim import ZmanimService
 from .smart_update import SmartUpdater
 from . import artists as artists_mod
 from . import cloudfiles
+from . import engine_cfg
 from . import personal_dates
 from . import tags as tags_mod
 from . import export as export_mod
@@ -68,6 +69,7 @@ from .settings import (
     bundled_audio_models_dir,
     bundled_voice_models_dir,
     bundled_ffmpeg_dir,
+    bundled_js_dir,
     bundled_models_dir,
     default_data_dir,
     default_downloads_dir,
@@ -76,7 +78,7 @@ from .text_normalize import normalize
 from .updater import Updater, current_ytdlp_version
 from . import voice as voice_mod
 from .vocal import MODEL_NAME as VOCAL_MODEL, VocalDetector
-from .ytdlp_runner import YtDlpRunner
+from .ytdlp_runner import YtDlpRunner, find_js_runtime
 
 ScanProgress = Callable[[dict], None]
 
@@ -131,13 +133,19 @@ class PlayerService:
         # yt-dlp runs as its own process (ytdlp_runner); a newer copy can live
         # in data/engine; ffmpeg ships with the app for MP3 downloads.
         self.ffmpeg = find_ffmpeg(bundled_ffmpeg_dir())
-        self.runner = YtDlpRunner(engine_dir=self.data_dir / "engine", ffmpeg=self.ffmpeg)
+        self.runner = YtDlpRunner(engine_dir=self.data_dir / "engine", ffmpeg=self.ffmpeg,
+                                  js_runtime=find_js_runtime(bundled_js_dir()))
+        # 1.7: the player clients' order from the project (engine.json), and the
+        # one that last worked here first.
+        self.runner.state_dir = self.data_dir
+        self.runner.profiles = engine_cfg.load(self.data_dir) or self.runner.profiles
         self.fetcher = OnlineFetcher(runner=self.runner)
         if os.environ.get("HAMENAGEN_DEMO_ONLINE"):  # the UI harness: YouTube from memory
             from .demo_online import DemoSource
 
             self.fetcher = OnlineFetcher(DemoSource())
         self.download_stop = threading.Event()
+        self.recent_failures: deque = deque(maxlen=20)
         self.export_stop = threading.Event()
         self.downloading = False
         self.radio = RadioProvider(
@@ -1068,8 +1076,17 @@ class PlayerService:
         library, gets indexed + classified, and the caller (UI) auto-plays it
         unless the user opted out.
         """
-        outcome = self.fetcher.download(result, self.downloads_dir, on_progress=on_progress, cancel=cancel)
+        # 1.7: when each stage began, for the diagnostics report.
+        stages: dict[str, float] = {"start": time.monotonic()}
+
+        def progress(ev: dict) -> None:
+            stages.setdefault(ev.get("status") or "?", time.monotonic())
+            if on_progress:
+                on_progress(ev)
+
+        outcome = self.fetcher.download(result, self.downloads_dir, on_progress=progress, cancel=cancel)
         if not outcome.ok or not outcome.path:
+            self._note_failure(result, outcome, stages)
             return {"ok": False, "message": outcome.message, "track": None,
                     "code": getattr(outcome, "code", ""), "blocked": bool(getattr(outcome, "blocked", False))}
 
@@ -1102,6 +1119,198 @@ class PlayerService:
         self.index.mark_duplicates()
         return {"ok": True, "message": outcome.message, "track": self._tracks_payload([track])[0],
                 "path": outcome.path, "code": "", "blocked": False}
+
+    # -- a singer's songs, and new songs from followed singers (1.7) ----------------
+    def _library_matcher(self):
+        from . import singers_online
+
+        return singers_online.LibraryMatcher(self.index.video_ids(), self.index.all_tracks(), self.artist_name)
+
+    def singer_songs(self, name: str, limit: int = 300) -> dict:
+        """Every song a singer's own channel uploaded, to pick from."""
+        from . import singers_online
+
+        name = " ".join((name or "").split())
+        if not name:
+            return {"ok": False, "message": "צריך לכתוב שם של זמר."}
+        channel = None
+        last = None
+        for query in (name, f"{name} official"):
+            last = self.fetcher.search(query, limit=10)
+            if last.blocked or last.code in ("netfree", "network", "not_installed"):
+                break
+            channel = singers_online.main_channel(last.results)
+            if channel:
+                break
+        if channel is None:
+            if last is not None and (last.blocked or last.code):
+                return {"ok": False, "code": last.code, "blocked": last.blocked, "message": last.message}
+            return {"ok": False, "code": "no_channel",
+                    "message": f"לא מצאתי ערוץ של „{name}” ביוטיוב. אפשר להדביק קישור לערוץ שלו."}
+        info = self.fetcher.link_info(f"https://www.youtube.com/channel/{channel.id}/videos", limit=limit)
+        if not info.ok:
+            return {"ok": False, "code": info.code, "blocked": info.blocked, "message": info.message}
+        have = self._library_matcher()
+        followed = any(f["channel_id"] == channel.id for f in self.settings.followed_singers)
+        return {"ok": True, "kind": "list", "title": f"השירים של {channel.name or name}", "artist": channel.name,
+                "channel": {"id": channel.id, "name": channel.name or name, "url": channel.url},
+                "followed": followed, "results": [dict(r.__dict__, in_library=have.has(r)) for r in info.results]}
+
+    def spotify_link(self, url: str) -> dict:
+        """A Spotify playlist, album or song as songs to pick and download
+        (spotify.py): each one is found on YouTube by its singer and name."""
+        from . import spotify
+        from .network import get_bytes
+
+        found = spotify.parse_link(url)
+        if found is None:
+            return {"ok": False, "code": "bad_link", "message": "זה לא קישור של ספוטיפיי."}
+        kind, sid = found
+        data = get_bytes(spotify.EMBED_URL.format(kind=kind, id=sid), timeout=15, limit=5_000_000)
+        if not data:
+            return {"ok": False, "code": "network", "message": "לא הצלחתי לקרוא את הקישור מספוטיפיי. אולי אין חיבור, או שהאתר חסום ברשת."}
+        name, songs = spotify.parse_embed(data.decode("utf-8", errors="replace"))
+        if not songs:
+            return {"ok": False, "code": "empty", "message": "בקישור הזה לא נמצאו שירים."}
+        have = self._library_matcher()
+        results = []
+        for song in songs[:300]:
+            r = spotify.as_result(song)
+            results.append(dict(r.__dict__, in_library=have.has(r)))
+        return {"ok": True, "kind": "video" if kind == "track" and len(results) == 1 else "list", "spotify": True,
+                "title": f"מספוטיפיי: {name}" if name else "מספוטיפיי", "artist": "", "results": results}
+
+    def follow_singer(self, name: str, channel_id: str, on: bool = True) -> dict:
+        from . import singers_online
+
+        if not singers_online.valid_channel_id(channel_id):
+            return {"ok": False, "message": "ערוץ לא תקין"}
+        follows = [f for f in self.settings.followed_singers if f["channel_id"] != channel_id]
+        if on:
+            follows.append({"name": name, "channel_id": channel_id})
+            state = self._follow_state()
+            # What the channel has now is not "new": only what comes after.
+            seen, _ = self._channel_uploads(channel_id)
+            state[channel_id] = {"seen": [r.id for r in seen], "checked_at": time.time(), "new": []}
+            self._save_follow_state(state)
+        self.update_settings({"followed_singers": follows})
+        return {"ok": True, "followed": on, "singers": self.settings.followed_singers}
+
+    def _follow_state(self) -> dict:
+        try:
+            return json.loads((self.data_dir / "follows.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def _save_follow_state(self, state: dict) -> None:
+        tmp = self.data_dir / "follows.json.part"
+        tmp.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(self.data_dir / "follows.json")
+
+    def _channel_uploads(self, channel_id: str) -> tuple[list[SearchResult], bool]:
+        """The channel's latest uploads: its feed, or (a filter blocks the
+        feed) its page through yt-dlp. (results, read at all)."""
+        from . import singers_online
+        from .network import get_bytes
+
+        data = None if os.environ.get("HAMENAGEN_DEMO_ONLINE") else \
+            get_bytes(singers_online.FEED_URL.format(id=channel_id), timeout=10, limit=2_000_000)
+        found = singers_online.parse_feed(data) if data else []
+        if found:
+            return found, True
+        info = self.fetcher.link_info(f"https://www.youtube.com/channel/{channel_id}/videos", limit=15)
+        return (info.results, True) if info.ok else ([], False)
+
+    def followed_new(self, force: bool = False) -> dict:
+        """New songs from the singers the listener follows, newest first."""
+        from . import singers_online
+
+        state = self._follow_state()
+        have = self._library_matcher()
+        now = time.time()
+        out = []
+        for f in self.settings.followed_singers:
+            cid = f["channel_id"]
+            st = state.setdefault(cid, {"seen": [], "checked_at": 0, "new": []})
+            if force or now - st.get("checked_at", 0) > singers_online.CHECK_HOURS * 3600:
+                uploads, read = self._channel_uploads(cid)
+                if read:
+                    seen = set(st.get("seen") or [])
+                    known = {n["id"] for n in st.get("new") or []}
+                    for r in uploads:
+                        if r.id not in seen and r.id not in known:
+                            st.setdefault("new", []).append(dict(r.__dict__, singer=f["name"]))
+                    st["checked_at"] = now
+            for item in st.get("new") or []:
+                r = SearchResult(**{k: v for k, v in item.items() if k in SearchResult.__dataclass_fields__})
+                if not have.has(r):
+                    out.append(dict(item, in_library=False))
+        self._save_follow_state(state)
+        out.sort(key=lambda r: r.get("upload_date") or "", reverse=True)
+        return {"ok": True, "singers": self.settings.followed_singers, "new": out[:60]}
+
+    def dismiss_new(self, video_id: str) -> dict:
+        """A new song the listener does not want offered again."""
+        state = self._follow_state()
+        for st in state.values():
+            new = st.get("new") or []
+            if any(n.get("id") == video_id for n in new):
+                st["new"] = [n for n in new if n.get("id") != video_id]
+                st.setdefault("seen", []).append(video_id)
+        self._save_follow_state(state)
+        return {"ok": True}
+
+    # -- a report to send when something does not work (1.7) --------------------
+    def _note_failure(self, result: SearchResult, outcome, stages: dict[str, float]) -> None:
+        start = stages.get("start", time.monotonic())
+        timeline = ", ".join(f"{k} {v - start:.1f}s" for k, v in stages.items() if k != "start")
+        self.recent_failures.append({
+            "at": datetime.now().isoformat(timespec="seconds"), "url": result.url, "title": result.title,
+            "code": getattr(outcome, "code", ""), "message": getattr(outcome, "message", ""),
+            "stages": f"{timeline}{', ' if timeline else ''}end {time.monotonic() - start:.1f}s",
+            "detail": getattr(outcome, "detail", ""),
+        })
+
+    def diagnostics_report(self) -> dict:
+        """One text file with what is needed to understand a problem — the
+        versions, the download engine, the last failures with when each stage
+        began, the settings and the end of the core's log — in data/logs, for
+        the listener to send. Nothing is sent by itself."""
+        from . import engine_cfg
+
+        runner = self.runner
+        js = runner.js_runtime
+        lines = [
+            "המנגן — דוח אבחון",
+            f"נוצר: {datetime.now().isoformat(timespec='seconds')}",
+            "",
+            "== גרסאות ==",
+            f"המנגן {__version__} ({self.edition}) · Python {platform.python_version()} · {platform.platform()}",
+            f"yt-dlp {runner.version() or '-'} · yt-dlp-ejs {runner.ejs_version() or '-'} · "
+            f"מנוע JS: {f'{js[0]} ({js[1]})' if js else 'אין'} · ffmpeg: {self.ffmpeg or 'אין'}",
+            f"סדר הניסיונות: {[p or 'default' for p in runner.client_order()]}",
+            f"מה שעבד לאחרונה: {engine_cfg.last_good(self.data_dir)}",
+            f"שירים בספרייה: {self.index.count()}",
+            "",
+            "== הורדות שנכשלו לאחרונה ==",
+        ]
+        for f in reversed(self.recent_failures):
+            lines += [f"[{f['at']}] {f['title']} — {f['url']}", f"  {f['code']}: {f['message']}",
+                      f"  שלבים: {f['stages']}"]
+            lines += [f"  | {ln}" for ln in (f["detail"] or "").splitlines()[-12:]]
+        if not self.recent_failures:
+            lines.append("(אין מאז שהמנגן נפתח)")
+        settings = {k: v for k, v in self.settings.to_dict().items() if k not in ("personal_dates",)}
+        lines += ["", "== הגדרות ==", json.dumps(settings, ensure_ascii=False, indent=1), "", "== סוף היומן =="]
+        log = self.data_dir / "logs" / "core.log"
+        try:
+            lines += log.read_text(encoding="utf-8", errors="replace").splitlines()[-300:]
+        except OSError:
+            lines.append("(אין יומן)")
+        out = self.data_dir / "logs" / f"diagnostics-{datetime.now():%Y%m%d-%H%M%S}.txt"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return {"ok": True, "path": str(out)}
 
     def download_many(self, items: list[SearchResult], on_event: Callable[[dict], None] | None = None) -> dict:
         """Download songs one after another (a channel, a playlist, a pick
@@ -2194,6 +2403,13 @@ class PlayerService:
         if not manual and not self.settings.auto_update:
             return {"online": False, "reason": "auto-update disabled", "updates": [], "app": None}
         result = self.updater.check()
+        if result.get("online") and not os.environ.get("HAMENAGEN_DEMO_ONLINE"):
+            from .network import get_bytes
+
+            try:
+                self.runner.profiles = engine_cfg.refresh(self.data_dir, get_bytes) or self.runner.profiles
+            except Exception:  # noqa: BLE001 - the order kept is fine
+                pass
         app = result.get("app")
         if app:
             self._release = dict(app)

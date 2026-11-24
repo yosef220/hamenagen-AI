@@ -1674,3 +1674,10 @@ body.at-rest .app { visibility: hidden; }
 /* 1.6: a mood per row in the song's menu. */
 .mood-row { justify-content: space-between; align-items: center; gap: var(--s2); }
 .mood-name { font-size: var(--fs-sm); color: var(--ink-2); min-width: 4rem; }
+
+/* 1.7: a singer's songs, and new songs from followed singers, on the downloads page. */
+.singer-form { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
+.singer-form .input { flex: 1 1 auto; min-width: 0; height: 40px; padding: 0 var(--s3); border: 1px solid var(--line-strong);
+  border-radius: var(--r-md); background: var(--surface); color: var(--ink); font: inherit; }
+.follow-chip { display: inline-flex; align-items: center; gap: 4px; }
+.new-songs .chips { margin-bottom: var(--s2); }

@@ -58,6 +58,8 @@
 
 **מילים, ימים אישיים ומה שהפסקתם (חדש ב-1.6).** המילים נקראות גם מהתגיות של הקובץ: מוצאים שיר לפי שורה שזוכרים ממנו, ומילים עם זמנים מתקדמות עם השיר. שיעור או סיפור ארוך ממשיך מהמקום שבו נעצר. ימי הולדת, ימי נישואין ויארצייט לפי התאריך העברי מופיעים בדף הבית בכל שנה. רשימות מנגן אחר (M3U, PLS, CSV) ומ-YouTube Music (Google Takeout) נכנסות ב„ייבוא רשימה”. „תיקון שמות” מנקה שמות של קבצים מהאינטרנט, לאישור. ו„רגוע”, „מרגש” ו„לילדים” לומדים מהסימונים שלכם.
 
+**זמרים, ספוטיפיי והורדה חזקה יותר (חדש ב-1.7).** במסך ההורדות כותבים שם של זמר ומקבלים את כל השירים שלו מיוטיוב, עם תאריך היציאה של כל אחד, ובוחרים מה להוריד; אפשר גם לעקוב אחריו ולקבל את השירים החדשים. קישור של פלייליסט, אלבום או שיר מספוטיפיי יורד דרך יוטיוב. מאחורי סינון המנגן מנסה גם את הקובץ הרגיל ולא שומר קובץ חסימה כשיר. ב-Windows 11 הוא עובד במהירות מלאה גם כשהחלון ממוזער.
+
 **צליל וסדר (חדש ב-1.4).** עוצמה אחידה בין שירים, דילוג על שקט בתחילת שיר ובסופו, הרצאות ושיעורים בלשונית נפרדת (ומחוץ לערבובים), „לא אהוב”, תיקיות שמתנגנות רק כשבוחרים בהן, שם אחד לכל זמר בכל הכתיבים, ובקשות כמו „משהו רגוע”.
 
 ![רדיו המנגן בדף הבית, וכפתור המיקרופון](docs/screenshots/radio-card.png)
@@ -119,6 +121,6 @@ npm start                          # מריץ את התוכנה; הנתונים 
 
 ## רישיונות של רכיבים
 
-הגופנים Frank Ruhl Libre ו-IBM Plex Sans Hebrew — SIL Open Font License. האייקונים — Lucide (ISC). ניגון HLS — hls.js (Apache-2.0). הליבה משתמשת ב-yt-dlp (Unlicense), mutagen (GPL-2.0), rapidfuzz (MIT), onnxruntime (MIT), tokenizers (Apache-2.0), soundfile (BSD-3, עם libsndfile ב-LGPL-2.1) ו-truststore (MIT). להורדות ב-MP3 מצורף ffmpeg בבנייה של [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) ברישיון LGPL-2.1 (הקוד ב-[ffmpeg.org](https://ffmpeg.org/download.html)). מודל הסיווג: `intfloat/multilingual-e5-small` (MIT). מודל זיהוי הווקאלי: CED-Tiny (Apache-2.0, בהמרה של sherpa-onnx). מודל זיהוי הדיבור: [zipformer2-66m-streaming-he](https://huggingface.co/ivrit-ai/zipformer2-66m-streaming-he) של יעקב קולני ו-ivrit.ai ([CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/)).
+הגופנים Frank Ruhl Libre ו-IBM Plex Sans Hebrew — SIL Open Font License. האייקונים — Lucide (ISC). ניגון HLS — hls.js (Apache-2.0). מנוע ה-JavaScript ליוטיוב — [QuickJS-ng](https://github.com/quickjs-ng/quickjs) (MIT), עם yt-dlp-ejs (Unlicense). הליבה משתמשת ב-yt-dlp (Unlicense), mutagen (GPL-2.0), rapidfuzz (MIT), onnxruntime (MIT), tokenizers (Apache-2.0), soundfile (BSD-3, עם libsndfile ב-LGPL-2.1) ו-truststore (MIT). להורדות ב-MP3 מצורף ffmpeg בבנייה של [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) ברישיון LGPL-2.1 (הקוד ב-[ffmpeg.org](https://ffmpeg.org/download.html)). מודל הסיווג: `intfloat/multilingual-e5-small` (MIT). מודל זיהוי הווקאלי: CED-Tiny (Apache-2.0, בהמרה של sherpa-onnx). מודל זיהוי הדיבור: [zipformer2-66m-streaming-he](https://huggingface.co/ivrit-ai/zipformer2-66m-streaming-he) של יעקב קולני ו-ivrit.ai ([CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/)).
 
 אינדקס הידע (`song_index.json`, `topic_lexicon.json`) נגזר מ[ויקיפדיה העברית](https://he.wikipedia.org) ומטקסטים של [ספריא](https://www.sefaria.org) ברישיונות פתוחים, ומופץ ברישיון CC BY-SA 4.0 — פרטים ב-[`LICENSE-DATA.md`](backend/hamenagen/data/LICENSE-DATA.md).

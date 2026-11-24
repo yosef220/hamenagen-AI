@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Callable, Protocol
 from urllib.parse import parse_qs, quote_plus, urlparse
 
-from .ytdlp_runner import CLIENT_SETS, MESSAGES, YtDlpRunner, message_for
+from .ytdlp_runner import MESSAGES, YtDlpRunner, message_for
 
 # A progress callback receives dicts like:
 #   {"status": "downloading", "percent": 42.0} | {"status": "postprocessing"} | {"status": "finished"}
@@ -54,6 +54,12 @@ class SearchResult:
     channel_id: str = ""
     channel_url: str = ""
     thumbnail: str = ""
+    date_approx: bool = False       # 1.7: the date comes from "2 years ago" on a list page
+
+
+# 1.7: dates for the songs of a channel or a search page too ("3 months ago"
+# turned into a date), so a list can show when each song came out.
+_DATES = ["--extractor-args", "youtubetab:approximate_date"]
 
 
 @dataclass
@@ -69,6 +75,7 @@ class FetchOutcome:
     title: str = ""                # a clean song (or list) name
     artist: str = ""
     cover: bytes | None = None     # the picture that came with a download
+    detail: str = ""               # 1.7: the end of what yt-dlp said, for the diagnostics report
 
 
 class SourcePlugin(Protocol):
@@ -120,6 +127,42 @@ def clean_video_title(title: str, channel: str = "") -> tuple[str, str]:
     elif not artist and channel.lower().endswith(" - topic"):
         artist = channel[: -len(" - topic")].strip()
     return artist, text
+
+
+# ------------------------------------------------------------------ filters (1.7)
+# The regular video file, small: what a filter that blocks the audio alone
+# still lets through, as the browser plays it. Its sound becomes the MP3.
+_PLAIN_FORMAT = "18/best[ext=mp4][height<=360]/best[height<=360]/best"
+
+
+def media_seconds(path: str | Path) -> float | None:
+    try:
+        import mutagen  # type: ignore
+
+        audio = mutagen.File(str(path))
+        length = getattr(getattr(audio, "info", None), "length", None)
+        return float(length) if length else None
+    except Exception:
+        return None
+
+
+def looks_replaced(path: str | Path, expected: float | None) -> bool:
+    """Whether a downloaded file is a filter's block video rather than the
+    song: a song of a minute or more that arrived as a few seconds, or as
+    less than a third of its length."""
+    if not expected or expected < 60:
+        return False
+    got = media_seconds(path)
+    if got is None:
+        return False
+    return got < 20 or got < expected / 3
+
+
+def _remove(path: str | Path) -> None:
+    try:
+        Path(path).unlink()
+    except OSError:
+        pass
 
 
 # ------------------------------------------------------------------ links
@@ -246,6 +289,16 @@ _SQUARE_COVER = ("ThumbnailsConvertor+ffmpeg_o:-c:v mjpeg -vf "
                  "crop=\"'if(gt(ih,iw),iw,ih)':'if(gt(iw,ih),ih,iw)'\"")
 
 
+def _day(timestamp) -> str | None:
+    """YYYYMMDD of a Unix time (UTC), or None."""
+    from datetime import datetime, timezone
+
+    try:
+        return datetime.fromtimestamp(float(timestamp), tz=timezone.utc).strftime("%Y%m%d") if timestamp else None
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
 def _entry_result(e: dict, source: str = "youtube") -> SearchResult | None:
     vid = e.get("id") or ""
     if not re.fullmatch(_VIDEO_ID, vid):
@@ -254,7 +307,8 @@ def _entry_result(e: dict, source: str = "youtube") -> SearchResult | None:
         source=source, id=vid, title=e.get("title") or vid,
         url=f"https://www.youtube.com/watch?v={vid}",
         uploader=e.get("uploader") or e.get("channel") or "",
-        duration=e.get("duration"), upload_date=e.get("upload_date"),
+        duration=e.get("duration"), upload_date=e.get("upload_date") or _day(e.get("timestamp")),
+        date_approx=not e.get("upload_date") and bool(e.get("timestamp")),
         channel=e.get("channel") or e.get("uploader") or "",
         channel_id=e.get("channel_id") or "", channel_url=e.get("channel_url") or "",
         thumbnail=thumbnail_url(vid, "mqdefault"),
@@ -278,7 +332,8 @@ class YouTubeSource:
 
     @staticmethod
     def _failed(code: str, detail: str = "") -> FetchOutcome:
-        return FetchOutcome(False, message_for(code, detail), code=code, blocked=code == "netfree")
+        tail = "\n".join(ln for ln in (detail or "").splitlines() if ln.strip())[-1500:]
+        return FetchOutcome(False, message_for(code, detail), code=code, blocked=code == "netfree", detail=tail)
 
     @staticmethod
     def _web_results(query: str, limit: int) -> list[SearchResult]:
@@ -303,9 +358,9 @@ class YouTubeSource:
         # every word literally and found nothing for "שבוע טוב יותר מוטיבייס".
         # ``ytsearch`` stays as the second try (a block on one does not always
         # block the other).
-        attempts = [[self.search_url(query), "--flat-playlist", "--dump-json", "--playlist-end", str(limit * 2)],
+        attempts = [[self.search_url(query), "--flat-playlist", "--dump-json", "--playlist-end", str(limit * 2), *_DATES],
                     [f"ytsearch{limit}:{query}", "--flat-playlist", "--dump-json"]]
-        for client in CLIENT_SETS[:2]:
+        for client in self.runner.client_order()[:2]:
             for args in attempts:
                 res = self.runner.run(args, timeout=30, client=client)
                 seen: set[str] = set()
@@ -353,7 +408,7 @@ class YouTubeSource:
                 return self._failed(res.code or "other", res.err)
             artist, title = clean_video_title(item.title, item.channel)
             return FetchOutcome(True, "", result=item, results=[item], kind="video", title=title, artist=artist)
-        res = self.runner.run([url, "--flat-playlist", "--dump-single-json", "--playlist-end", str(int(limit))],
+        res = self.runner.run([url, "--flat-playlist", "--dump-single-json", "--playlist-end", str(int(limit)), *_DATES],
                               timeout=90)
         data = next(iter(self.runner.json_lines(res)), None)
         if not data:
@@ -373,16 +428,22 @@ class YouTubeSource:
         dest = Path(dest_dir)
         dest.mkdir(parents=True, exist_ok=True)
         mp3 = bool(self.runner.ffmpeg)
-        args = [result.url, "-o", str(dest / "%(title)s [%(id)s].%(ext)s"),
+        base = [result.url, "-o", str(dest / "%(title)s [%(id)s].%(ext)s"),
                 "--newline", "--progress", "--no-simulate", "--no-playlist", "--windows-filenames", "--no-mtime",
                 "--retries", "3", "--concurrent-fragments", "4",
+                # 1.7: in 10 MB requests, which YouTube does not slow down the way it does one long request.
+                "--http-chunk-size", "10M",
                 "--print", "after_move:HMFILE:%(filepath)s",
                 "--print", "after_move:HMINFO:%(.{id,title,uploader,channel,duration,upload_date})j"]
-        if mp3:
-            args += ["-f", "bestaudio/best", "-x", "--audio-format", "mp3", "--audio-quality", "192K",
-                     "--embed-thumbnail", "--embed-metadata", "--convert-thumbnails", "jpg", "--ppa", _SQUARE_COVER]
-        else:
-            args += ["-f", "bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio", "--fixup", "never"]
+
+        def with_format(fmt: str) -> list[str]:
+            if mp3:
+                return base + ["-f", fmt, "-x", "--audio-format", "mp3", "--audio-quality", "192K",
+                               "--embed-thumbnail", "--embed-metadata", "--convert-thumbnails", "jpg",
+                               "--ppa", _SQUARE_COVER]
+            return base + ["-f", "bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio", "--fixup", "never"]
+
+        args = with_format("bestaudio/best")
 
         state: dict = {"file": None, "info": {}, "pct": None}
 
@@ -403,21 +464,40 @@ class YouTubeSource:
                         on_progress({"status": "postprocessing"})
 
         last = None
-        attempts = list(CLIENT_SETS)
+        attempts = self.runner.client_order()
         tried_update = False
+        tried_plain = False
+        replaced = False
         while attempts:
             client = attempts.pop(0)
             res = self.runner.stream(args, on_line, stall=120, client=client, cancel=cancel)
             if state["file"] and Path(state["file"]).exists():
-                last = None
-                break
-            last = res
-            if res.code != "extract":
+                # 1.7: a filter may hand over its block video in the song's place.
+                if looks_replaced(state["file"], state["info"].get("duration") or result.duration):
+                    _remove(state["file"])
+                    state["file"], replaced = None, True
+                else:
+                    self.runner.remember(client)
+                    last = None
+                    break
+            else:
+                last = res
+            blocked = replaced or (last is not None and last.code == "netfree")
+            if blocked and mp3 and not tried_plain:
+                # 1.7: some filters let only the regular video file through (as the
+                # browser plays it), not the audio alone: take that, and its sound.
+                tried_plain = True
+                args = with_format(_PLAIN_FORMAT)
+                attempts = [client]
+                continue
+            if replaced or last is None or last.code != "extract":
                 break  # blocked, unavailable, no network …: another client will not help
             if not attempts and not tried_update and not self.runner.updated:
                 tried_update = True  # YouTube changed: get the newest engine, try once more
                 if self.runner.update_engine().get("updated"):
                     attempts = [None]
+        if replaced and not state["file"]:
+            return FetchOutcome(False, MESSAGES["replaced"], code="replaced", blocked=True)
         if last is not None or not state["file"]:
             code = last.code if last is not None else "other"
             if code == "netfree":
@@ -466,7 +546,7 @@ class YouTubeSource:
                 state["file"] = line[7:].strip()
 
         last = None
-        for client in CLIENT_SETS:
+        for client in self.runner.client_order():
             res = self.runner.stream(args, on_line, stall=60, timeout=240, client=client, cancel=cancel)
             if state["file"] and Path(state["file"]).exists():
                 return FetchOutcome(True, "", path=state["file"], result=result)

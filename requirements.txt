@@ -15,6 +15,9 @@ rapidfuzz>=3.6
 # Runs as its own process (ytdlp_runner); a newer copy can be put in the data
 # folder by the app itself.
 yt-dlp>=2024.1.0
+# YouTube's JavaScript challenge scripts, for full YouTube support (needs a JS
+# engine: the app ships QuickJS-ng; a dev run uses deno or node if installed).
+yt-dlp-ejs>=0.8.0
 
 # Verify HTTPS with Windows' certificate store, where a filter that inspects
 # TLS (NetFree) keeps its root certificate — so downloads, updates and song

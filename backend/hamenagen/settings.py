@@ -85,6 +85,15 @@ def bundled_voice_models_dir() -> Path | None:
     return None
 
 
+def bundled_js_dir() -> Path | None:
+    """QuickJS shipped inside the app (1.7): yt-dlp runs YouTube's JavaScript
+    challenges with it (yt-dlp-ejs)."""
+    env = os.environ.get("HAMENAGEN_JS_DIR")
+    if env and Path(env).is_dir():
+        return Path(env)
+    return None
+
+
 def bundled_ffmpeg_dir() -> Path | None:
     """ffmpeg shipped inside the app, for MP3 downloads with covers."""
     env = os.environ.get("HAMENAGEN_FFMPEG_DIR")
@@ -189,6 +198,8 @@ class Settings:
     # 1.6: the listener's own days by the Hebrew date — birthdays, anniversaries,
     # yahrzeits ([{name, kind, month, day, request}], personal_dates.py).
     personal_dates: list = field(default_factory=list)
+    # 1.7: singers whose new songs the downloads page offers ([{name, channel_id, channel_url}]).
+    followed_singers: list = field(default_factory=list)
 
     @classmethod
     def load(cls, path: str | Path) -> "Settings":
@@ -228,6 +239,14 @@ class Settings:
                 if url.lower().startswith("https://") and len(url) < 1000:
                     stations.append({"title": title or url.split("/")[2], "url": url})
         self.custom_stations = stations[:50]
+        follows, seen = [], set()
+        for f in self.followed_singers or []:
+            cid = str((f or {}).get("channel_id") or "") if isinstance(f, dict) else ""
+            if len(cid) == 24 and cid.startswith("UC") and cid not in seen:
+                seen.add(cid)
+                follows.append({"name": str(f.get("name") or "").strip()[:80] or cid, "channel_id": cid,
+                                "channel_url": f"https://www.youtube.com/channel/{cid}"})
+        self.followed_singers = follows[:100]
         from .personal_dates import sanitize as personal_sanitize
         self.personal_dates = personal_sanitize(self.personal_dates)
         from .zmanim import CITIES, DEFAULT_CITY, HAVDALAH_CHOICES

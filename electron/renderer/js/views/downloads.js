@@ -133,6 +133,134 @@
     if (!root.hidden) updateJob(job);
   });
 
+  // ------------------------------------------------------------ a singer's songs (1.7)
+  // A singer's name finds the singer's own channel on YouTube and lists every
+  // song it uploaded, to tick and download; songs already here are marked.
+  // Built once, so a download starting or ending never wipes what is picked.
+  const singerHolder = h('div', { class: 'singer-result' });
+  const singerInput = h('input', { class: 'input', type: 'text', placeholder: 'שם של זמר, למשל: אלי הרצליך',
+    'aria-label': 'שם של זמר', maxlength: '80' });
+  const singerGo = h('button', { class: 'btn btn-primary', type: 'submit' }, icon('list-checks'), 'כל השירים שלו');
+  const singerForm = h('form', { class: 'singer-form', role: 'search' }, icon('mic-vocal'), singerInput, singerGo);
+  singerForm.addEventListener('submit', (e) => { e.preventDefault(); showSinger(singerInput.value); });
+  const singerSection = h('section', { class: 'section singer-section', 'aria-label': 'שירים של זמר' },
+    h('div', { class: 'section-head' }, h('h2', {}, 'כל השירים של זמר')),
+    h('p', { class: 'muted' }, 'כותבים שם של זמר, והמנגן מוצא את הערוץ שלו ביוטיוב ומציג את כל השירים שהעלה — רק להורדה, שום דבר לא מתנגן. בוחרים מה להוריד; מה שכבר במחשב מסומן. אפשר גם לעקוב אחרי הזמר, ושיר חדש שלו יקפוץ עם כפתור הורדה.'),
+    singerForm, singerHolder);
+
+  async function showSinger(name) {
+    name = (name || '').trim();
+    if (!name) { singerInput.focus(); return; }
+    singerGo.disabled = true;
+    singerHolder.replaceChildren(h('p', { class: 'muted' }, icon('loader-circle', 'icon-sm spin'), `מחפש את הערוץ של ${name} ביוטיוב…`));
+    try {
+      const info = await api.singerSongs(name, 300);
+      if (!info.ok) {
+        singerHolder.replaceChildren(h('p', { class: 'online-error' }, icon('circle-alert', 'icon-sm'),
+          info.blocked || info.code === 'netfree'
+            ? 'החיפוש ביוטיוב חסום ברשת שלך (נטפרי או סינון דומה). אפשר להדביק קישור לערוץ של הזמר בעמוד החיפוש.'
+            : info.message || 'לא נמצא'));
+        return;
+      }
+      if (!info.results.length) {
+        singerHolder.replaceChildren(h('p', { class: 'muted' }, `בערוץ של ${info.channel.name} אין שירים להורדה.`));
+        return;
+      }
+      singerHolder.replaceChildren(H.songPicker(info, singerHolder, { extra: followButton(info.channel, info.followed) }));
+    } catch (err) {
+      singerHolder.replaceChildren(h('p', { class: 'online-error' }, `החיפוש נכשל: ${err.message}`));
+    } finally {
+      singerGo.disabled = false;
+    }
+  }
+
+  function followButton(channel, followed) {
+    const btn = h('button', { class: 'btn btn-outline btn-sm', type: 'button', 'aria-pressed': followed ? 'true' : 'false' });
+    const paint = (on) => {
+      btn.replaceChildren(icon(on ? 'bell-ring' : 'bell-plus', 'icon-sm'), on ? 'עוקב: שירים חדשים יופיעו כאן' : 'לעקוב אחרי שירים חדשים');
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    };
+    paint(followed);
+    btn.addEventListener('click', async () => {
+      const on = btn.getAttribute('aria-pressed') !== 'true';
+      btn.disabled = true;
+      try {
+        await api.followSinger(channel.name, channel.id, on);
+        paint(on);
+        H.toast(on ? `מעכשיו שירים חדשים של ${channel.name} יופיעו במסך ההורדות` : `הפסקת לעקוב אחרי ${channel.name}`, { icon: 'bell-ring' });
+        refreshNew(false);
+      } catch (err) {
+        H.toast(`לא נשמר: ${err.message}`, { kind: 'bad' });
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    return btn;
+  }
+
+  // New songs from the singers the listener follows (checked every few hours).
+  const newSection = h('section', { class: 'section new-songs', 'aria-label': 'שירים חדשים', hidden: true });
+  async function refreshNew(force) {
+    let r;
+    try {
+      r = await api.followedNew(!!force);
+    } catch {
+      return;
+    }
+    if (!r.singers.length) { newSection.hidden = true; return; }
+    newSection.hidden = false;
+    const chips = h('div', { class: 'chips' }, r.singers.map((s) => h('span', { class: 'chip follow-chip' }, s.name,
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': `להפסיק לעקוב אחרי ${s.name}`, onclick: async () => {
+        await api.followSinger(s.name, s.channel_id, false).catch(() => null);
+        refreshNew(false);
+      } }, icon('x', 'icon-sm')))));
+    const rows = r.new.map((item) => h('div', { class: 'online-item' },
+      item.thumbnail ? h('img', { class: 'o-thumb', src: item.thumbnail, alt: '', loading: 'lazy' }) : null,
+      h('div', { class: 'o-main' },
+        h('div', { class: 'o-title', title: item.title }, item.display || item.title),
+        h('div', { class: 'o-sub' }, [item.singer, H.songDate(item)].filter(Boolean).join(' · '))),
+      h('div', { class: 'o-actions' },
+        h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: () => H.download(item) }, icon('download', 'icon-sm'), 'הורדה לספרייה'),
+        h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => H.player.playList([H.listenTrack(item)], 0) }, icon('play', 'icon-sm'), 'להשמיע בלי לשמור'),
+        h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: async () => { await api.dismissNew(item.id).catch(() => null); refreshNew(false); } }, 'לא מעניין'))));
+    newSection.replaceChildren(
+      h('div', { class: 'section-head' }, h('h2', {}, 'שירים חדשים מזמרים שאתה עוקב אחריהם'),
+        h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => refreshNew(true) }, icon('refresh-cw', 'icon-sm'), 'לבדוק עכשיו')),
+      chips,
+      rows.length ? h('div', { class: 'online-list' }, rows) : h('p', { class: 'muted' }, 'אין כרגע שירים חדשים. המנגן בודק כל כמה שעות.'));
+  }
+
+  // 1.7: a new song from a followed singer pops up, with a button to download
+  // it — checked a little after the player opens, then every hour (the core
+  // reads each singer's channel at most every few hours). Each song once.
+  async function announceNew() {
+    let r;
+    try {
+      r = await api.followedNew(false);
+    } catch {
+      return;
+    }
+    const told = new Set(H.storage.get('newSongsTold', []));
+    const fresh = (r.new || []).filter((it) => !told.has(it.id));
+    if (!fresh.length) return;
+    for (const it of fresh) told.add(it.id);
+    H.storage.set('newSongsTold', [...told].slice(-500));
+    if (!root.hidden) refreshNew(false);
+    if (fresh.length === 1) {
+      const it = fresh[0];
+      H.toast(`יצא שיר חדש של ${it.singer}: ${it.display || it.title}`, {
+        icon: 'bell-ring', ms: 20000, action: { label: 'להוריד', fn: () => H.download(it) },
+      });
+    } else {
+      const singers = [...new Set(fresh.map((it) => it.singer))].join(', ');
+      H.toast(`יצאו ${H.songs(fresh.length)} חדשים של ${singers}`, {
+        icon: 'bell-ring', ms: 20000, action: { label: 'להציג ולהוריד', fn: () => H.go('downloads') },
+      });
+    }
+  }
+  setTimeout(announceNew, 20000);
+  setInterval(announceNew, 60 * 60 * 1000);
+
   function stateText(job) {
     switch (job.status) {
       case 'queued': return 'מתחיל…';
@@ -166,6 +294,7 @@
     if (old) old.replaceWith(jobRow(job));
   }
 
+  let refreshedNew = false;
   async function redraw() {
     if (root.hidden) return;
     let past = [];
@@ -173,6 +302,7 @@
       past = (await api.listTracks({ source: 'youtube', sort: 'added', descending: true, limit: 200 })).tracks;
     } catch { /* ignore */ }
     const folder = (H.appInfo && H.appInfo.downloads_dir) || '';
+    if (!refreshedNew) { refreshedNew = true; refreshNew(false); }
     H.clear(root).append(
       h('header', { class: 'page-head' },
         h('h1', {}, 'הורדות'),
@@ -181,6 +311,8 @@
           batch ? h('button', { class: 'btn btn-outline', type: 'button', onclick: () => { api.stopDownloads().catch(() => {}); H.toast('עוצר אחרי השיר הנוכחי', { icon: 'circle-stop' }); } },
             icon('circle-stop'), 'לעצור את הרשימה') : null,
           folder ? h('button', { class: 'btn btn-outline', type: 'button', onclick: () => api.openFolder(folder) }, icon('folder-open'), 'תיקיית ההורדות') : null)),
+      singerSection,
+      newSection,
       jobs.length
         ? h('section', { class: 'section', 'aria-label': 'עכשיו' }, h('div', { class: 'section-head' }, h('h2', {}, 'בהפעלה הזו')), h('div', { class: 'dl-list' }, jobs.map(jobRow)))
         : H.emptyState('אין הורדות פעילות', 'כשבקשה לא מוצאת שיר במחשב, המנגן מציע לחפש אותו ברשת ולהוריד.'),
@@ -191,5 +323,5 @@
   }
 
   H.views = H.views || {};
-  H.views.downloads = { show: redraw };
+  H.views.downloads = { show: () => { refreshedNew = false; return redraw(); } };
 })();
