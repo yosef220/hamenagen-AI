@@ -158,8 +158,9 @@ def test_when_no_channel_page_opens_the_songs_come_from_a_search_engine(tmp_path
         service.close()
 
 
-def test_the_singer_from_the_links_the_window_read(tmp_path):
+def test_the_singer_from_the_links_the_window_read(tmp_path, monkeypatch):
     """1.7.3: the links of a Google page, read by the window's browser engine."""
+    monkeypatch.setattr("hamenagen.fetcher._oembed_result", lambda url, **kw: None)
     service = PlayerService(data_dir=tmp_path / "data")
     try:
         service.fetcher = _BlockedSearch()
@@ -167,7 +168,7 @@ def test_the_singer_from_the_links_the_window_read(tmp_path):
                  ["https://www.google.com/preferences", "הגדרות"]]
         out = service.singer_from_links("אברהם פריד", links)
         assert out["ok"] and out["channel"]["name"] == "Avraham Fried" and not out.get("web_list")
-        assert service.fetcher.links == ["https://www.youtube.com/@avrahamfried"]
+        assert service.fetcher.links == ["https://www.youtube.com/@avrahamfried/videos"]
         # No channel opens: the songs the page links to.
         links = [["https://www.youtube.com/@wrong", "x"],
                  ["https://www.youtube.com/watch?v=aaaaaaaaaaa", "אברהם פריד - אבינו מלכנו\nYouTube · Avraham Fried"],

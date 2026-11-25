@@ -99,10 +99,46 @@ _CHANNEL = re.compile(r"(?:https?://)?(?:www\.|m\.)?youtube\.com/(@[\w.\-]+|chan
 _NOT_A_CHANNEL = {"@youtube", "c/youtube", "user/youtube"}
 
 
+_JS_ESCAPE = re.compile(r"\\u00([0-9a-fA-F]{2})|\\x([0-9a-fA-F]{2})")
+# Bing hands its results out through its own address: ``…/ck/a?…&u=a1<the link in base64>``.
+_BING_U = re.compile(r"[?&;]u=a1([A-Za-z0-9_\-]+)")
+
+
+def decode_page(page: str) -> str:
+    """A results page with the links it hides made plain (1.7.4): Google keeps
+    its results in scripts (``\\u003d`` for ``=``), DuckDuckGo behind its own
+    address (``uddg=https%3A%2F%2F…``), Bing in base64. What a browser reads
+    when it follows a result is what is looked for in the text returned."""
+    import base64
+
+    text = html_mod.unescape(page or "")
+    text = _JS_ESCAPE.sub(lambda m: chr(int(m.group(1) or m.group(2), 16)), text).replace("\\/", "/")
+    extra = []
+    for m in _BING_U.finditer(text):
+        raw = m.group(1)
+        try:
+            extra.append(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)).decode("utf-8", "replace"))
+        except (ValueError, TypeError):
+            continue
+    text = urllib.parse.unquote(urllib.parse.unquote(text))
+    return "\n".join([text, *extra])
+
+
+def extract_video_ids(page: str, count: int = 60) -> list[str]:
+    """The YouTube videos a results page points to, in page order, each once."""
+    out: list[str] = []
+    for m in _VIDEO.finditer(decode_page(page)):
+        if m.group(1) not in out:
+            out.append(m.group(1))
+            if len(out) >= count:
+                break
+    return out
+
+
 def extract_channels(page: str, count: int = 5) -> list[str]:
     """Links to YouTube channels in a results page, in page order, each once
     (``https://www.youtube.com/@name`` or ``…/channel/UC…``)."""
-    text = urllib.parse.unquote(html_mod.unescape(page or ""))
+    text = decode_page(page)
     out: list[str] = []
     for m in _CHANNEL.finditer(text):
         path = m.group(1).rstrip(".")

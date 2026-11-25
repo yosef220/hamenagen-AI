@@ -256,7 +256,9 @@
     };
     go.addEventListener('click', () => {
       const picked = items.filter((it) => chosen.has(it.id));
-      H.downloadMany(picked, info.title || info.artist || 'רשימה');
+      // 1.7.4: in the singer's folder; an album (a playlist) in a folder of its own in it.
+      H.downloadMany(picked, info.title || info.artist || 'רשימה',
+        { artist: info.folder_artist || info.artist || '', album: info.album || '' });
       holder.replaceChildren(h('p', { class: 'online-done' }, icon('circle-check', 'icon-sm'),
         `${H.songs(picked.length)} בדרך לספרייה. ההתקדמות במסך ההורדות.`,
         h('button', { class: 'btn btn-quiet btn-sm', type: 'button', onclick: () => H.go('downloads') }, 'למסך ההורדות')));

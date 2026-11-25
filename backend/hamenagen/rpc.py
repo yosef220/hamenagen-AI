@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -223,7 +224,8 @@ class RpcServer:
         return out
 
     def rpc_singer_from_links(self, params):
-        out = self.service.singer_from_links(params.get("name", ""), params.get("links") or [])
+        out = self.service.singer_from_links(params.get("name", ""), params.get("links") or [],
+                                             page=params.get("page") or "")
         if out.get("ok"):
             out["results"] = [_shown(_result_from(r), in_library=r.get("in_library", False)) for r in out["results"]]
         return out
@@ -554,11 +556,20 @@ class RpcServer:
             out.setdefault("code", "")
             out["results"] = [_shown(_result_from(r), in_library=r.get("in_library", False)) for r in out.get("results", [])]
             return out
+        from .fetcher import parse_youtube_link
+
         outcome = self.fetcher.link_info(params.get("url", ""), limit=int(params.get("limit", 300)))
         have = self.service.index.video_ids()
+        parsed = parse_youtube_link(params.get("url", ""))
+        album = ""
+        artist = outcome.artist
+        if parsed and parsed[0] == "playlist" and outcome.ok:
+            # 1.7.4: a playlist downloads to a folder of its own, in its singer's folder.
+            album = re.sub(r"^(?:album|אלבום)\s*[-–:]\s*", "", outcome.title or "", flags=re.I).strip()
+            artist = re.sub(r"\s*-\s*topic$", "", artist or "", flags=re.I).strip()
         return {
             "ok": outcome.ok, "message": outcome.message, "code": outcome.code, "blocked": outcome.blocked,
-            "kind": outcome.kind, "title": outcome.title, "artist": outcome.artist,
+            "kind": outcome.kind, "title": outcome.title, "artist": artist, "album": album,
             "results": [_shown(r, in_library=r.id in have) for r in outcome.results],
         }
 
@@ -567,9 +578,12 @@ class RpcServer:
         items = [_result_from(r) for r in params.get("items") or [] if r.get("url")]
         batch_id = params.get("batch_id", "batch")
 
+        folder = params.get("folder") if isinstance(params.get("folder"), dict) else {}
+
         def work():
             return dict(self.service.download_many(
-                items, on_event=lambda e: self._emit("download_batch", {"batch_id": batch_id, **e})), batch_id=batch_id)
+                items, on_event=lambda e: self._emit("download_batch", {"batch_id": batch_id, **e}),
+                artist=str(folder.get("artist") or ""), album=str(folder.get("album") or "")), batch_id=batch_id)
 
         return self._start_job("downloads", work, "download_batch_done")
 
