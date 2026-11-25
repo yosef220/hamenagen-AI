@@ -678,6 +678,12 @@ async function run() {
       if (!links || !links.ok || !links.links.some(([href]) => /youtube\.com/.test(href))) {
         errors.push(`the browser engine read no YouTube link: ${JSON.stringify(links)}`);
       }
+      if (!links || typeof links.page !== 'string' || !links.page.length) errors.push('the browser engine sent no page');
+      // 1.7.4: a channel's link in the singer's box opens the channel, with no search.
+      await page.fill('.singer-form .input', 'https://www.youtube.com/channel/UCJxECluw4yBOJChpzKwxjSA');
+      await page.click('.singer-form button[type="submit"]');
+      await page.waitForSelector('.singer-result .picker .pick', { timeout: 15000 })
+        .catch(async () => errors.push(`a channel's link in the singer's box listed nothing: ${await page.textContent('.singer-result')}`));
     } catch (err) {
       errors.push(`${theme}: ${err.message}`);
       await shot(page, `error${suffix}`).catch(() => {});

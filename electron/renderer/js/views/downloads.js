@@ -51,7 +51,7 @@
    * Songs already in the library are skipped; one the network blocks is
    * marked and the rest go on. */
   let batch = null; // { id, label, total, jobs: Map(videoId → job) }
-  H.downloadMany = async function downloadMany(items, label) {
+  H.downloadMany = async function downloadMany(items, label, folder) {
     if (!items.length) return;
     if (batch) {
       H.toast('כבר יורדים שירים מרשימה אחרת. אפשר להוסיף עוד כשהיא תסתיים.', { icon: 'download' });
@@ -68,7 +68,7 @@
     redraw();
     H.toast(`${H.songs(items.length)} מ„${label}” בדרך לספרייה`, { icon: 'download', action: { label: 'למסך ההורדות', fn: () => H.go('downloads') } });
     try {
-      const res = await api.downloadBatch(items, id);
+      const res = await api.downloadBatch(items, id, folder || {});
       if (!res.started) {
         for (const item of items) { const j = batch.jobs.get(item.id); j.status = 'failed'; j.message = 'הורדה אחרת כבר רצה'; }
         batch = null;
@@ -138,8 +138,8 @@
   // song it uploaded, to tick and download; songs already here are marked.
   // Built once, so a download starting or ending never wipes what is picked.
   const singerHolder = h('div', { class: 'singer-result' });
-  const singerInput = h('input', { class: 'input', type: 'text', placeholder: 'שם של זמר, למשל: אלי הרצליך',
-    'aria-label': 'שם של זמר', maxlength: '80' });
+  const singerInput = h('input', { class: 'input', type: 'text', placeholder: 'שם של זמר (למשל: אלי הרצליך) או קישור לערוץ שלו',
+    'aria-label': 'שם של זמר או קישור לערוץ שלו', maxlength: '300' });
   const singerGo = h('button', { class: 'btn btn-primary', type: 'submit' }, icon('list-checks'), 'כל השירים שלו');
   const singerForm = h('form', { class: 'singer-form', role: 'search' }, icon('mic-vocal'), singerInput, singerGo);
   singerForm.addEventListener('submit', (e) => { e.preventDefault(); showSinger(singerInput.value); });
@@ -152,17 +152,22 @@
     name = (name || '').trim();
     if (!name) { singerInput.focus(); return; }
     singerGo.disabled = true;
-    singerHolder.replaceChildren(h('p', { class: 'muted' }, icon('loader-circle', 'icon-sm spin'), `מחפש את הערוץ של ${name} ביוטיוב…`));
+    // 1.7.4: a link (to the singer's channel, or to one of the singer's songs) opens as it is.
+    const isLink = /^(https?:\/\/)?(www\.|m\.|music\.)?(youtube\.com|youtu\.be)\//i.test(name);
+    singerHolder.replaceChildren(h('p', { class: 'muted' }, icon('loader-circle', 'icon-sm spin'),
+      isLink ? 'פותח את הערוץ…' : `מחפש את הערוץ של ${name} ביוטיוב…`));
     try {
       // The core asks YouTube; when its search is blocked (NetFree) or finds no channel, the player's own
-      // browser engine searches Google, as the listener would, and the core reads the results' links.
+      // browser engine searches Google, as the listener would, and the core reads the results page.
       let info = await api.singerSongs(name, 300, false);
-      if (!info.ok && info.code !== 'not_installed' && info.code !== 'network') {
+      if (!info.ok && !isLink && info.code !== 'not_installed') {
         singerHolder.replaceChildren(h('p', { class: 'muted' }, icon('loader-circle', 'icon-sm spin'),
           `היוטיוב חסום לחיפוש מכאן — מחפש את ${name} בגוגל, דרך הדפדפן של המנגן…`));
         const page = await api.webLinks(`${name} יוטיוב`).catch(() => null);
-        if (page && page.ok) info = await api.singerFromLinks(name, page.links);
+        if (page && page.ok) info = await api.singerFromLinks(name, page.links, page.page);
       }
+      // The songs go to a folder named as the listener wrote the singer's name.
+      if (info.ok && !isLink) info.folder_artist = name;
       if (!info.ok) {
         singerHolder.replaceChildren(h('p', { class: 'online-error' }, icon('circle-alert', 'icon-sm'),
           info.message || (info.blocked ? 'החיפוש ביוטיוב חסום ברשת שלך (נטפרי או סינון דומה).' : 'לא נמצא')));

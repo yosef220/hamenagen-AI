@@ -802,31 +802,43 @@ const LINK_ENGINES = SEARCH_BASE ? [(q) => `${SEARCH_BASE}?q=${encodeURIComponen
   (q) => `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
 ];
 
+// 1.7.4: a results page as the browser has it — its links and its whole text. Google keeps its results in
+// the page's scripts, not in plain links; Bing and DuckDuckGo send them through their own addresses. The core
+// reads the YouTube links out of all of that (websearch.decode_page).
 async function pageLinks(win, url) {
   const wc = win.webContents;
   await Promise.race([
     wc.loadURL(url).catch(() => {}),
     new Promise((resolve) => setTimeout(resolve, 20000)),
   ]);
-  await new Promise((resolve) => setTimeout(resolve, 700));   // results drawn by the page's scripts
-  return wc.executeJavaScript(`Array.from(document.querySelectorAll('a[href]')).slice(0, 600)
-    .map((a) => [a.href, (a.innerText || a.textContent || '').trim().slice(0, 300)])`, true);
+  await new Promise((resolve) => setTimeout(resolve, 1500));   // results drawn by the page's scripts
+  return wc.executeJavaScript(`({
+    links: Array.from(document.querySelectorAll('a[href]')).slice(0, 800)
+      .map((a) => [a.href, (a.innerText || a.textContent || '').trim().slice(0, 300)]),
+    html: document.documentElement.outerHTML.slice(0, 4000000),
+  })`, true);
 }
 
+// A YouTube video or channel somewhere in the page, plain, escaped (=, %2F) or in Bing's base64.
+const YOUTUBE_IN_PAGE = /youtube\.com(?:\/|\\\/|%2F)(?:watch|channel|@|shorts)|youtu\.be(?:\/|%2F)|aHR0cHM6Ly93d3cueW91dHViZS5jb2/i;
+
 ipcMain.handle('search:links', async (_evt, query) => {
-  if (typeof query !== 'string' || !query.trim() || query.length > 200) return { ok: false, links: [] };
+  if (typeof query !== 'string' || !query.trim() || query.length > 200) return { ok: false, links: [], page: '' };
   const win = ensureLinksWindow();
   for (const engine of LINK_ENGINES) {
+    const host = new URL(engine('x')).hostname;
     try {
-      const links = (await pageLinks(win, engine(query.trim()))) || [];
-      const youtube = links.filter(([href]) => /youtube\.com|youtu\.be/i.test(String(href)));
-      searchLog(`links for "${query}" from ${new URL(engine('x')).hostname}: ${links.length} links, ${youtube.length} to YouTube`);
-      if (youtube.length) return { ok: true, links: youtube.slice(0, 200) };
+      const got = (await pageLinks(win, engine(query.trim()))) || {};
+      const links = Array.isArray(got.links) ? got.links : [];
+      const html = typeof got.html === 'string' ? got.html : '';
+      const found = YOUTUBE_IN_PAGE.test(html) || links.some(([href]) => YOUTUBE_IN_PAGE.test(String(href)));
+      searchLog(`links for "${query}" from ${host}: ${links.length} links, page ${html.length} chars, YouTube ${found ? 'found' : 'not found'} (${win.webContents.getURL().slice(0, 80)})`);
+      if (found) return { ok: true, links: links.slice(0, 800), page: html, engine: host };
     } catch (err) {
-      searchLog(`links for "${query}": ${err.message}`);
+      searchLog(`links for "${query}" from ${host}: ${err.message}`);
     }
   }
-  return { ok: false, links: [] };
+  return { ok: false, links: [], page: '' };
 });
 
 ipcMain.handle('search:open', async (_evt, query, rect, source) => {
